@@ -1,0 +1,22 @@
+{
+  "name": "daynote",
+  "version": "0.1.0",
+  "description": "Daynote — 생각을 기록하고, 일을 계획하고, 성과를 기억하는 데스크톱 메모·업무 관리 앱",
+  "main": "main.js",
+  "license": "MIT",
+  "scripts": {
+    "start": "electron .",
+    "smoke": "electron . --profile=smoke --smoke",
+    "test": "node --test \"test/*.test.js\"",
+    "serve": "node scripts/serve.js",
+    "postinstall": "node scripts/fix-electron.js",
+    "shots": "electron . --profile=shots --shots"
+  },
+  "devDependencies": {
+    "electron": "32.3.3"
+  },
+  "dependencies": {
+    "@anthropic-ai/sdk": "^0.131.0",
+    "@google/genai": "^2.27.0"
+  }
+}

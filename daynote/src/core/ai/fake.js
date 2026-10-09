@@ -1,0 +1,193 @@
+'use strict';
+
+// 가짜 AI — 실제 API 없이 검토 화면과 검증 흐름을 확인하기 위한 것.
+// 화면에는 항상 '가짜 AI(테스트)' 로 표시된다. 결과는 규칙 추출(suggest.js)로 만든다.
+// 실제 AI 처럼 "그럴듯하지만 틀린" 값도 섞어서 검증기가 걸러내는지 볼 수 있게 했다:
+//   - 메모에 '[가짜:지어내기]' 가 있으면 원문에 없는 할 일 하나를 덧붙인다
+//   - 메모에 '[가짜:실패]' 가 있으면 일시적 오류를 낸다
+
+(function (factory) {
+  var deps = (typeof module !== 'undefined' && module.exports)
+    ? { dates: require('../dates'), suggest: require('../suggest'), validate: require('./validate') }
+    : { dates: window.Daynote.dates, suggest: window.Daynote.suggest, validate: window.Daynote.aiValidate };
+  var api = factory(deps.dates, deps.suggest, deps.validate);
+  if (typeof module !== 'undefined' && module.exports) module.exports = api;
+  if (typeof window !== 'undefined') { window.Daynote = window.Daynote || {}; window.Daynote.aiFake = api; }
+})(function (D, SG, V) {
+  var EVENT_RE = /(회의|미팅|면담|발표|리뷰|세미나|워크숍|약속|점심|저녁|통화|콜)/;
+
+  // 데모용: 요청 문장 → 짧은 행동형 제목 (실제 AI 는 프롬프트 v2 규칙을 따른다)
+  function actionTitle(s) {
+    return String(s).replace(/\s*(까지|에)?\s*(부탁드립니다|부탁드려요|바랍니다|해\s*주세요|주세요)\.?$/, '').replace(/(을|를)\s*$/, '')
+      .replace(/^(오늘|내일|모레|(이번|다음)\s*주\s*)?[월화수목금토일]요일(까지)?\s*/, '').replace(/^\d{1,2}\s*월\s*\d{1,2}\s*일(까지)?\s*/, '').replace(/^(오늘|내일|모레)(까지)?\s*/, '').replace(/\.$/, '').trim() || s;
+  }
+
+  // 데모: 큰 일로 보이는 할 일과 그 단계 초안 (실제 AI 는 capture.js·assist.js 지침으로 판단)
+  var LARGE_RE = /(보고서|기획|발표|준비|자료|분석|문서|계획|제안서|정리해서|만들기|작성)/;
+  function genericSteps(title, minutes) {
+    var core = String(title || '').replace(/(하기|작성|준비|정리)$/, '').trim() || title;
+    var steps = [
+      { title: '‘' + core + '’ 관련 자료 한곳에 모으기', minutes: 15 },
+      { title: '무엇을 담을지 목차·개요 잡기', minutes: 20 },
+      { title: '초안 빠르게 써 보기', minutes: 45 },
+      { title: '다시 읽고 다듬기', minutes: 20 }
+    ];
+    if (minutes && minutes < 60) steps = steps.slice(0, 2).concat([{ title: '마무리하기', minutes: 15 }]);
+    return steps;
+  }
+
+  function demoAssist(input) {
+    if (input.purpose === 'breakdown') {
+      var t = input.task;
+      var small = t.remaining_minutes != null && t.remaining_minutes <= 30;
+      var steps = small ? [] : genericSteps(t.title, t.remaining_minutes).filter(function (s) { return (t.existing_steps || []).indexOf(s.title) === -1; });
+      return { is_large: !small, reason: small ? '이미 충분히 작은 일이에요.' : '첫 단계만 해도 진행 중이 되도록 아주 작게 시작했어요.', steps: steps };
+    }
+    return {
+      picks: (input.tasks || []).slice(0, 1).map(function (t) {
+        return { task_id: t.id, why: '아직 제목만 있어서, 어디서부터 할지 정해 두면 좋아요.',
+          question: '‘' + t.title + '’은(는) 무엇이 되면 끝난 건가요?', hints: ['끝났다고 볼 기준', '필요한 자료', '첫 번째 행동'] };
+      })
+    };
+  }
+
+  function organize(input) {
+    if (input.purpose === 'breakdown' || input.purpose === 'elaborate') {
+      return { ok: true, provider: 'fake', model: '가짜 AI(테스트)', output: demoAssist(input), usage: null };
+    }
+    if (input.lines.join('\n').indexOf('[가짜:실패]') !== -1) {
+      return { ok: false, error: { type: 'server', message: '가짜 AI: 일시적 서버 오류(시험용)', retryable: true } };
+    }
+    var ref = new Date(input.referenceTime);
+    var note = { id: input.noteId, title: input.title, body: input.lines.join('\n'), updatedAt: input.referenceTime };
+    var tasks = [], events = [];
+    SG.extractFromNote(note, ref).forEach(function (c) {
+      var line = V.locate(V.noteLines(note), c.excerpt, null);
+      var quote = c.excerpt.replace(/^\s*(?:[-*+]|\d+[.)])?\s*\[[ xX]\]\s*/, '').replace(/^\s*[-*+]\s+/, '').trim();
+      var phrase = c.dueHint || null;
+      var times = V.timeCandidates(quote);
+      var item = {
+        title: c.title, evidence: { quote: quote, line: line },
+        when: { text: phrase, date: c.dueDate || null, time: times.length === 1 ? times[0] : times[1] || null },
+        basis: 'explicit'
+      };
+      if (EVENT_RE.test(quote) && item.when.date) {
+        events.push({ title: c.title, evidence: item.evidence, start: item.when, duration_minutes: null, location: null, basis: 'explicit' });
+      } else {
+        tasks.push({ title: actionTitle(c.title), evidence: item.evidence, due: { text: phrase, date: c.dueDate || null, time: null }, project_hint: null, basis: 'explicit' });
+      }
+    });
+    // 요청 표현이 없어도 날짜가 붙은 회의·약속 줄은 일정으로
+    input.lines.forEach(function (l, i) {
+      var text = l.replace(/^\s*(?:[-*+]|\d+[.)])?\s*(\[[ xX]\]\s*)?/, '').trim();
+      if (!EVENT_RE.test(text) || events.some(function (e) { return e.evidence.line === i + 1; })) return;
+      var hint = SG.parseDueHint(text, ref);
+      var times = V.timeCandidates(text);
+      if (!hint || !times.length) return;   // 시각이 적힌 회의·약속만 일정으로
+      var phrase = text.slice(text.indexOf(hint.phrase.split(/\s/)[0]));
+      phrase = phrase.split(/\s+/).slice(0, times.length ? 3 : 1).join(' ');
+      events.push({ title: text.replace(hint.phrase, '').replace(/^\s*(오전|오후)?\s*\d{1,2}\s*시\s*(반)?\s*/, '').trim() || text,
+        evidence: { quote: text, line: i + 1 }, start: { text: phrase, date: hint.dueDate, time: times.length === 1 ? times[0] : null },
+        duration_minutes: null, location: null, basis: 'explicit' });
+    });
+    if (input.lines.join('\n').indexOf('[가짜:지어내기]') !== -1) {
+      tasks.push({ title: '원문에 없는 보고서 제출', evidence: { quote: '보고서를 금요일까지 제출', line: 1 },
+        due: { text: '금요일까지', date: D.ymd(D.addDays(ref, 3)), time: null }, project_hint: null, basis: 'explicit' });
+    }
+    var body = input.lines.filter(function (l) { return l.trim(); });
+    var extra = input.purpose === 'capture' ? classifyCapture(input, body, tasks, events, ref) : {};
+    return {
+      ok: true, provider: 'fake', model: '가짜 AI(테스트)',
+      output: {
+        summary: (input.title || body[0] || '메모') + ' — 가짜 AI가 규칙으로 만든 요약입니다.',
+        sections: [{ heading: '메모 내용', bullets: body.slice(0, 6).map(function (l) {
+          return { text: l.replace(/^\s*(?:[-*+]|\d+[.)])?\s*(\[[ xX]\]\s*)?/, '').replace(/^#+\s*/, ''), line: input.lines.indexOf(l) + 1 };
+        }) }],
+        tasks: tasks, events: events,
+        open_questions: tasks.filter(function (t) { return !t.due.text; }).slice(0, 2).map(function (t) { return { text: '‘' + t.title + '’은(는) 언제까지인가요?', line: t.evidence.line }; }),
+        entry_type: extra.entry_type, note_title: extra.note_title, note_project_hint: extra.note_project_hint, note_kind: extra.note_kind, done_tasks: extra.done_tasks, updated_tasks: extra.updated_tasks
+      },
+      usage: null
+    };
+  }
+
+  // 데모용 자동 분류 — 실제 AI 는 capture.js 지침으로 판단한다
+  var TASK_END_RE = /(하기|보내기|정리|작성|확인|준비|연락|제출|예약|검토|회신|공유|등록|신청|구매|수정)$/;
+  var GENERIC = { '신규': 1, '개선': 1, '프로젝트': 1 };
+  var BULLET_RE = /^\s*(?:[-*+]|\d+[.)])?\s*(\[[ xX]\]\s*)?/;
+  // 열린 할 일 중 이 줄과 핵심 낱말(2자 이상)이 겹치는 것
+  function matchOpen(input, line, strip) {
+    var words = line.replace(strip, ' ').split(/[\s,.!]+/).map(function (w) { return w.replace(/(을|를|은|는|이|가|도|로|으로)$/, ''); }).filter(function (w) { return w.length >= 2; });
+    return (input.openTasks || []).filter(function (title) {
+      var stem = title.replace(/(하기|보내기|기)$/, '');
+      return words.some(function (w) { return stem.indexOf(w) !== -1 || w.indexOf(stem) !== -1; });
+    });
+  }
+
+  function classifyCapture(input, body, tasks, events, ref) {
+    // 날짜 바꾸기: "견적서는 내일 보낼게", "보고서 월요일로 미룸" — 날짜 표현 + 미루기·약속 말 + 열린 할 일과 겹침
+    var UPDATE_RE = /(할게|할께|보낼게|낼게|하기로|미룸|미뤘|미루|미뤄|옮김|옮겼|연기|변경)/;
+    var updated = [];
+    var used = {};
+    body.forEach(function (l) {
+      if (!UPDATE_RE.test(l)) return;
+      var hint = SG.parseDueHint(l, ref);
+      if (!hint) return;
+      matchOpen(input, l.replace(hint.phrase, ' '), UPDATE_RE).forEach(function (title) {
+        if (updated.some(function (u) { return u.title === title; })) return;
+        updated.push({ title: title, evidence: { quote: l.trim(), line: input.lines.indexOf(l) + 1 },
+          due: { text: hint.phrase, date: hint.dueDate, time: null }, do_at: { text: null, date: null, time: null } });
+        used[l] = true;
+      });
+    });
+    if (!tasks.length && !events.length && body.length === 1 && !used[body[0]]) {
+      var t = body[0].replace(BULLET_RE, '').trim();
+      var hint = SG.parseDueHint(t, ref);
+      if (hint || TASK_END_RE.test(t.replace(/[.!]+$/, ''))) {
+        tasks.push({ title: actionTitle(t), evidence: { quote: t, line: input.lines.indexOf(body[0]) + 1 },
+          due: { text: hint ? hint.phrase : null, date: hint ? hint.dueDate : null, time: null }, project_hint: null, basis: 'explicit' });
+      }
+    }
+    var full = input.lines.join(' ');
+    var ph = (input.projects || []).filter(function (name) {
+      return name.split(/\s+/).some(function (w) { return w.length >= 2 && !GENERIC[w] && full.indexOf(w) !== -1; });
+    })[0] || null;
+    // "30분 후 샤워하기" 처럼 할 시각을 정한 할 일 (시각 계산은 앱 검증기가 한다)
+    var REL = /(\d+\s*분|(?:\d+|한|두|세)\s*시간(?:\s*반)?)\s*(?:후|뒤|있다가)/;
+    tasks.forEach(function (t) {
+      var rm = (t.evidence && t.evidence.quote || '').match(REL);
+      if (!t.do_at) t.do_at = rm ? { text: rm[0], date: null, time: null } : { text: null, date: null, time: null };
+      if (rm) {
+        // 시각 표현·"일정에" 는 제목에서 빼고, 마감으로 잘못 잡힌 "오늘" 도 지운다 (할 시각이지 마감이 아니다)
+        t.title = t.title.replace(REL, ' ').replace(/^\s*(오늘|내일)?\s*(일정에|할 일에|캘린더에)?\s*/, '').replace(/\s+/g, ' ').trim() || t.title;
+        t.due = { text: null, date: null, time: null };
+      }
+      if (!t.project_hint) t.project_hint = ph;
+      var large = LARGE_RE.test(t.title);
+      t.size = large ? 'large' : 'small';
+      t.breakdown = large ? genericSteps(t.title) : [];
+    });
+    // 완료 보고: "샤워 완료", "견적서 보냈음" — 열린 할 일 제목과 핵심 낱말(2자 이상)이 겹치면 그 일
+    var DONE_RE = /(완료|끝냈|끝났|끝남|다 했|다했|했음|마쳤|보냈음|보냈다|제출함)/;
+    var done = [];
+    body.forEach(function (l) {
+      if (!DONE_RE.test(l) || used[l]) return;
+      matchOpen(input, l, DONE_RE).forEach(function (title) {
+        if (!done.some(function (d) { return d.title === title; })) done.push({ title: title, evidence: { quote: l.trim(), line: input.lines.indexOf(l) + 1 } });
+      });
+    });
+    var items = tasks.length + events.length;
+    var first = (body[0] || '메모').replace(BULLET_RE, '').replace(/^#+\s*/, '').trim();
+    return {
+      done_tasks: done,
+      updated_tasks: updated,
+      entry_type: (done.length || updated.length) && !items && body.length <= done.length + updated.length ? (done.length ? 'done' : 'update')
+        : !items ? (done.length || updated.length ? 'mixed' : 'memo') : body.length <= items ? 'task' : 'mixed',
+      note_title: first.length > 20 ? first.slice(0, 19) + '…' : first,
+      note_project_hint: ph,
+      note_kind: /https?:\/\//.test(full) ? 'link' : /(어떨까|해 보면|하면 좋|아이디어)/.test(full) ? 'idea' : 'memo'
+    };
+  }
+
+  return { organize: organize };
+});

@@ -1,0 +1,343 @@
+/* MD_Reflo(live-preview-app) 의 라이브 프리뷰 편집기 스타일을 가져와 Daynote 토큰에 맞춘 것 */
+/* 노트 안의 이미지 */
+.md-image { display: inline-block; max-width: 100%; vertical-align: top; }
+.md-image img {
+  max-width: 100%;
+  height: auto;
+  border-radius: 8px;
+  border: 1px solid var(--border);
+  background: var(--bg-alt);
+}
+.md-image.is-missing {
+  padding: 3px 9px;
+  border: 1px dashed var(--border-strong);
+  border-radius: 6px;
+  color: var(--text-faint);
+  font-size: 13px;
+}
+
+/* 표 — 커서가 블록 밖에 있을 때 원문 대신 이 모양으로 보인다 */
+.md-table-wrap {
+  display: block;
+  margin: 6px 0 10px;
+  overflow-x: auto;
+  max-width: 100%;
+}
+.md-table {
+  border-collapse: collapse;
+  font-size: 15px;
+  line-height: 1.55;
+  min-width: 40%;
+}
+.md-table th,
+.md-table td {
+  padding: 6px 12px;
+  border: 1px solid var(--border);
+  text-align: left;
+  vertical-align: top;
+  cursor: text;
+}
+.md-table thead th {
+  background: var(--bg-alt);
+  font-weight: 600;
+  color: var(--text);
+  white-space: nowrap;
+}
+.md-table tbody tr:hover td { background: var(--accent-soft); }
+.md-table code {
+  background: var(--code-bg);
+  color: var(--code-text);
+  border-radius: 3px;
+  padding: 0 4px;
+  font-size: 0.92em;
+}
+.md-table .md-link { color: var(--accent); }
+
+/* ---- editor base ---- */
+.CodeMirror {
+  height: auto;
+  background: transparent;
+  color: var(--text);
+  font-family: var(--font);
+  font-size: var(--editor-font, 16px);
+  line-height: 1.7;
+}
+.CodeMirror-lines { padding: 0; }
+.CodeMirror pre.CodeMirror-line,
+.CodeMirror pre.CodeMirror-line-like { padding: 0; }
+.CodeMirror-cursor { border-left: 2px solid var(--accent); }
+.CodeMirror-selected,
+.CodeMirror-focused .CodeMirror-selected { background: var(--selection) !important; }
+/* 기본 테마의 밝은 선택색을 덮는다 — 어두운 테마에서도 글자가 보이게 */
+.CodeMirror-line::selection,
+.CodeMirror-line > span::selection,
+.CodeMirror-line > span > span::selection { background: var(--selection); }
+.CodeMirror .cm-searching { background: var(--highlight-bg); color: var(--highlight-text); }
+.CodeMirror-gutters { display: none; }
+
+/* ---- block level ---- */
+.CodeMirror pre.md-h1, .CodeMirror pre.md-h2, .CodeMirror pre.md-h3,
+.CodeMirror pre.md-h4, .CodeMirror pre.md-h5, .CodeMirror pre.md-h6 { font-weight: 700; letter-spacing: -0.01em; }
+.CodeMirror pre.md-h1 { font-size: 2.2em; line-height: 1.28; }
+.CodeMirror pre.md-h2 { font-size: 1.75em; line-height: 1.32; }
+.CodeMirror pre.md-h3 { font-size: 1.42em; line-height: 1.38; }
+.CodeMirror pre.md-h4 { font-size: 1.2em; }
+.CodeMirror pre.md-h5 { font-size: 1.06em; }
+.CodeMirror pre.md-h6 { font-size: 0.98em; color: var(--text-muted); }
+
+/* 커서가 놓인 줄 오른쪽 끝에 뜨는 수정 시각 */
+.md-line-time {
+  position: absolute;
+  right: 0;
+  top: 50%;
+  transform: translateY(-50%);
+  font-size: 12.5px;
+  font-weight: 400;
+  font-style: normal;
+  line-height: 1.4;
+  color: var(--text-faint);
+  background: var(--bg);
+  padding: 1px 4px;
+  border-radius: 4px;
+  white-space: nowrap;
+  pointer-events: none;
+  font-variant-numeric: tabular-nums;
+  letter-spacing: 0;
+  text-indent: 0;
+}
+
+.CodeMirror pre.md-quote { padding-left: 16px; color: var(--text-muted); }
+.md-quote-bg { box-shadow: inset 3px 0 0 var(--quote-bar); }
+
+.md-hr::before {
+  content: '';
+  display: block;
+  height: 1px;
+  background: var(--border-strong);
+  margin: 12px 0;
+}
+
+/* indentation lives in padding on the line box so the caret measures correctly;
+   the negative text-indent gives wrapped list text a hanging indent */
+.md-indent-1 { --lvl: 1; }
+.md-indent-2 { --lvl: 2; }
+.md-indent-3 { --lvl: 3; }
+.md-indent-4 { --lvl: 4; }
+.md-indent-5 { --lvl: 5; }
+.md-indent-6 { --lvl: 6; }
+.CodeMirror pre.md-list {
+  padding-left: calc(var(--lvl, 0) * 24px + 1.4em);
+  text-indent: -1.4em;
+}
+
+/* ---- callouts ---- */
+.md-callout { box-shadow: inset 3px 0 0 var(--callout-color); background: var(--callout-bg); }
+.md-callout-top { border-radius: 5px 5px 0 0; }
+.md-callout-bottom { border-radius: 0 0 5px 5px; }
+.md-callout-note { --callout-color: var(--cal-blue); --callout-bg: var(--cal-blue-bg); }
+.md-callout-tip { --callout-color: var(--cal-green); --callout-bg: var(--cal-green-bg); }
+.md-callout-warning { --callout-color: var(--cal-orange); --callout-bg: var(--cal-orange-bg); }
+.md-callout-danger { --callout-color: var(--cal-red); --callout-bg: var(--cal-red-bg); }
+.md-callout-quote { --callout-color: var(--cal-gray); --callout-bg: var(--cal-gray-bg); }
+.CodeMirror pre.md-callout-text { padding-left: 16px; }
+.md-callout-title { font-weight: 700; }
+.md-callout-label {
+  display: inline-flex;
+  text-indent: 0;
+  align-items: center;
+  gap: 6px;
+  margin-right: 6px;
+  font-weight: 700;
+}
+.md-callout-label svg { flex: 0 0 auto; }
+
+/* ---- frontmatter ---- */
+.CodeMirror pre.md-frontmatter {
+  font-family: var(--mono);
+  font-size: 0.82em;
+  color: var(--text-muted);
+}
+.md-frontmatter-bg { background: var(--codeblock-bg); }
+
+.CodeMirror pre.md-codeblock { font-family: var(--mono); font-size: 0.86em; }
+.md-codeblock-bg { background: var(--codeblock-bg); }
+.md-cb-top { border-radius: 6px 6px 0 0; }
+.md-cb-bottom { border-radius: 0 0 6px 6px; }
+.CodeMirror pre.md-fence { color: var(--text-faint); font-size: 0.8em; }
+
+/* ---- inline ---- */
+.md-syntax { color: var(--text-faint); font-weight: 400; }
+.md-strong { font-weight: 700; }
+.md-em { font-style: italic; }
+.md-strike { text-decoration: line-through; color: var(--text-muted); }
+.md-inlinecode {
+  font-family: var(--mono);
+  font-size: 0.86em;
+  color: var(--code-text);
+  background: var(--code-bg);
+  padding: 0.12em 0.32em;
+  border-radius: 4px;
+}
+.md-highlight { background: var(--highlight-bg); color: var(--highlight-text); border-radius: 2px; }
+.md-linktext, .md-wikilink { color: var(--accent); cursor: pointer; }
+.md-linktext:hover, .md-wikilink:hover { text-decoration: underline; }
+.md-tag {
+  color: var(--accent);
+  background: var(--accent-soft);
+  border-radius: 10px;
+  padding: 0.1em 0.5em;
+  font-size: 0.86em;
+}
+/* 찾은 자리가 태그 한가운데에 걸리면 CodeMirror가 표시를 쪼개서
+   알약 하나가 둘로 보인다. 그런 줄에서는 알약 모양을 잠시 벗겨 글자만 남긴다.
+   :has() 로 하면 줄마다 검사해서 큰 문서의 스타일 계산이 눈에 띄게 느려진다 —
+   찾기 쪽에서 그 줄에만 표시를 붙인다. */
+.md-has-find .md-tag {
+  background: none;
+  padding: 0;
+  border-radius: 0;
+}
+/* 벗기고 나서도 찾은 자리 표시는 남아야 한다 (같은 무게로 뒤에 둔다) */
+.md-has-find .cm-find-hit { background: var(--highlight-bg); color: var(--highlight-text); }
+.md-has-find .cm-find-current { background: var(--accent); color: var(--on-accent); }
+
+.md-list-number { color: var(--text-muted); }
+.md-task-done { color: var(--text-muted); text-decoration: line-through; }
+
+.md-bullet {
+  display: inline-block;
+  text-indent: 0;
+  width: 1ch;
+  color: var(--text-faint);
+  font-size: 1.1em;
+  line-height: 1;
+  vertical-align: baseline;
+}
+
+.md-checkbox {
+  display: inline-flex;
+  text-indent: 0;
+  vertical-align: middle;
+  transform: translateY(-1px);
+  margin-right: 7px;
+}
+.md-checkbox input {
+  appearance: none;
+  -webkit-appearance: none;
+  position: relative;
+  width: 16px;
+  height: 16px;
+  margin: 0;
+  border: 1.5px solid var(--border-strong);
+  border-radius: 3px;
+  background: transparent;
+  cursor: pointer;
+  transition: background .12s, border-color .12s;
+}
+.md-checkbox input:hover { border-color: var(--accent); }
+.md-checkbox input:checked { background: var(--accent); border-color: var(--accent); }
+.md-checkbox input:checked::after {
+  content: '';
+  position: absolute;
+  left: 4.5px;
+  top: 1px;
+  width: 4px;
+  height: 8px;
+  border: solid var(--on-accent);
+  border-width: 0 2px 2px 0;
+  transform: rotate(45deg);
+}
+.md-checkbox input:focus-visible { outline: 2px solid var(--accent); outline-offset: 1px; }
+
+@media (prefers-reduced-motion: reduce) { * { transition: none !important; } }
+/* ------------------------------------------------------------------ 접기
+   화살표는 .page 의 왼쪽 여백(34px) 안에 떠 있다. 글자 자리를 차지하지 않으므로
+   생기고 사라져도 본문이 흔들리지 않는다. 가로 위치가 곧 레벨이다. */
+.md-fold-layer {
+  position: absolute;
+  inset: 0;
+  pointer-events: none;
+  z-index: 6;
+}
+.md-fold-btn {
+  position: absolute;
+  width: 16px;
+  height: 16px;
+  padding: 0;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  border: none;
+  border-radius: 4px;
+  background: transparent;
+  color: var(--text-muted);
+  cursor: pointer;
+  pointer-events: auto;
+  opacity: .7;
+}
+.md-fold-btn:hover { opacity: 1; }
+.md-fold-btn.is-folded { opacity: 1; color: var(--accent); }
+.md-fold-btn svg {
+  width: 13px;
+  height: 13px;
+  fill: none;
+  stroke: currentColor;
+  stroke-width: 2.4;
+  stroke-linecap: round;
+  stroke-linejoin: round;
+  transform: rotate(90deg);
+  transition: transform .1s ease;
+}
+.md-fold-btn.is-folded svg { transform: rotate(0deg); }
+.md-fold-btn:hover { background: var(--accent-soft); color: var(--accent); }
+.md-fold-btn:focus-visible { outline: 2px solid var(--accent); outline-offset: 1px; }
+
+/* 접힌 자리 표시 — 제목 줄 끝에 붙는다 */
+.md-fold-ellipsis {
+  display: inline-block;
+  margin-left: 6px;
+  padding: 0 6px;
+  border-radius: 6px;
+  background: var(--accent-soft);
+  color: var(--accent);
+  font-size: 0.72em;
+  font-weight: 600;
+  line-height: 1.5;
+  vertical-align: middle;
+  letter-spacing: 1px;
+}
+
+/* Ctrl 을 누르고 있는 동안 보이는 모든 줄의 수정 시각 */
+.md-all-times {
+  position: absolute;
+  inset: 0;
+  pointer-events: none;
+  z-index: 5;
+}
+.md-line-time-float {
+  position: absolute;
+  right: 4px;
+  font-size: 12.5px;
+  line-height: 1.7;
+  color: var(--text-faint);
+  background: var(--bg);
+  padding: 0 4px;
+  border-radius: 4px;
+  white-space: nowrap;
+  font-variant-numeric: tabular-nums;
+}
+/* 마우스를 올린 줄에 뜨는 수정 시각 (본문을 다시 그리지 않는다) */
+.md-hover-time {
+  position: absolute;
+  right: 4px;
+  z-index: 6;
+  font-size: 12.5px;
+  line-height: 1.7;
+  color: var(--text-faint);
+  background: var(--bg);
+  padding: 0 4px;
+  border-radius: 4px;
+  white-space: nowrap;
+  pointer-events: none;
+  font-variant-numeric: tabular-nums;
+}

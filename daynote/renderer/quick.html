@@ -1,0 +1,58 @@
+<!doctype html>
+<html lang="ko">
+<head>
+<meta charset="utf-8">
+<meta http-equiv="Content-Security-Policy" content="default-src 'none'; script-src 'self'; style-src 'self' 'unsafe-inline'; font-src 'self' data:;">
+<title>Daynote 빠른 메모</title>
+<style>
+  /* 빠른 메모 창 — 어디서든 Ctrl+Shift+Space 로 뜨는 작은 입력창 (Spotlight·Raycast 처럼) */
+  @font-face { font-family: 'Pretendard Variable'; font-weight: 45 920; font-style: normal; font-display: swap; src: url('vendor/fonts/PretendardVariable.woff2') format('woff2-variations'); }
+  :root {
+    --surface: #FFFFFF; --border: #E6E6E3; --text: #1A1A1A; --text-2: #6B6B6B; --primary: #5B5BD6; --primary-soft: #EEEEFB;
+    --shadow: 0 24px 48px rgba(0,0,0,.18), 0 2px 8px rgba(0,0,0,.08);
+  }
+  @media (prefers-color-scheme: dark) {
+    :root { --surface: #1F1F23; --border: #34343A; --text: #EDEDEF; --text-2: #A0A0A8; --primary: #8B8BF5; --primary-soft: #2A2A45; --shadow: 0 24px 48px rgba(0,0,0,.5), 0 2px 8px rgba(0,0,0,.3); }
+  }
+  * { box-sizing: border-box; }
+  html, body { margin: 0; background: transparent; overflow: hidden; }
+  body { font-family: 'Pretendard Variable', Pretendard, 'Segoe UI', 'Malgun Gothic', sans-serif; color: var(--text); padding: 16px 20px 28px; -webkit-font-smoothing: antialiased; }
+  .panel { background: var(--surface); border: 1px solid var(--border); border-radius: 16px; box-shadow: var(--shadow); overflow: hidden; }
+  .row { display: flex; align-items: flex-start; gap: 12px; padding: 16px 18px 12px; }
+  .mark { flex: none; width: 24px; height: 24px; margin-top: 2px; border-radius: 7px; background: var(--primary); display: grid; place-items: center; }
+  .mark i { display: block; width: 12px; height: 2px; border-radius: 2px; background: #fff; box-shadow: 0 -4px 0 #fff, 0 4px 0 #fff; }
+  textarea { flex: 1; border: 0; outline: 0; resize: none; background: transparent; color: var(--text); font: inherit; font-size: 18px; line-height: 1.5; letter-spacing: -0.01em; padding: 0; min-height: 27px; max-height: 135px; }
+  textarea::placeholder { color: var(--text-2); }
+  .foot { display: flex; align-items: center; gap: 14px; padding: 9px 18px; border-top: 1px solid var(--border); font-size: 12px; color: var(--text-2); }
+  .foot .sp { flex: 1; }
+  kbd { font: inherit; font-size: 11px; padding: 1px 6px; border: 1px solid var(--border); border-radius: 5px; background: transparent; }
+  .ai { display: inline-flex; align-items: center; gap: 6px; }
+  .dot { width: 7px; height: 7px; border-radius: 50%; background: #2DA44E; }
+  .dot.off { background: #B0B0B0; }
+  .sent { display: none; padding: 18px; font-size: 15px; align-items: center; gap: 10px; }
+  .sent b { color: var(--primary); font-weight: 600; }
+  body.is-sent .row, body.is-sent .foot { display: none; }
+  body.is-sent .sent { display: flex; }
+  .panel { transform-origin: 50% 0; animation: pop 160ms cubic-bezier(.2,.7,.3,1); }
+  @keyframes pop { from { transform: scale(.98) translateY(-4px); } to { transform: none; } }
+  @media (prefers-reduced-motion: reduce) { .panel { animation: none; } }
+</style>
+</head>
+<body>
+  <div class="panel" id="panel">
+    <div class="row">
+      <span class="mark" aria-hidden="true"><i></i></span>
+      <textarea id="text" rows="1" aria-label="빠른 메모" placeholder="생각나는 걸 적고 Enter — 할 일인지 메모인지는 Daynote가 나눠요"></textarea>
+    </div>
+    <div class="foot">
+      <span><kbd>Enter</kbd> 보내기</span>
+      <span><kbd>Shift</kbd>+<kbd>Enter</kbd> 줄바꿈</span>
+      <span><kbd>Esc</kbd> 닫기</span>
+      <span class="sp"></span>
+      <span class="ai" id="ai"><span class="dot off"></span><span>확인 중…</span></span>
+    </div>
+    <div class="sent" role="status" aria-live="polite"><b>✓</b><span id="sent-text">보냈어요. 정리 결과는 Daynote 오늘 화면에 있어요.</span></div>
+  </div>
+  <script src="quick.js"></script>
+</body>
+</html>

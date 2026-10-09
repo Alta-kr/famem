@@ -1,0 +1,58 @@
+<!doctype html>
+<html lang="ko">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <meta http-equiv="Content-Security-Policy" content="default-src 'none'; script-src 'self'; style-src 'self' 'unsafe-inline'; img-src 'self' data:; font-src 'self' data:;">
+  <title>Daynote</title>
+  <link rel="stylesheet" href="vendor/codemirror.min.css">
+  <link rel="stylesheet" href="styles.css">
+  <link rel="stylesheet" href="editor.css">
+</head>
+<body>
+  <div id="app"></div>
+
+  <!-- 업무 규칙 (화면과 분리 — Node 에서 그대로 테스트한다) -->
+  <script src="../src/core/dates.js"></script>
+  <script src="../src/core/model.js"></script>
+  <script src="../src/core/recommend.js"></script>
+  <script src="../src/core/suggest.js"></script>
+  <script src="../src/core/weekly.js"></script>
+  <script src="../src/core/split.js"></script>
+  <!-- AI 층: 요청 정의 · 응답 검증 · 초안 관리 (검증·저장은 앱 책임) -->
+  <script src="../src/core/ai/organizeNote.js"></script>
+  <script src="../src/core/ai/validate.js"></script>
+  <script src="../src/core/ai/proposals.js"></script>
+  <script src="../src/core/ai/capture.js"></script>
+  <script src="../src/core/ai/assist.js"></script>
+  <script src="../src/core/ai/fake.js"></script>
+
+  <!-- 마크다운 편집기 (MD_Reflo 라이브 프리뷰 엔진) -->
+  <script src="vendor/codemirror.min.js"></script>
+  <script src="rules.js"></script>
+  <script src="editor.js"></script>
+
+  <!-- 화면 -->
+  <script src="sample.js"></script>
+  <script src="store.js"></script>
+  <script src="ui.js"></script>
+  <script src="app.js"></script>
+  <script src="aiflow.js"></script>
+  <script src="capture.js"></script>
+  <script src="assistant.js"></script>
+  <script src="views/detail.js"></script>
+  <script src="views/schedule.js"></script>
+  <script src="views/chat.js"></script>
+  <script src="views/today.js"></script>
+  <script src="views/archive.js"></script>
+  <script src="views/review.js"></script>
+  <script src="views/notes.js"></script>
+  <script src="views/tasks.js"></script>
+  <script src="views/calendar.js"></script>
+  <script src="views/projects.js"></script>
+  <script src="views/weekly.js"></script>
+  <script src="views/inbox.js"></script>
+  <script src="views/settings.js"></script>
+  <script src="palette.js"></script>
+</body>
+</html>
