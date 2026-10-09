@@ -1330,3 +1330,38 @@ kbd {
 .cap-row.is-done .cap-title { text-decoration: line-through; text-decoration-color: var(--text-secondary); color: var(--text-secondary); }
 /* 날짜 바꾸기 줄 ("견적서는 내일 보낼게" → 기존 할 일 마감 변경) */
 .kind-moved, [data-kind="moved"] { --kind: var(--kind-event); --kind-soft: var(--kind-event-soft); --kind-ink: var(--kind-event-ink); }
+
+/* ------------------------------------------------------------- 폰 (웹 미리보기용) */
+/* 사이드바는 아래 탭 막대가 되고, 홈은 흐름 → 오늘 순서로 한 줄로 쌓인다 */
+@media (max-width: 640px) {
+  .app { flex-direction: column-reverse; height: 100dvh; }
+  .app .sidebar, .app.sidebar-collapsed .sidebar {
+    flex: 0 0 auto; width: 100%; height: auto; flex-direction: row; align-items: center;
+    padding: 4px 6px calc(4px + env(safe-area-inset-bottom)); border-right: 0; border-top: 1px solid var(--border-deco);
+    overflow-x: auto; overflow-y: hidden;
+  }
+  .sidebar .brand, .sidebar .nav-sep, .sidebar .nav-section-title, .sidebar .nav-sub, .sidebar .save-indicator,
+  .sidebar .nav-label, .sidebar .nav-count { display: none; }
+  .sidebar-foot .nav-sub { display: flex; height: 44px; min-width: 44px; padding: 0 10px; justify-content: center; }
+  .sidebar .nav { flex-direction: row; flex: 1; justify-content: space-around; gap: 0; }
+  .sidebar-foot { margin: 0; flex-direction: row; }
+  .app .nav-item { height: 44px; min-width: 44px; padding: 0 10px; justify-content: center; }
+  .app .nav-item svg { width: 20px; height: 20px; flex-basis: 20px; }
+
+  .view-pad { padding: 16px 16px 40px; }
+  .home { padding: 12px 12px 16px; gap: 12px; grid-template-rows: auto auto; }
+  .home-chat .chat { min-height: 62dvh; }
+  .home-today { flex: none; overflow: visible; }
+  .home-sec, .home-sec-tasks, .home-sec-memos, .home-sec-agenda { flex: none !important; height: auto !important; }
+  .home-scroll { overflow: visible; }
+  .chat-input-foot { flex-wrap: wrap; }
+  .chat-input-hint { display: none; }
+  .cap-row { flex-wrap: wrap; }
+  .cap-title { flex: 1 1 auto; white-space: normal; }
+  .chat-input-foot .btn-primary { margin-left: auto !important; }
+
+  .detail { width: 100% !important; max-width: 100%; }
+  .notes-list, .cal-side, .proj-list { flex-basis: auto; width: 100%; }
+  .notes-layout, .cal-layout, .proj-layout { flex-direction: column; }
+  .modal, .dialog { max-width: calc(100vw - 24px); }
+}

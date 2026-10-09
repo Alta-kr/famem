@@ -45,11 +45,11 @@
     // 주소에 ?fakeai 를 붙이면 가짜 AI(규칙 기반, 화면에 표시됨)로 흐름만 확인할 수 있다.
     ai: {
       status: function () {
-        if (/[?&]fakeai\b/.test(location.search)) return Promise.resolve({ configured: true, provider: 'fake', model: '가짜 AI(테스트)' });
+        if ((window.DAYNOTE_WEB_DEMO || /[?&]fakeai\b/.test(location.search))) return Promise.resolve({ configured: true, provider: 'fake', model: '가짜 AI(테스트)' });
         return Promise.resolve({ configured: false, provider: null, reason: '브라우저 미리보기에서는 AI를 쓸 수 없습니다. 데스크톱 앱에서 GEMINI_API_KEY 또는 ANTHROPIC_API_KEY 를 설정해 주세요.' });
       },
       organizeNote: function (input) {
-        if (!/[?&]fakeai\b/.test(location.search)) return Promise.resolve({ ok: false, error: { type: 'not_configured', message: '브라우저 미리보기에서는 AI를 쓸 수 없습니다.', retryable: false } });
+        if (!(window.DAYNOTE_WEB_DEMO || /[?&]fakeai\b/.test(location.search))) return Promise.resolve({ ok: false, error: { type: 'not_configured', message: '브라우저 미리보기에서는 AI를 쓸 수 없습니다.', retryable: false } });
         return new Promise(function (r) { setTimeout(function () {
           if (window.__daynoteAiFail) { r({ ok: false, error: { type: 'network', message: 'AI 서버에 연결하지 못했습니다. (시험)', retryable: true } }); return; }
           var out = window.Daynote.aiFake.organize(input);
@@ -58,7 +58,7 @@
       },
       setKey: function () { return Promise.resolve({ ok: false, error: '브라우저 미리보기에서는 키를 저장할 수 없습니다.' }); },
       clearKey: function () { return Promise.resolve({ ok: true }); },
-      check: function () { return Promise.resolve(/[?&]fakeai\b/.test(location.search) ? { ok: true, ms: 500, model: '가짜 AI(테스트)' } : { ok: false, error: { message: '브라우저 미리보기에서는 AI를 쓸 수 없습니다.' } }); }
+      check: function () { return Promise.resolve((window.DAYNOTE_WEB_DEMO || /[?&]fakeai\b/.test(location.search)) ? { ok: true, ms: 500, model: '가짜 AI(테스트)' } : { ok: false, error: { message: '브라우저 미리보기에서는 AI를 쓸 수 없습니다.' } }); }
     },
     onBeforeClose: function () {},
     flushed: function () {}

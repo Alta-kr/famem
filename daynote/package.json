@@ -9,6 +9,7 @@
     "smoke": "electron . --profile=smoke --smoke",
     "test": "node --test \"test/*.test.js\"",
     "serve": "node scripts/serve.js",
+    "build:web": "node scripts/build-web.js",
     "postinstall": "node scripts/fix-electron.js",
     "shots": "electron . --profile=shots --shots"
   },
