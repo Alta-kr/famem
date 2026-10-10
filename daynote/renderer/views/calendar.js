@@ -9,7 +9,7 @@
 (function () {
   var DN = window.Daynote;
   var M = DN.model, D = DN.dates, S = DN.store, ui = DN.ui, h = ui.h;
-  var HOUR_PX = 48, SNAP = 15;
+  var HOUR_PX = 48;
   var DWELL_MS = 1000, DING_MS = 300, NAV_DWELL_MS = 700;
   var MODES = ['month', 'week', 'day'];
   var MODE_LABEL = { month: '월간', week: '주간', day: '일간' };
@@ -219,6 +219,7 @@
     }
     function setMode(m) {
       if (mem.picking) endPick(false);
+      if (m !== mode && CD() && CD().isOpen()) CD().close('nav');   // 하루 패널은 월간 보기의 것 — 보기를 바꾸면 닫는다
       mem.mode = m;
       S.mutate(null, function (s) { s.prefs.calendarMode = m; }, { silent: true });
       A.refresh();
@@ -380,7 +381,8 @@
           var cur = M.byId(S.state.blocks, b.id);
           if (!cur) return null;
           var r = el.getBoundingClientRect();
-          var off = Math.round((pt.y - r.top) / HOUR_PX * 60 / SNAP) * SNAP;
+          // 잡은 위치는 반올림하지 않는다 — 놓을 때 한 번만 15분으로 맞춰야 조금 움직여도 제자리에 남는다
+          var off = (pt.y - r.top) / HOUR_PX * 60;
           return { kind: 'block', id: b.id, minutes: D.minutesBetween(cur.start, cur.end), title: label, offsetMin: Math.max(0, off) };
         },
         label: function (p) { return p.title + ' · ' + D.duration(p.minutes); }
@@ -460,6 +462,7 @@
           if (DN.app.current().view === 'calendar') return;
           if (DP() && DP().active()) DP().cancel();
           if (CD() && CD().isOpen()) CD().close('nav');
+          if (mem.popOpen) ui.closeMenu(false);   // 캘린더 팝오버(소요 시간·실패·다른 시간)가 다른 화면 위에 남지 않게
           mem.picking = null;
         }, 0);
       },
@@ -624,7 +627,7 @@
           if (p.kind !== 'task') return;
           if (dwellOpen) cd.close('drop-outside');
           var ymd = target.getAttribute('data-day');
-          if (mem.picking) mem.picking = null;
+          if (mem.picking) { if (live && live.endPick) live.endPick(false, true); else mem.picking = null; }
           if (CP()) CP().dropOnDay(p.id, ymd, target);
         } else if (k === 'slot') {
           var tl = TL();

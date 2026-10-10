@@ -93,14 +93,16 @@ src/core/                업무 규칙 — 화면·Electron 을 모른다, Node 
   recommend.js           지금 할 일 추천 (규칙 기반, 저장하지 않는 재계산 값)
   suggest.js             메모·메일에서 새 할 일 제안 찾기 (규칙 기반, 중복 key)
   weekly.js              주간 정리 + 보고서 초안 (기록에 있는 것만)
+  slots.js status.js statusWords.js adapt.js commands.js gcal.js planner.js dates.js   빈 시간·현재 상태·적응 학습·명령어·Google 일정 규칙·자동 배치·날짜
+  ai/                    AI 입력·검증·초안(capture · validate · proposals · forced · assist · fake)
 renderer/
   editor.js rules.js vendor/   MD_Reflo 라이브 프리뷰 마크다운 편집기 (그대로 가져옴)
   editor.css             같은 편집기 스타일을 Daynote 토큰에 맞춘 것
   store.js               상태 하나 + 되돌리기 + 디바운스 저장 + 저장 실패 시 비상 사본
   ui.js app.js           공용 UI, 셸·탐색·공통 동작·단축키
-  views/                 오늘 · 메모 · 할 일 · 캘린더 · 프로젝트 · 주간 정리 · 새 할 일 제안 · 설정 · 상세 패널 · 일정 배치
+  views/                 오늘 · 메모 · 할 일 · 캘린더(월간·주간·일간) · 프로젝트 · 주간 정리 · 새 할 일 제안 · 설정 · 상세 패널 · 일정 배치 · 추천 패널
   sample.js              샘플 데이터 (모든 항목 sample:true)
-  slots.js status.js statusWords.js adapt.js commands.js gcal.js planner.js dates.js   슬롯·현재 상태·적응 학습·명령어·Google 일정 규칙·자동 배치
+  capture.js assistant.js slash.js statusui.js gcalsync.js dragplace.js   던진 글 처리·홈 대화·슬래시 명령어·현재 상태·Google 동기화·끌어서 배치
 services/                AI · Google 로그인(google-auth) · Google 캘린더 호출(gcal) · 키 보관(keystore) — 메인 프로세스 전용
 test/                    model · recommend · suggest · weekly · sample · split · store · slots · dates · commands · adapt · adapt-capture ·
                          assist · forced · capture · capture-v3 · ai · ai-provider · status-model · status-detect · status-policy ·

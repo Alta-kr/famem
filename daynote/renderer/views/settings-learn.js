@@ -89,10 +89,14 @@
       h('button.icon-btn', {
         type: 'button', 'aria-label': key + ' → ' + chip.textContent + ' 규칙 지우기', title: '지우기',
         onclick: function () {
-          if (!(DN.capture && DN.capture.forgetRule)) return;
           // 다시 그려진 뒤 같은 자리(다음 규칙)의 × 에 포커스 — 키보드로 연달아 지울 수 있게
           setRefocus({ type: r.type, index: idx });
-          DN.capture.forgetRule(r.id, r.label || r.key);
+          if (DN.capture && DN.capture.forgetRule) { DN.capture.forgetRule(r.id, r.label || r.key); return; }
+          // capture.js 가 아직 없을 때(부분 병합) — 같은 라벨·출처로 직접 지운다
+          var AD = DN.adapt;
+          if (!(AD && AD.forget)) { mem.refocus = null; return; }
+          S().mutate('배운 것 지우기', function (s) { AD.forget(s, r.id); }, { source: 'learn' });
+          ui().undoToast(q(r.label || r.key) + ' 규칙을 지웠어요.');
         }
       }, ui().icon('x')));
   }
@@ -200,13 +204,34 @@
         }
       }, '모두 지우기')));
     applyRefocus(section);
+    live = { section: section, sum: sum, ctx: ctx, sig: sigOf(rules) };
     return section;
+  }
+
+  // 지금 그려진 카드 — 설정 화면이 다시 그리지 않는 쓰기(빠른 메모 창의 capture 등) 뒤에 이 카드만 맞춘다
+  var live = null;
+  var QUIET_SOURCES = ['capture', 'chat', 'today', 'ai'];
+  function sigOf(rules) { return rules.map(function (r) { return r.id + ':' + r.n + ':' + r.to; }).join('|'); }
+
+  function onChange(info) {
+    // 규칙이 바뀌는 쓰기(source 'learn')·되돌리기는 설정 전체를 다시 그리게 둔다(false)
+    if (!info || info.type !== 'change' || QUIET_SOURCES.indexOf(info.source) === -1) return false;
+    var AD = DN.adapt, L = live;
+    if (!AD || !L || !L.section.isConnected) return false;
+    var st = S().state, rules = AD.list(st, now());
+    if (sigOf(rules) === L.sig || L.section.contains(document.activeElement)) {
+      L.sum.textContent = summary(st, rules);   // 목록은 그대로 두고 요약만(포커스·자리 유지)
+      return false;
+    }
+    var fresh = null;
+    try { fresh = render(L.ctx); } catch (e) { console.error(e); return false; }
+    if (L.section.parentNode) L.section.parentNode.replaceChild(fresh, L.section);
+    return false;
   }
 
   DN.settingsCards.learn = {
     render: render,
-    // 규칙이 바뀌는 쓰기(source 'learn')는 설정 전체를 다시 그리게 둔다
-    onChange: function () { return false; },
-    destroy: function () { }
+    onChange: onChange,
+    destroy: function () { live = null; }
   };
 })();

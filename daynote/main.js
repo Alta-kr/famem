@@ -236,7 +236,7 @@ function createWindow() {
         })()`);
         console.log('SMOKE ' + JSON.stringify(Object.assign(res, { consoleErrors: errors })));
         mainWindow.__flushed = true;
-        app.exit(errors.length || !res.rendered || res.fail ? 1 : 0);
+        app.exit(errors.length || !res.core || !res.rendered || res.fail ? 1 : 0);
       }, 1500);
     });
   }
@@ -360,7 +360,7 @@ app.whenReady().then(() => {
     const fetchFn = (u, init) => net.fetch(u, init);
     googleAuth = googleAuthMod.create({ userDataDir: app.getPath('userData'), safeStorage, fetch: fetchFn,
       openExternal: (u) => shell.openExternal(u), env: envGoogleClient,
-      onStatus: (st) => { if (mainWindow) mainWindow.webContents.send('google:changed', st); },
+      onStatus: (st) => { if (mainWindow && !mainWindow.isDestroyed() && !mainWindow.webContents.isDestroyed()) mainWindow.webContents.send('google:changed', st); },
       onFocusApp: showMain });
     gcalSvc = gcalMod.create({ auth: googleAuth, fetch: fetchFn });
   }

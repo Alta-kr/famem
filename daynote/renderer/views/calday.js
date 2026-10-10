@@ -17,6 +17,8 @@
   var info = { allowed: null, magnets: [] };
   var lastScroll = null;
   var listening = false;
+  // 넣은 뒤 패널이 다시 그려져도 키보드 포커스를 패널 안에 남긴다: { sel, index, until }
+  var keepFocus = null;
 
   function PL() { return DN.planner || null; }
   function SL() { return DN.slots || null; }
@@ -97,7 +99,7 @@
 
     var title = (day.getMonth() + 1) + '월 ' + day.getDate() + '일 ' + D.WEEKDAYS[day.getDay()] + '요일';
     var h3 = h('h3', { tabindex: '-1' }, title);
-    var autoBtn = h('button.btn.btn-sm', { type: 'button', onclick: function (e) {
+    var autoBtn = h('button.btn.btn-sm.cd-auto', { type: 'button', onclick: function (e) {
       var ids = hooks.taskIds ? hooks.taskIds() : [];
       if (CP()) CP().arrange(ymd, e.currentTarget, ids);
     } }, '이 날 자동 배치');
@@ -113,7 +115,10 @@
         h('div.cd-task-title', q(sub.task.title) + verb + ' · ' + (sub.minutes != null ? D.duration(sub.minutes) : '소요 시간 미정 — 놓으면 물어봐요')),
         list.length
           ? h('ol.cd-sugg-list', { 'aria-label': '추천 시간' }, list.map(function (c, i) {
-            return h('li', h('button.cd-sugg-btn', { type: 'button', title: c.reasons.join(' '), onclick: function (e) { place(sub, c.start, e.currentTarget); } },
+            return h('li', h('button.cd-sugg-btn', { type: 'button', title: c.reasons.join(' '), onclick: function (e) {
+              focusNext('.cd-sugg-btn', i);
+              place(sub, c.start, e.currentTarget);
+            } },
               RANK[i] + ' ' + D.hm(c.start) + '–' + D.hm(c.end) + ' · ' + (c.reasons[0] || '')));
           }))
           : h('div.cd-sugg-none', h('span.meta', '이 날에는 알맞은 빈 시간이 없어요.'), ' ',
@@ -194,9 +199,25 @@
       b.body.scrollTop = px(startMin);
       lastScroll = { ymd: cur.ymd, top: b.body.scrollTop };
     }
+    // 데스크톱: 캘린더 머리(보기 전환·일정 추가) 아래부터 채운다 — 패널이 열려 있어도 머리를 쓸 수 있게
+    var hd = host.querySelector('.cal-head');
+    sheet.style.setProperty('--cd-top', hd ? (hd.offsetTop + hd.offsetHeight) + 'px' : '0px');
     if (focus) setTimeout(function () { if (b.h3.isConnected) b.h3.focus(); }, 0);
+    else if (keepFocus && Date.now() < keepFocus.until) {
+      var kf = keepFocus, el = sheet;
+      setTimeout(function () {
+        if (!el.isConnected) return;
+        var ae = document.activeElement;
+        if (ae && ae !== document.body && !el.contains(ae)) return;   // 그 사이 다른 곳으로 옮겼으면 두고
+        var list = el.querySelectorAll(kf.sel);
+        var t = list[Math.min(kf.index || 0, list.length - 1)] || b.h3;
+        try { t.focus(); } catch (e) { /* 없음 */ }
+      }, 0);
+    }
     listen(true);
   }
+  // 곧 일어날 저장으로 패널이 다시 그려질 때 포커스를 둘 곳 (sel 의 index 번째, 없으면 제목)
+  function focusNext(sel, index) { keepFocus = { sel: sel, index: index || 0, until: Date.now() + 1000 }; }
 
   // 폰: 시트 밖을 누르면 닫는다 · 어디서나: Esc 로 닫는다
   function onDocDown(e) {
@@ -229,6 +250,8 @@
     if (cur && cur.ymd === ymd && opts.openedBy === 'dwell' && (cur.opts || {}).taskId === opts.taskId) return;
     var prev = cur;
     cur = { ymd: ymd, opts: opts };
+    keepFocus = null;
+    if (opts.focus) focusNext('.cd-head h3', 0);   // 곧 캘린더가 다시 그려져도 제목에 포커스를 남긴다
     if (!prev || prev.ymd !== ymd) lastScroll = null;
     mountSheet(!!opts.focus);
   }
@@ -237,6 +260,7 @@
     if (!cur) return;
     var was = cur;
     cur = null;
+    keepFocus = null;
     if (sheet) { sheet.remove(); sheet = null; }
     if (host) host.classList.remove('has-day');
     listen(false);
@@ -258,6 +282,7 @@
     // calendar.js 가 다시 그릴 때마다 부른다
     _mount: function (el, hk) { host = el; hooks = hk || {}; if (cur) mountSheet(false); },
     _dragInfo: function () { return info; },
+    _focusNext: focusNext,
     sheet: function () { return sheet; }
   };
 })();

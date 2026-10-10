@@ -31,7 +31,7 @@ contextBridge.exposeInMainWorld('daynoteHost', {
     signIn: (opts) => ipcRenderer.invoke('google:signIn', { loginHint: opts && opts.loginHint ? String(opts.loginHint).slice(0, 320) : null }),
     cancelSignIn: () => ipcRenderer.invoke('google:cancelSignIn'),
     signOut: () => ipcRenderer.invoke('google:signOut'),
-    onChanged: (fn) => ipcRenderer.on('google:changed', (_e, st) => fn(st))
+    onChanged: (fn) => { if (typeof fn === 'function') ipcRenderer.on('google:changed', (_e, st) => fn(st)); }
   },
   gcal: {
     calendars: () => ipcRenderer.invoke('gcal:calendars'),

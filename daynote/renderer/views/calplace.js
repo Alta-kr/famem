@@ -75,6 +75,17 @@
     c = ymd ? document.querySelector('.cd-sheet .cd-head h3') : null;
     return c || document.querySelector('.cal-head h2') || document.body;
   }
+  // 팝오버에서 고른 뒤 다시 그려져 포커스를 잃었으면 그 날짜 칸으로 (하루 패널이 열려 있으면 패널이 맡는다)
+  function refocus(ymd) {
+    setTimeout(function () {
+      var cd = DN.views.calDay;
+      if (cd && cd.isOpen && cd.isOpen()) return;
+      var ae = document.activeElement;
+      if (ae && ae !== document.body) return;
+      var c = document.querySelector('.cm-day[data-day="' + ymd + '"]');
+      if (c) try { c.focus(); } catch (e) { /* 없음 */ }
+    }, 0);
+  }
   function focusFirst(el, sel) {
     setTimeout(function () { var f = el.querySelector(sel); if (f && f.isConnected) try { f.focus(); } catch (e) { /* 없음 */ } }, 0);
   }
@@ -114,6 +125,7 @@
     } else ui.undoToast(msg);
     var cd = DN.views.calDay;
     if (cd && cd.isOpen && cd.isOpen() && cd.repaint) setTimeout(function () { if (cd.isOpen()) cd.repaint(); }, 0);
+    refocus(D.ymd(s));
     return newId;
   }
 
@@ -204,7 +216,7 @@
           tail: ' 나머지 ' + ui.josa(D.duration(sp.restMinutes), '는/은') + ' 왼쪽 목록에 남아 있어요.'
         });
       } }, '첫 ' + D.duration(split.chunkMinutes) + '만 넣기') : null,
-      h('button.btn.btn-sm', { type: 'button', onclick: function () { p.close(false); openDay(ymd, { openedBy: 'fail', taskId: t.id }); } }, '그날 열어서 직접'));
+      h('button.btn.btn-sm', { type: 'button', onclick: function () { p.close(false); openDay(ymd, { openedBy: 'fail', taskId: t.id, focus: true }); } }, '그날 열어서 직접'));
     var node = h('div.pl-fail',
       h('div.pl-fail-title', r.message),
       r.detail ? h('div.meta', r.detail) : null,
@@ -230,7 +242,7 @@
           if (r2.ok) commitBlock(t, r2.block, { minutes: d.minutes, save: d.save, other: true });
           else failPopover(t, ymd, r2, anchorFor(anchor, ymd), d);
         } }, '그래도 이 날에 넣기'),
-        h('button.btn.btn-sm', { type: 'button', onclick: function () { p.close(false); openDay(ymd, { openedBy: 'fail', taskId: t.id }); } }, '그날 열어서 직접')));
+        h('button.btn.btn-sm', { type: 'button', onclick: function () { p.close(false); openDay(ymd, { openedBy: 'fail', taskId: t.id, focus: true }); } }, '그날 열어서 직접')));
     p = pop(anchor, node, { label: '마감보다 늦은 날', className: 'pl-pop' });
     focusFirst(p.el, '.pl-fail-actions button');
   }
@@ -262,9 +274,10 @@
           S.mutate('일정 변경', function (s) { M.updateBlock(s, blockId, { start: c.startIso, end: c.endIso }); }, { source: 'calendar' });
           flash(blockId);
           ui.undoToast(fmtDay(c.start) + ' ' + timeRo(fmtRange(c.start, c.end)) + ' 옮겼어요.');
+          refocus(ymd);
         } }, h('span.pl-alt-time', fmtRange(c.start, c.end)), ' · ' + (c.reasons[0] || ''));
       }),
-      h('button.link-btn', { type: 'button', onclick: function () { p.close(false); openDay(ymd, { openedBy: 'alt', blockId: blockId }); } }, '그날 열어서 직접 고르기'));
+      h('button.link-btn', { type: 'button', onclick: function () { p.close(false); openDay(ymd, { openedBy: 'alt', blockId: blockId, focus: true }); } }, '그날 열어서 직접 고르기'));
     p = pop(cell, node, { label: '다른 시간', className: 'pl-pop' });
     focusFirst(p.el, 'button');
   }
@@ -277,6 +290,8 @@
     if (opts.blockId) {
       var b = M.byId(S.state.blocks, opts.blockId);
       if (!b) return Promise.resolve(false);
+      // 같은 시각에 놓았으면(조금 움직였다 제자리) 아무것도 바꾸지 않는다 — 빈 되돌리기·알림을 만들지 않게
+      if (new Date(b.start).getTime() === s.getTime()) return Promise.resolve(false);
       var len = D.minutesBetween(b.start, b.end);
       var e = D.addMinutes(s, len);
       var c = busyConflicts(s, e, b.id);
@@ -358,7 +373,8 @@
       var node = h('div.pl-arr',
         h('div.pl-arr-title', shortDay(ymd) + '에 ' + res.placements.length + '개를 이렇게 넣을까요?'),
         note ? h('div.meta', note) : null,
-        h('ul.pl-arr-list', res.placements.map(function (x) {
+        // 보이는 순서는 시각순 (놓은 순서는 마감·우선순위순이라 읽기 어렵다)
+        h('ul.pl-arr-list', res.placements.slice().sort(function (a, b) { return a.candidate.start - b.candidate.start; }).map(function (x) {
           var t = liveTask(x.taskId);
           var cb = h('input', { type: 'checkbox', checked: true, onchange: function () { off[x.taskId] = !cb.checked; count(); } });
           return h('li', h('label.check-row', cb, h('span', fmtRange(x.candidate.start, x.candidate.end) + ' ' + (t ? t.title : ''))),
@@ -377,6 +393,7 @@
       var chosen = res.placements.filter(function (x) { return !off[x.taskId]; });
       if (!chosen.length) return;
       p.close(false);
+      if (DN.views.calDay && DN.views.calDay._focusNext) DN.views.calDay._focusNext('.cd-auto', 0);
       S.mutate('자동 배치', function (s) {
         chosen.forEach(function (x) { M.addBlock(s, { taskId: x.taskId, kind: 'work', start: x.block.start, end: x.block.end }); });
       }, { source: 'calendar' });
@@ -384,7 +401,7 @@
       repaintDay();
     }
     p = pop(anchorFor(anchorEl, ymd), body(r), { label: '이 날 자동 배치', className: 'pl-arrange' });
-    focusFirst(p.el, '.pl-fail-actions .btn-primary, .pl-fail-actions button');
+    focusFirst(p.el, r.placements.length ? '.pl-fail-actions .btn-primary' : '.pl-fail-actions button');
   }
 
   // ------------------------------------------------------------------ 시간표 그리기 도구 (주간·일간·하루 패널)

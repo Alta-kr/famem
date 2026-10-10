@@ -20,6 +20,7 @@
   var lastCheck = null;         // 마지막 연결 확인 결과 { ok, ms, model, message }
   var rendered = [];            // 지금 그려진 등록 카드 (destroy 용)
   var liveRoot = null;          // 설정 화면이 그려져 있는 root — 다른 화면으로 가면 null (늦게 온 다시 그리기를 막는다)
+  var offAi = null;             // DN.aiFlow.onChange 구독 해제 함수 (AI 상태가 늦게 오면 AI 카드만 다시 그린다)
 
   var STATUS = {
     disconnected: { text: '연결된 메일 없음', dot: '' },
@@ -110,12 +111,46 @@
     return { dot: '.ok', text: '켜짐 · Anthropic Claude', sub: '처리 위치: Anthropic 서버 (인터넷 필요)' };
   }
 
+  // details 의 toggle 이벤트는 비동기라, 펼친 직후 다시 그리면 advOpen 이 아직 옛값일 수 있다 — 지우기 전에 DOM 에서 읽는다
+  function syncAdv(scope) {
+    var d = scope && scope.querySelector ? scope.querySelector('#set-ai-adv') : null;
+    if (d) advOpen = d.open;
+  }
+
+  // AI 카드 모양을 정하는 값들 — 이것이 바뀌었을 때만 카드를 다시 그린다
+  function aiSig(aiSt) {
+    return [aiLine(aiSt).text, aiSt.configured ? 1 : 0, aiSt.provider || '', aiSt.savedKey || '', aiSt.keySource || '',
+      aiSt.model || '', aiSt.fastModel || '', aiSt.vendor || '', aiSt.notice || '', aiSt.reason || ''].join('\u0001');
+  }
+
+  // AI 상태는 비동기로 온다(처음 '확인 중…', 데스크톱은 IPC). 설정 화면이 떠 있는 동안 바뀌면 AI 카드만 바꿔 끼운다.
+  // 키 칸에 글이 있거나 포커스가 있으면 건드리지 않는다(붙여 넣던 키를 잃지 않게).
+  function watchAi(root, ctx) {
+    if (offAi) { offAi(); offAi = null; }
+    if (!(DN.aiFlow && DN.aiFlow.onChange)) return;
+    offAi = DN.aiFlow.onChange(function () {
+      if (liveRoot !== root) return;
+      var old = root.querySelector('#set-ai');
+      if (!old || !old.parentNode) return;
+      var aiSt = DN.aiFlow.status();
+      if (old.getAttribute('data-ai-sig') === aiSig(aiSt)) return;
+      var keyIn = old.querySelector('#set-ai-key');
+      if (keyIn && (keyIn.value || document.activeElement === keyIn)) return;
+      syncAdv(old);
+      var fresh = safe(function () { return aiCard(ctx); });
+      if (!fresh) return;
+      var hadFocus = old.contains(document.activeElement);
+      old.parentNode.replaceChild(fresh, old);
+      if (hadFocus) { var hd = fresh.querySelector('#set-ai-h'); if (hd) hd.focus(); }
+    });
+  }
+
   function aiCard(ctx) {
     var aiSt = DN.aiFlow.status();
     var browser = S.host.kind === 'browser';
     var line = aiLine(aiSt);
     var showKey = aiSt.provider !== 'fake' && !browser;
-    var result = h('span.help', { role: 'status', 'aria-live': 'polite' });
+    var result = h('span.help#set-ai-result', { role: 'status', 'aria-live': 'polite' });
     if (lastCheck) result.textContent = lastCheck.ok
       ? '잘 연결됐어요 · ' + (lastCheck.ms / 1000).toFixed(1) + '초'
       : '연결하지 못했어요. 키를 확인해 주세요.';
@@ -143,7 +178,9 @@
         lastCheck = r && r.ok
           ? { ok: true, ms: r.ms, model: r.model }
           : { ok: false, message: (r && r.error && r.error.message) || '알 수 없는 오류' };
-        result.textContent = lastCheck.ok
+        // 확인하는 사이 카드가 다시 그려졌으면 지금 문서에 있는 결과 칸에 쓴다
+        var out = document.getElementById('set-ai-result') || result;
+        out.textContent = lastCheck.ok
           ? '잘 연결됐어요 · ' + (lastCheck.ms / 1000).toFixed(1) + '초'
           : '연결하지 못했어요. 키를 확인해 주세요.';
         var adv = document.getElementById('set-ai-lastcheck');
@@ -182,7 +219,7 @@
         h('li', '저장 방식: Windows는 DPAPI, macOS는 키체인으로 암호화해요.')));
     adv.addEventListener('toggle', function () { advOpen = adv.open; });
 
-    return h('section.card.settings-card#set-ai', { 'aria-labelledby': 'set-ai-h' },
+    return h('section.card.settings-card#set-ai', { 'aria-labelledby': 'set-ai-h', 'data-ai-sig': aiSig(aiSt) },
       h('h3#set-ai-h', { tabindex: '-1' }, 'AI 처리'),
       h('div.status-line', h('span.status-dot' + line.dot), h('b', line.text)),
       line.sub ? h('div.help', line.sub) : null,
@@ -260,11 +297,15 @@
       if (commit({ start: startIn.value, end: endIn.value, days: days })) paintDays();
     }
     function restoreDefault() {
+      // 이 링크는 누르면 숨겨진다 — 포커스가 body 로 빠지지 않게 카드 제목으로 옮긴다
+      // (시각 칸에 두면 폰에서 시각 고르기 창이 뜰 수 있다)
+      var hadFocus = document.activeElement === reset;
       S.mutate(null, function (s) { delete s.prefs.workHours; }, { silent: true, source: 'settings' });
       cur = { start: def.start, end: def.end, days: def.days.slice() };
       startIn.value = cur.start; endIn.value = cur.end;
       showErr('');
       paintDays(); paintSum(); paintReset();
+      if (hadFocus) heading.focus();
     }
 
     var days = h('div.work-days', { role: 'group', 'aria-label': '근무 요일' }, DAY_BTNS.map(function (d) {
@@ -274,9 +315,10 @@
     }));
     paintSum();
     paintReset();
+    var heading = h('h3#set-work-h', { tabindex: '-1' }, '근무 시간');
 
     return h('section.card.settings-card#set-work', { 'aria-labelledby': 'set-work-h' },
-      h('h3#set-work-h', { tabindex: '-1' }, '근무 시간'),
+      heading,
       h('p.help', '할 일 추천과 ‘다른 시간 찾기’가 이 시간을 기준으로 해요. 근무 시간 밖에는 남은 시간을 짐작하지 않고 물어봐요.'),
       h('div.settings-row', h('div.lbl', '시간'), startIn, h('span', { 'aria-hidden': 'true' }, '~'), endIn),
       h('div.settings-row', h('div.lbl', '요일'), days),
@@ -463,6 +505,7 @@
       rerender: function () {
         if (liveRoot !== root) return;
         var top = root.scrollTop;
+        syncAdv(root);
         root.textContent = '';
         render(root, {});
         root.scrollTop = top;
@@ -481,6 +524,7 @@
     root.appendChild(h('div.view-pad',
       h('div.page-head', h('div', h('div.page-title', '연결과 설정'), h('div.page-sub', 'AI·근무 시간·연결·데이터·화면을 정해요.'))),
       kids));
+    watchAi(root, ctx);
 
     // 바로 가기 — 한 번만 (archive 패턴: 앱은 다시 그릴 때도 같은 params 객체를 넘기므로 읽은 뒤 지운다).
     // 앱이 render 뒤에 #view 의 scrollTop 을 되돌리므로 스크롤·포커스는 그다음 틱에 한다.
@@ -514,7 +558,10 @@
         return SKIP_SOURCES.indexOf(info.source) !== -1;
       },
       destroy: function () {
+        // 앱이 #view 를 비우기 전에 부른다 — 고급 펼침 여부를 여기서 한 번 더 읽어 둔다
+        if (liveRoot === root) syncAdv(root);
         if (liveRoot === root) liveRoot = null;
+        if (offAi) { offAi(); offAi = null; }
         destroyCards();
       }
     };

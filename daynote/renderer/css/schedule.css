@@ -138,7 +138,7 @@ html.dp-dragging, html.dp-dragging * { -webkit-user-select: none; user-select: n
 @keyframes cd-up { from { transform: translateY(24px); } to { transform: none; } }
 @keyframes cd-new { from { background: var(--primary-soft); box-shadow: 0 0 0 2px var(--primary-line); } }
 .cd-sheet {
-  position: absolute; top: 0; right: 0; bottom: 0; width: min(400px, 45%); z-index: 30; display: flex; flex-direction: column;
+  position: absolute; top: var(--cd-top, 0); right: 0; bottom: 0; width: min(400px, 45%); z-index: 30; display: flex; flex-direction: column;
   background: var(--surface-raised); box-shadow: var(--shadow-float); border-left: 1px solid var(--border-deco);
   animation: cd-in var(--t-fast) var(--ease);
 }

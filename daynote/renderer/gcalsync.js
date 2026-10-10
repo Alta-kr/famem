@@ -28,7 +28,6 @@
   var ERROR_TEXT = {
     network: '인터넷에 연결되지 않아 동기화를 미뤘어요. 연결되면 다시 할게요.',
     timeout: '인터넷에 연결되지 않아 동기화를 미뤘어요. 연결되면 다시 할게요.',
-    rate_limit: 'Google이 잠시 요청을 막았어요. 잠시 뒤 다시 할게요.',
     quota: '오늘 쓸 수 있는 Google 요청량을 다 썼어요. 잠시 뒤 다시 할게요.'
   };
 
@@ -42,6 +41,7 @@
   var started = false;
   var lastRunAt = 0;           // 실제 시계(ms) — 경과 시간 재기용(포커스 2분 규칙)
   var calListAt = 0;           // 캘린더 목록을 마지막으로 받은 때(실제 시계)
+  var epoch = 0;               // 로그아웃·계정 바뀜마다 +1 — 그 전에 시작한 회차의 늦은 응답은 버린다
 
   // ------------------------------------------------------------------ 도우미
   function S() { return DN.store; }
@@ -66,17 +66,18 @@
       function (e) { return { ok: false, error: { type: 'unknown', message: String((e && e.message) || e || '') } }; });
   }
 
-  // 동기화용 mutate — 바뀐 수를 fn 안에서 세고, 그 결과로 silent 를 정한다.
+  // 동기화용 mutate — fn 이 돌려준 changed(코어가 센 일정·블록·링크·보낼 목록의 변화 수)로 silent 를 정한다.
+  // 커서·lastSyncAt·오류 기록처럼 화면(오늘·캘린더)에 안 보이는 값만 바뀌면 changed 0 → 조용히 저장만 한다
+  // (설정 카드는 DN.gcalSync.onChange 로 따로 다시 그린다).
   // store.mutate 는 fn 을 부른 뒤에 opts.silent 를 읽으므로 같은 opts 객체를 고쳐서 넘긴다.
-  function gm(fn) {
+  // ep 를 주면 그 사이 로그아웃·계정 바뀜이 있었는지 보고, 있었으면 쓰지 않는다(지운 Google 일정이 되살아나지 않게).
+  function gm(fn, ep) {
+    if (ep !== undefined && ep !== epoch) return null;
     var opts = { source: 'gcal', silent: true };
     return S().mutate(null, function (s) {
       G().ensure(s);
-      var before = JSON.stringify(s.gcal);
       var r = fn(s) || {};
-      var n = typeof r.changed === 'number' ? r.changed : 0;
-      if (!n && JSON.stringify(s.gcal) !== before) n = 1;
-      opts.silent = n === 0;
+      opts.silent = !(typeof r.changed === 'number' && r.changed > 0);
       return r;
     }, opts);
   }
@@ -145,10 +146,19 @@
     return { ok: true, pulled: {}, pushed: { done: 0, failed: 0 }, edited: 0, remoteDeleted: 0, inserted: 0 };
   }
 
+  // 회차 도중 로그아웃·계정 바뀜 → 남은 단계를 멈춘다 (syncNow/pushOnly 의 catch 가 조용히 받는다)
+  function live(ep) {
+    if (ep !== epoch) { var e = new Error('stale sync'); e.stale = true; throw e; }
+  }
+  function staleReport() {
+    return { ok: false, pulled: {}, pushed: { done: 0, failed: 0 }, edited: 0, remoteDeleted: 0, error: { type: 'canceled', message: '' } };
+  }
+
   function syncNow(opts) {
     var reason = (opts && opts.reason) || 'manual';
     if (running) { rerun = true; return running; }
     running = runSync(reason).catch(function (e) {
+      if (e && e.stale) { setPhase('idle'); return staleReport(); }
       console.error(e);
       return { ok: false, pulled: {}, pushed: { done: 0, failed: 0 }, edited: 0, remoteDeleted: 0, error: { type: 'unknown', message: String(e && e.message || e) } };
     }).then(function (report) {
@@ -165,7 +175,8 @@
   }
 
   // 오류를 캘린더 줄에 적는다 (레이트 리밋이면 모든 호출을 멈출 시각도)
-  function recordCalError(calendarId, err) {
+  //   (조용한 저장 — 캘린더 줄의 ‘받지 못함’·오류 상자는 설정 카드가 회차 끝 알림으로 다시 그린다)
+  function recordCalError(calendarId, err, ep) {
     gm(function (s) {
       var g = s.gcal, t = now();
       var c = null;
@@ -176,8 +187,15 @@
         var until = t.getTime() + wait;
         if (!(ms(g.backoffUntil) >= until)) g.backoffUntil = new Date(until).toISOString();
       }
-      return { changed: 1 };
-    });
+      return { changed: 0 };
+    }, ep);
+  }
+
+  // 레이트 리밋 안내 — 남은 분을 넣는다 (부록 A ‘N분 뒤 다시 할게요’)
+  function rateText() {
+    var g = S().state.gcal, until = ms(g && g.backoffUntil);
+    var n = isNaN(until) ? 1 : Math.max(1, Math.ceil((until - now().getTime()) / 60000));
+    return 'Google이 잠시 요청을 막았어요. ' + n + '분 뒤 다시 할게요.';
   }
 
   function exportCal(g) {
@@ -209,10 +227,12 @@
     var report = emptyReport();
     var errors = [];
     var manual = reason === 'manual';
+    var ep = epoch;
     if (!hasHost()) return Promise.resolve({ ok: false, pulled: {}, pushed: { done: 0, failed: 0 }, edited: 0, remoteDeleted: 0, error: { type: 'unavailable' } });
     lastRunAt = Date.now();
 
     return loadStatus().then(function (st) {
+      live(ep);
       if (!st.available || !st.signedIn) { setPhase('idle'); report.ok = false; report.error = { type: st.available ? 'not_signed_in' : 'unavailable' }; return report; }
       if (typeof navigator !== 'undefined' && navigator.onLine === false) {
         setPhase('offline');
@@ -223,37 +243,43 @@
       setPhase('syncing');
 
       // 계정 확인 · ‘Daynote’ 캘린더 id 사본
+      var acct = st.accountId || null;
+      if (S().state.gcal && S().state.gcal.accountId !== acct) { epoch++; ep = epoch; calListAt = 0; }
       gm(function (s) {
         var changed = 0;
-        if (s.gcal.accountId !== (st.accountId || null)) { G().resetForAccount(s, st.accountId || null); changed++; calListAt = 0; }
+        if (s.gcal.accountId !== acct) { changed += s.gcal.events.length ? 1 : 0; G().resetForAccount(s, acct); }
         if (st.exportCalendarId) changed += setExportCalendar(s, st.exportCalendarId).changed;
         return { changed: changed };
-      });
+      }, ep);
 
       var step = Promise.resolve();
       // 캘린더 목록 (없거나 하루 지났으면)
       step = step.then(function () {
+        live(ep);
         var g = S().state.gcal;
         var imports = g.calendars.filter(function (c) { return c && !c.isExport; });
         if (imports.length && calListAt && Date.now() - calListAt < CAL_LIST_MAX_AGE) return null;
         return wrap(host().gcal.calendars()).then(function (r) {
+          live(ep);
           if (!r.ok) { errors.push(errOf(r)); return; }
           calListAt = Date.now();
-          var c = ctx();
-          gm(function (s) { return G().mergeCalendarList(s, r.items || [], c); });
+          mergeCalendars(r.items || [], ep);
         });
       });
       // ‘Daynote’ 캘린더 확보
       step = step.then(function () {
+        live(ep);
         var g = S().state.gcal;
         if (!g.settings.exportEnabled || g.exportCalendarId || !(st.scopes && st.scopes.appCalendar)) return null;
         return wrap(host().gcal.ensureExportCalendar({ tz: tz(), preferId: null })).then(function (r) {
+          live(ep);
           if (!r.ok || !r.calendar || !r.calendar.id) { errors.push(errOf(r)); return; }
-          gm(function (s) { return setExportCalendar(s, r.calendar.id); });
+          gm(function (s) { return setExportCalendar(s, r.calendar.id); }, ep);
         });
       });
       // 가져오기 · 되읽기
       step = step.then(function () {
+        live(ep);
         var g = S().state.gcal;
         if (ms(g.backoffUntil) > now().getTime()) { report.backoff = true; return null; }
         var list = g.calendars.filter(function (c) { return c && !c.isExport && c.selected && c.accessRole !== 'freeBusyReader'; })
@@ -264,62 +290,81 @@
         var chain = Promise.resolve();
         var stop = false;
         all.forEach(function (item) {
-          chain = chain.then(function () { if (!stop) return pullOne(item, report, errors).then(function (halt) { if (halt) stop = true; }); });
+          chain = chain.then(function () { if (!stop) return pullOne(item, report, errors, ep).then(function (halt) { if (halt) stop = true; }); });
         });
         return chain;
       });
       // 올리기
       step = step.then(function () {
+        live(ep);
         var g = S().state.gcal;
         var sum = G().summary(S().state, now());
         if (!g.settings.exportEnabled && !sum.draining) return null;
         setPhase('pushing');
-        return pushRounds(report, errors);
+        return pushRounds(report, errors, ep);
       });
-      return step.then(function () { return finish(report, errors, manual); });
+      return step.then(function () { live(ep); return finish(report, errors, manual, ep); });
     });
   }
 
+  // 캘린더 목록 합치기 — changed 는 가져오기 목록에 보이는 값(이름·색·고름)과 일정 수가 바뀐 만큼
+  function mergeCalendars(items, ep) {
+    var c = ctx();
+    function shape(s) {
+      return JSON.stringify([(s.gcal.calendars || []).map(function (x) { return x ? [x.id, x.summary, x.color, !!x.selected, !!x.isExport] : null; }), (s.gcal.events || []).length]);
+    }
+    return gm(function (s) {
+      var before = shape(s);
+      var r = G().mergeCalendarList(s, items, c) || {};
+      r.changed = shape(s) !== before ? 1 : 0;
+      return r;
+    }, ep);
+  }
+
   // 캘린더 하나 받기 → true 면 이번 회차의 남은 캘린더를 건너뛴다 (로그인 문제·레이트 리밋)
-  function pullOne(item, report, errors) {
+  function pullOne(item, report, errors, ep) {
     var cal = item.own ? exportCal(S().state.gcal) : findCal(item.id);
     if (!cal) return Promise.resolve(false);
     var list = function (c) { return wrap(host().gcal.list(G().pullRequest(c, now()))); };
     return list(cal).then(function (res) {
+      live(ep);
       if (!res.ok && RESET_TYPES[errOf(res).type]) {
-        gm(function (s) { return { changed: G().resetCalendar(s, item.id).removed }; });
+        gm(function (s) { return { changed: G().resetCalendar(s, item.id).removed }; }, ep);
         var fresh = item.own ? exportCal(S().state.gcal) : findCal(item.id);
         if (!fresh) return res;
         return list(fresh);
       }
       return res;
     }).then(function (res) {
+      live(ep);
       if (!res.ok) {
         var err = errOf(res);
         errors.push(err);
-        recordCalError(item.id, err);
+        recordCalError(item.id, err, ep);
         return !!(AUTH_TYPES[err.type] || err.type === 'rate_limit' || err.type === 'quota');
       }
       var c = ctx();
       if (item.own) {
         var full = Object.assign({}, res, { calendarId: item.id });
         var plan = G().planOwnPull(S().state, full, c);
-        var r = gm(function (s) { return G().applyOwnPull(s, plan, c); });
+        var r = gm(function (s) { return G().applyOwnPull(s, plan, c); }, ep);
         report.edited += (r && r.edited) || 0;
-        if (plan.remoteDeletes && plan.remoteDeletes.length) applyRemoteDeletes(plan, c, report);
+        if (plan.remoteDeletes && plan.remoteDeletes.length) applyRemoteDeletes(plan, c, report, ep);
         report.pulled[item.id] = { full: !!plan.full, upserted: (r && r.mirrored) || 0, removed: 0 };
         return false;
       }
       var p = G().planPull(S().state, item.id, res, c);
-      gm(function (s) { return G().applyPull(s, p, c.now); });
+      gm(function (s) { return G().applyPull(s, p, c.now); }, ep);
       report.pulled[item.id] = { full: !!p.full, upserted: p.stats ? p.stats.upserted : 0, removed: p.stats ? p.stats.removed : 0 };
       var w = G().windowFor(c.now);
       var chain = Promise.resolve();
       (p.refetchSeries || []).forEach(function (sid) {
         chain = chain.then(function () {
+          live(ep);
           return wrap(host().gcal.instances({ calendarId: item.id, eventId: sid, timeMin: w.start, timeMax: w.end })).then(function (ri) {
+            live(ep);
             if (!ri.ok) { errors.push(errOf(ri)); return; }
-            gm(function (s) { return G().applySeries(s, item.id, sid, ri.items || [], ctx()); });
+            gm(function (s) { return G().applySeries(s, item.id, sid, ri.items || [], ctx()); }, ep);
           });
         });
       });
@@ -328,11 +373,12 @@
   }
 
   // Google 에서 지운 내 일정 → Daynote 블록 지우기 (되돌릴 수 있게 라벨 있는 mutate)
-  function applyRemoteDeletes(plan, c, report) {
+  function applyRemoteDeletes(plan, c, report, ep) {
+    if (ep !== epoch) return;
     var probe = 0;
     try { probe = G().applyRemoteDeletes(JSON.parse(JSON.stringify(S().state)), plan, c).deleted; } catch (e) { probe = 0; }
-    if (!probe) {                      // 지울 블록이 없다 — 링크 정리만 (되돌리기에 빈 항목을 만들지 않는다)
-      gm(function (s) { G().applyRemoteDeletes(s, plan, c); return { changed: 1 }; });
+    if (!probe) {                      // 지울 블록이 없다 — 링크 정리만 (되돌리기에 빈 항목을 만들지 않는다, 화면도 그대로)
+      gm(function (s) { G().applyRemoteDeletes(s, plan, c); return { changed: 0 }; }, ep);
       return;
     }
     var out = S().mutate('Google에서 지운 일정 반영', function (s) { return G().applyRemoteDeletes(s, plan, c); }, { source: 'gcal' });
@@ -342,22 +388,24 @@
   }
 
   // reconcile + 최대 4번 보내기
-  function pushRounds(report, errors) {
+  function pushRounds(report, errors, ep) {
     var hadLinks = Object.keys(S().state.gcal.links || {}).length > 0;
-    gm(function (s) { return G().reconcile(s, ctx()); });
+    gm(function (s) { return G().reconcile(s, ctx()); }, ep);
     var round = 0, firstTime = 0;
     function next() {
+      live(ep);
       if (round >= PUSH_ROUNDS) return Promise.resolve();
       var c = ctx();
       var ops = G().dueOps(S().state, c, PUSH_BATCH);
       if (!ops.length) return Promise.resolve();
       round++;
       return wrap(host().gcal.push(ops)).then(function (r) {
+        live(ep);
         var res = gm(function (s) {
           var o = G().applyPushResults(s, ops, r, ctx());
           o.changed = (o.done || 0) + (o.failed || 0);
           return o;
-        }) || {};
+        }, ep) || {};
         report.pushed.done += res.done || 0;
         report.pushed.failed += res.failed || 0;
         var results = r && Array.isArray(r.results) ? r.results : [];
@@ -380,24 +428,28 @@
     });
   }
 
-  function finish(report, errors, manual) {
+  function finish(report, errors, manual, ep) {
     var main = errors.filter(function (e) { return e && e.type !== 'canceled'; })[0] || null;
     var t = now();
     gm(function (s) {
       var p = G().prune(s, t);
       s.gcal.lastSyncAt = t.toISOString();
-      var before = JSON.stringify(s.gcal.lastError);
-      s.gcal.lastError = main ? { type: main.type, message: main.message || '', at: t.toISOString() } : null;
-      return { changed: (p.removed || 0) + (p.linksDropped || 0) + (JSON.stringify(s.gcal.lastError) !== before ? 1 : 0) };
-    });
+      // 레이트 리밋으로 이번 회차를 건너뛰었으면 앞 회차의 오류(왜 멈췄는지)를 그대로 둔다
+      if (main || !report.backoff) s.gcal.lastError = main ? { type: main.type, message: main.message || '', at: t.toISOString() } : null;
+      // 일정이 정리됐을 때만 화면을 다시 그린다 (lastSyncAt·오류는 설정 카드가 아래 notify 로 다시 그린다)
+      return { changed: (p.removed || 0) + (p.linksDropped || 0) };
+    }, ep);
     if (report.edited > 0) toast('Google 캘린더에서 바꾼 일정 ' + report.edited + '개를 반영했어요.');
     if (main) {
       report.ok = false;
       report.error = main;
       if (AUTH_TYPES[main.type]) loadStatus();
-      if (manual && ERROR_TEXT[main.type]) toast(ERROR_TEXT[main.type]);
+      if (manual) {
+        if (main.type === 'rate_limit') toast(rateText());
+        else if (ERROR_TEXT[main.type]) toast(ERROR_TEXT[main.type]);
+      }
     } else if (report.backoff && manual) {
-      toast(ERROR_TEXT.rate_limit);
+      toast(rateText());
     }
     var g = S().state.gcal;
     if (main && OFFLINE_TYPES[main.type]) setPhase('offline');
@@ -413,20 +465,25 @@
     if (!available() || !status.signedIn) return Promise.resolve(null);
     if (running) { pushAfter = true; return running; }
     var report = emptyReport(), errors = [];
+    var ep = epoch;
     running = Promise.resolve().then(function () {
       var g = S().state.gcal;
       if (!g) return report;
+      // 아직 이 계정으로 한 번도 맞추지 않았다(백업 복원 등) — 계정 확인부터 하는 전체 회차가 맡는다
+      if (g.accountId !== (status.accountId || null)) { rerun = true; return report; }
       var sum = G().summary(S().state, now());
       if (!g.settings.exportEnabled && !sum.draining) return report;
       setPhase('pushing');
-      return pushRounds(report, errors).then(function () {
+      return pushRounds(report, errors, ep).then(function () {
+        live(ep);
         var main = errors[0] || null;
-        if (main) gm(function (s) { s.gcal.lastError = { type: main.type, message: main.message || '', at: now().toISOString() }; return { changed: 1 }; });
+        if (main) gm(function (s) { s.gcal.lastError = { type: main.type, message: main.message || '', at: now().toISOString() }; return { changed: 0 }; }, ep);
         var bo = ms(S().state.gcal.backoffUntil) > now().getTime();
         setPhase(main && OFFLINE_TYPES[main.type] ? 'offline' : bo ? 'backoff' : main ? 'error' : 'idle');
         return report;
       });
-    }).catch(function (e) { console.error(e); return report; }).then(function (r) { running = null; finishRun(); return r; });
+    }).catch(function (e) { if (e && e.stale) { setPhase('idle'); return report; } console.error(e); return report; })
+      .then(function (r) { running = null; finishRun(); return r; });
     return running;
   }
 
@@ -445,7 +502,8 @@
       if (res.status) setStatus(res.status); else loadStatus();
       if (res.ok && status.signedIn) {
         toast('Google 계정(' + (status.email || '') + ')을 연결했어요. 일정을 가져오는 중이에요.');
-        syncNow({ reason: 'signin' });
+        // setStatus(로그인 전환)나 google:changed 가 이미 회차를 시작했으면 그 회차가 가져온다 (두 번 돌지 않게)
+        if (!running) syncNow({ reason: 'signin' });
       }
       return res;
     });
@@ -460,6 +518,8 @@
     if (!hasHost()) return Promise.resolve({ ok: false, error: { type: 'unavailable', message: '' } });
     return wrap(host().google.signOut()).then(function (res) {
       if (!res.ok) { if (res.status) setStatus(res.status); return res; }
+      epoch++;                          // 돌고 있던 회차의 늦은 응답이 지운 일정을 되살리지 않게
+      clearTimeout(pushTimer);
       S().mutate(null, function (s) { G().resetForAccount(s, null); }, { source: 'gcal' });
       calListAt = 0;
       if (res.status) setStatus(res.status); else loadStatus();
@@ -513,11 +573,12 @@
 
   function refreshCalendars() {
     if (!available()) return Promise.resolve({ ok: false, error: { type: 'unavailable' } });
+    var ep = epoch;
     return wrap(host().gcal.calendars()).then(function (r) {
-      if (r.ok) {
+      if (r.ok && ep === epoch) {
         calListAt = Date.now();
-        var c = ctx();
-        gm(function (s) { return G().mergeCalendarList(s, r.items || [], c); });
+        mergeCalendars(r.items || [], ep);
+        notify();
       }
       return r;
     });
@@ -565,6 +626,8 @@
       S().subscribe(function (info) {
         if (!info) return;
         if ((info.type === 'change' && info.source !== 'gcal' && info.source !== 'gcal-settings') || info.type === 'undo') schedulePush();
+        // 백업 가져오기(replaceAll) — 블록·gcal 이 통째로 바뀌었다. 계정 확인부터 하는 전체 회차로 맞춘다
+        else if (info.type === 'load' && status.signedIn) syncNow({ reason: 'start' });
       });
     });
   }

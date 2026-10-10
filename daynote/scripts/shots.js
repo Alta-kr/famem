@@ -83,7 +83,7 @@ const STEPS = [
     Daynote.app.openTask(t.id);`],
   ['10-캘린더-주간', `
     Daynote.app.closeDetail();
-    Daynote.app.go('calendar');
+    Daynote.app.go('calendar', { mode: 'week' });   // 처음 여는 캘린더는 월간 — 이 장면은 주간 시간표
     new Promise(r => setTimeout(r, 200)).then(() => { document.querySelector('.cal-scroll').scrollTop = 8 * 48; });`],
   ['11-캘린더-일정배치대화상자', `
     var t = Daynote.store.state.tasks.find(x => x.status !== 'done' && !x.deletedAt);
@@ -129,10 +129,16 @@ const STEPS = [
     Daynote.app.applyPrefs();
     Daynote.app.go('today');`, { width: 1280, height: 800 }],
   // 17 — 상태 선언('퇴근')을 채팅에 보낸 뒤의 홈 (STATUS #160). 샘플 데이터를 다시 불러와 같은 모습으로 찍는다.
+  // loadSample 은 샘플을 덧붙이므로, 앞 단계의 샘플·대화가 겹치지 않게 먼저 비운다.
   ['17-퇴근후-홈', `
     document.querySelectorAll('.overlay').forEach(o => o.remove());
-    clearToasts();
+    Daynote.app.closeDetail();
+    Daynote.store.replaceAll(Daynote.model.emptyState());
+    Daynote.store.mutate(null, s => { s.prefs.theme = 'light'; }, { silent: true });
+    Daynote.app.applyPrefs();
     Daynote.app.loadSample();
+    Daynote.store.mutate(null, s => { s.meta.lastNudgeAt = new Date('${NOW}').toISOString(); });
+    clearToasts();
     Daynote.app.go('today');
     new Promise(r => setTimeout(r, 300)).then(() => {
       if (Daynote.assistant && Daynote.assistant.send) Daynote.assistant.send('퇴근');
@@ -140,8 +146,11 @@ const STEPS = [
     }).then(clearToasts);`, { width: 1440, height: 900 }],
   // 18 — 캘린더 월간 보기 (CAL §8)
   ['18-캘린더-월간', `
+    Daynote.store.replaceAll(Daynote.model.emptyState());
+    Daynote.store.mutate(null, s => { s.prefs.theme = 'light'; }, { silent: true });
+    Daynote.app.applyPrefs();
     Daynote.app.loadSample();
-    Daynote.app.go('calendar');
+    Daynote.app.go('calendar', { mode: 'month' });
     new Promise(r => setTimeout(r, 300)).then(clearToasts);`]
 ];
 
@@ -165,10 +174,10 @@ module.exports = async function takeShots(win, outDir) {
     }
     await wait(700);
     await win.webContents.executeJavaScript(SETTLE, true);
-    // 숨긴 창은 첫 캡처에 지난 화면이 찍힐 수 있다 — 다시 그리게 하고 한 번 버린 뒤 찍는다
+    // 숨긴 창은 첫 캡처·창 크기를 바꾼 뒤 첫 캡처에 지난 화면이 찍힐 수 있다 — 다시 그리게 하고 한 번 버린 뒤 찍는다
     try { win.webContents.invalidate(); } catch (e) {}
     await wait(100);
-    if (!done.length) { await win.webContents.capturePage(); await wait(200); }
+    if (!done.length || size) { await win.webContents.capturePage(); await wait(200); }
     const img = await win.webContents.capturePage();
     const file = path.join(outDir, name + '.png');
     fs.writeFileSync(file, img.toPNG());

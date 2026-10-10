@@ -45,7 +45,7 @@
   var ACT_LABEL = { guide: '설정 방법 보기', client: '클라이언트 바꾸기', signin: '다시 연결', retry: '다시 시도', sync: '지금 동기화', recreate: '다시 만들기' };
 
   // 다시 그려도 남는 화면 값
-  var mem = { advOpen: false, jsonMode: false, changingClient: false, err: null, busy: null, draft: null };
+  var mem = { advOpen: false, jsonMode: false, changingClient: false, err: null, busy: null, draft: null, refocus: null };
   var root = null, unsub = null, pending = false;
 
   function h() { return DN.ui.h.apply(null, arguments); }
@@ -88,7 +88,12 @@
     else if (kind === 'client') { mem.changingClient = true; mem.err = null; paint(true); focusId('gc-id'); }
     else if (kind === 'signin' || kind === 'retry') doSignIn();
     else if (kind === 'sync') g.syncNow({ reason: 'manual' });
-    else if (kind === 'recreate') g.ensureExportCalendar();
+    else if (kind === 'recreate') {
+      mem.err = null;
+      g.ensureExportCalendar().then(function (r) {          // 실패하면 이유를 카드 위쪽에 보여 준다
+        if (r && r.ok === false) { mem.err = r.error || { type: 'unknown' }; paint(true); }
+      });
+    }
   }
 
   function actBtn(kind, primary) {
@@ -374,7 +379,7 @@
     var sc = scopes(st);
     function mark(b) { return b ? ' ✓' : ' ✗'; }
     var det = h('details.settings-adv.gcal-adv#gc-adv', { open: mem.advOpen },
-      h('summary', ui().icon('chevronDown'), '고급'),
+      h('summary#gc-adv-sum', ui().icon('chevronDown'), '고급'),
       h('p.help', '클라이언트: ' + (c.idHint || '없음') + (c.source && SOURCE_TEXT[c.source] ? ' (' + SOURCE_TEXT[c.source] + ')' : '')),
       h('div.gcal-actions',
         st.state !== 'needs_setup' ? h('button.btn.btn-sm', { type: 'button', id: 'gc-change', onclick: function () { act('client'); } }, '클라이언트 바꾸기') : null,
@@ -470,7 +475,9 @@
     if (!force && typing()) { pending = true; return; }
     pending = false;
     var a = document.activeElement;
-    var focusedId = a && root.contains(a) && a.id ? a.id : null;
+    var inCard = !!(a && root.contains(a));
+    var focusedId = inCard && a.id ? a.id : null;
+    var lost = !a || a === document.body || focusedId === 'set-gcal-h';
     if (mem.changingClient || status().state === 'needs_setup') {
       var d = readDraft();
       if (d && (d.id || d.secret || d.json)) mem.draft = d;
@@ -480,15 +487,23 @@
     var st = status();
     if (st.state === 'needs_setup') mem.changingClient = false;
     body(st).forEach(function (n) { if (n) root.appendChild(n); });
-    if (focusedId) {
-      var el = root.querySelector('#' + focusedId);
-      if (el && !el.disabled) try { el.focus(); } catch (e) {}
-    }
+    // 포커스 되살리기. 누른 버튼이 잠깐 비활성(동기화 중…·연결 중)이 되면 카드 제목에 두었다가, 다시 쓸 수 있게 되면 돌려준다
+    //   (키보드 사용자가 [지금 동기화] 뒤에 포커스를 잃지 않게)
+    var back = mem.refocus && lost ? root.querySelector('#' + mem.refocus) : null;
+    if (back && !back.disabled) { mem.refocus = null; focusEl(back); return; }
+    if (!mem.refocus || !lost) mem.refocus = null;
+    if (!focusedId) return;
+    var el = root.querySelector('#' + focusedId);
+    if (el && !el.disabled) { focusEl(el); return; }
+    if (focusedId !== 'set-gcal-h') mem.refocus = focusedId;
+    focusEl(root.querySelector('#set-gcal-h'));
   }
+  function focusEl(el) { if (el) try { el.focus(); } catch (e) {} }
 
   function render(ctx) {
     void ctx;
     destroy();
+    mem.refocus = null;
     root = h('section.card.settings-card.gcal-card#set-gcal', { 'aria-labelledby': 'set-gcal-h' });
     root.addEventListener('focusout', function () {
       setTimeout(function () { if (pending && root && !typing()) paint(); }, 0);
@@ -510,6 +525,11 @@
 
   function destroy() {
     if (unsub) { try { unsub(); } catch (e) {} unsub = null; }
+    // 설정 화면 전체를 다시 그릴 때(다른 카드의 변경 등) 붙여 넣던 클라이언트 값을 잃지 않게 남겨 둔다
+    if (root && (mem.changingClient || status().state === 'needs_setup')) {
+      var d = readDraft();
+      if (d && (d.id || d.secret || d.json)) mem.draft = d;
+    }
     root = null;
     pending = false;
   }
