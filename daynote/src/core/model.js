@@ -96,7 +96,7 @@
     return s;
   }
 
-  var TASK_NULLABLE = ['context', 'contextSource', 'atMode', 'atModeSource'];
+  var TASK_NULLABLE = ['context', 'contextSource', 'atMode', 'atModeSource', 'schedHints'];
   function normalizeTask(t) {
     var r = Object.assign({
       id: uid('task'), title: '', memo: '', projectId: null, status: 'todo', priority: null,
@@ -114,6 +114,8 @@
       contextSource: null,                // null | 'user' | 'ai'  ('user' + context null = 사용자가 '정하지 않음'으로 고정)
       atMode: null,                       // 걸어 둔 상태: null | 'work'|'off'|'out'|'pause'|'rest'
       atModeSource: null,                 // null | 'user' | 'ai' | 'rule'
+      // 배치 힌트 (캘린더 배치용). AI·사용자 값만 저장한다 — 제목으로 짐작한 힌트는 읽을 때 계산한다(planner.hintsOf).
+      schedHints: null,                   // null | { focus, energy, prefer, splittable, source:'ai'|'user', at }
       createdAt: iso(), updatedAt: iso(), startedAt: null, completedAt: null, deletedAt: null, archivedAt: null,
       sample: false
     }, t);
@@ -228,6 +230,10 @@
     if ('title' in p && p.title !== t.title && t.contextSource === 'ai' && !('contextSource' in p)) {
       p.context = null;
       p.contextSource = null;
+    }
+    // 제목이 바뀌면 AI 가 짐작한 배치 힌트도 근거가 사라진다 (사용자가 정한 힌트는 그대로)
+    if ('title' in p && p.title !== t.title && t.schedHints && t.schedHints.source === 'ai' && !('schedHints' in p)) {
+      p.schedHints = null;
     }
     // 사용자가 소요 시간을 직접 고치면 더 이상 추정값이 아니다
     if ('estimateMinutes' in p && !('estimateSource' in p)) p.estimateSource = p.estimateMinutes == null ? null : 'user';
