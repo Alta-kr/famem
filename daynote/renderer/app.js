@@ -271,19 +271,25 @@
     var ta = h('textarea.textarea', { rows: 6, placeholder: '떠오른 생각을 적어 두세요. 분류는 나중에 해도 됩니다.', 'aria-label': '빠른 메모' });
     ta.value = st.quickDraft.text || '';
     var proj = h('select.select', { 'aria-label': '프로젝트 (선택)' }, ui.projectOptions(st, st.quickDraft.projectId, '프로젝트 선택 안 함'));
-    var t;
+    var t, saved = false;
     function keep() {
       clearTimeout(t);
+      if (saved) return;   // 저장하고 닫을 때는 방금 저장한 글을 초안으로 되살리지 않는다
       t = setTimeout(function () { S.mutate(null, function (s) { s.quickDraft = { text: ta.value, projectId: proj.value || null }; }, { silent: true }); }, 250);
+    }
+    function save() {
+      var r = saveQuick(ta.value, proj.value || null);
+      if (r !== false) { saved = true; clearTimeout(t); }
+      return r;
     }
     ta.addEventListener('input', keep); proj.addEventListener('change', keep);
     var m = ui.modal({
       title: '빠른 메모',
       body: [ta, h('div.field-row', h('div.field', proj), h('div.help', { style: { alignSelf: 'center' } }, 'Ctrl+Enter로 저장 · 닫아도 초안이 남습니다'))],
-      actions: [{ label: '닫기' }, { label: '메모 저장', primary: true, onClick: function () { return saveQuick(ta.value, proj.value || null); } }],
+      actions: [{ label: '닫기' }, { label: '메모 저장', primary: true, onClick: function () { return save(); } }],
       onClose: keep
     });
-    ta.addEventListener('keydown', function (e) { if (e.key === 'Enter' && (e.ctrlKey || e.metaKey)) { if (saveQuick(ta.value, proj.value || null) !== false) m.close(); } });
+    ta.addEventListener('keydown', function (e) { if (e.key === 'Enter' && (e.ctrlKey || e.metaKey)) { if (save() !== false) m.close(); } });
   }
 
   // 입력 저장 — 원문은 바로 메모로 저장되고, AI 가 메모/할 일·프로젝트를 나눠 바로 반영한다 (capture.js)

@@ -141,6 +141,7 @@
     if (range && startTime) {
       var sh = +startTime.slice(0, 2), eh = +range[2];
       if (eh <= 12 && sh >= 12) eh += 12;
+      else if (eh <= sh && eh < 12 && eh + 12 > sh) eh += 12;      // 정오를 넘는 범위: "오전 11시~1시" → 13시
       if (eh > sh) {
         var span = (eh - sh) * 60 - +startTime.slice(3);
         if (span) return { minutes: span, text: range[0], index: range.index };

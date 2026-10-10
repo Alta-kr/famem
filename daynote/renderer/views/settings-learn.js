@@ -18,10 +18,10 @@
   ];
   var PAGE = 50;
   var LEVEL_TEXT = { strong: '확실', hint: '참고', weak: '약해지는 중' };
-  var WEEK = ['일', '월', '화', '수', '목', '금', '토'];
 
   // 더 보기로 늘린 개수 (다시 그려도 남는 값)
-  var mem = { shown: {} };
+  // refocus: 지우기·더 보기 뒤 다시 그려진 카드에서 포커스를 둘 곳 { type, index } | { head:true }
+  var mem = { shown: {}, refocus: null };
 
   function S() { return DN.store; }
   function ui() { return DN.ui; }
@@ -44,13 +44,12 @@
     return q(k);
   }
 
-  function dateText(to) {
-    var m = /^d([0-6])$/.exec(to || '');
-    if (m) return '가장 가까운 ' + WEEK[+m[1]] + '요일';
-    if (to === 'm-1') return '그달 마지막 날';
-    m = /^m([0-9]+)$/.exec(to || '');
-    if (m) return '그달 ' + m[1] + '일';
-    return String(to || '');
+  // 날짜 규칙의 대상 — to 는 'd0'(월)…'d6'(일) | 'm1'…'m31' | 'm-1'(말일)이고, 뜻은 어휘(key)에 따라 다르다
+  // ('주말' → 가장 가까운 일요일, '다음주' → 다음 주 수요일, '다음달' → 다음 달 5일). 말은 AD.says 가 만든다.
+  function dateText(r) {
+    var AD = DN.adapt;
+    if (AD && AD.says) { try { return AD.says('date', r.to, { key: r.key }); } catch (e) { /* 아래로 */ } }
+    return String(r.to || '');
   }
 
   function dayText(iso) {
@@ -66,15 +65,16 @@
       var p = M && M.byId ? M.byId(st.projects, r.to) : null;
       return r.missing || !p ? h('span.chip.chip-missing', '지운 프로젝트') : h('span.chip.chip-project', p.name);
     }
-    if (r.type === 'date') return h('span.chip', dateText(r.to));
-    var ST = DN.statusCore, label = r.to === 'none' ? '맥락 없음' : r.to;
-    if (ST && ST.contextLabel && r.to !== 'none') {
-      try { label = ST.contextLabel(profile(), r.to) || r.to; } catch (e) { label = r.to; }
+    if (r.type === 'date') return h('span.chip', dateText(r));
+    // 할 일 맥락 (C9) — 이름은 지금 프로필에서 찾는다('none' → '정하지 않음', 지운 맥락 → '지운 맥락')
+    var ST = DN.statusCore, label = r.to === 'none' ? '정하지 않음' : r.to;
+    if (ST && ST.contextLabel) {
+      try { label = ST.contextLabel(profile(), r.to) || label; } catch (e) { /* 위 값 그대로 */ }
     }
     return h('span.chip', label);
   }
 
-  function ruleRow(r) {
+  function ruleRow(r, idx) {
     var key = keyText(r);
     var meta = [r.n + '번 고침'];
     var day = dayText(r.last);
@@ -89,9 +89,32 @@
       h('button.icon-btn', {
         type: 'button', 'aria-label': key + ' → ' + chip.textContent + ' 규칙 지우기', title: '지우기',
         onclick: function () {
-          if (DN.capture && DN.capture.forgetRule) DN.capture.forgetRule(r.id, r.label || r.key);
+          if (!(DN.capture && DN.capture.forgetRule)) return;
+          // 다시 그려진 뒤 같은 자리(다음 규칙)의 × 에 포커스 — 키보드로 연달아 지울 수 있게
+          setRefocus({ type: r.type, index: idx });
+          DN.capture.forgetRule(r.id, r.label || r.key);
         }
       }, ui().icon('x')));
+  }
+
+  function setRefocus(target) { target.at = Date.now(); mem.refocus = target; }
+
+  // render 가 돌려준 section 은 아직 문서에 붙기 전이라 다음 틱에 포커스한다. 1초가 지난 요청은 버린다
+  function applyRefocus(section) {
+    var f = mem.refocus;
+    mem.refocus = null;
+    if (!f || Date.now() - f.at > 1000) return;
+    setTimeout(function () {
+      if (!section.isConnected) return;
+      var el = null;
+      if (!f.head) {
+        var list = section.querySelector('ul.learn-list[data-type="' + f.type + '"]');
+        var btns = list ? list.querySelectorAll('.learn-row .icon-btn') : [];
+        if (btns.length) el = btns[Math.min(f.index, btns.length - 1)];
+      }
+      if (!el) el = section.querySelector('#set-learn-h');
+      if (el) el.focus();
+    }, 0);
   }
 
   function summary(st, rules) {
@@ -139,14 +162,19 @@
       var rows = rules.filter(function (r) { return r.type === g.type; });
       if (!rows.length) return;
       var limit = mem.shown[g.type] || PAGE;
-      var list = h('ul.learn-list');
-      rows.slice(0, limit).forEach(function (r) { list.appendChild(ruleRow(r)); });
+      var list = h('ul.learn-list', { 'data-type': g.type, 'aria-label': g.title + ' 규칙' });
+      rows.slice(0, limit).forEach(function (r, i) { list.appendChild(ruleRow(r, i)); });
       section.appendChild(h('h4.learn-group', g.title + ' · ' + rows.length));
       section.appendChild(list);
       if (rows.length > limit) {
         section.appendChild(h('button.link-btn', {
           type: 'button',
-          onclick: function () { mem.shown[g.type] = limit + PAGE; if (ctx && ctx.rerender) ctx.rerender(); }
+          onclick: function () {
+            mem.shown[g.type] = limit + PAGE;
+            if (!(ctx && ctx.rerender)) return;
+            setRefocus({ type: g.type, index: limit });   // 새로 보인 첫 규칙으로
+            ctx.rerender();
+          }
         }, '더 보기 (' + (rows.length - limit) + '개)'));
       }
     });
@@ -165,11 +193,13 @@
           if (!n) return;
           ui().confirm('배운 것을 모두 지울까요?', '규칙 ' + n + '개를 지워요. 메모와 할 일은 그대로예요.', '모두 지우기').then(function (ok) {
             if (!ok) return;
+            setRefocus({ head: true });
             S().mutate('배운 것 모두 지우기', function (s) { AD.reset(s); }, { source: 'learn' });
             ui().undoToast('배운 것을 모두 지웠어요.');
           });
         }
       }, '모두 지우기')));
+    applyRefocus(section);
     return section;
   }
 

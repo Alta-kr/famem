@@ -157,8 +157,11 @@
     });
     if (TL) TL.paintItems(col, ymd, { extra: 'cd-block', armBlock: hooks.armBlock });
     if (ymd === D.ymd(n)) col.appendChild(h('div.cal-now', { 'aria-hidden': 'true', style: { top: px(n.getHours() * 60 + n.getMinutes()) + 'px' } }));
+    function isEmpty(t) { return t === col || t.classList.contains('cal-slot') || t.classList.contains('cd-band'); }
+    var downEmpty = false;
+    col.addEventListener('pointerdown', function (e) { downEmpty = isEmpty(e.target); });
     col.addEventListener('click', function (e) {
-      if (e.target !== col && !e.target.classList.contains('cal-slot') && !e.target.classList.contains('cd-band')) return;
+      if (!downEmpty || !isEmpty(e.target)) return;
       if (!TL) return;
       var start = TL.timeAt(col, ymd, e.clientY, 0);
       var s2 = subject();

@@ -487,3 +487,13 @@ test('validate #37: relativeAt·relativeMinutes·timeMatch·durationSpan 을 내
     { start: { text: '금요일 2시', date: '2026-10-09', time: '14:00' }, duration_minutes: 120 })] }), { note, state: st, now: NOW });
   assert.deepEqual([v.items[0].fields.durationMinutes.value, v.items[0].fields.durationMinutes.status], [120, 'ok']);
 });
+
+test('규칙: 길이 표현 뒤 ‘동안’ 도 제목에서 떼고, 정오를 넘는 범위(‘오전 11시~1시’)는 120분', () => {
+  const a = F.rulesItem('3시간 동안 스터디', 'event', NOW);
+  assert.deepEqual([a.title, a.durationMinutes, a.durationGuessed], ['스터디', 180, false]);
+  const b = F.rulesItem('오전 11시~1시 세미나', 'event', NOW);
+  assert.deepEqual([b.title, b.time, b.durationMinutes, b.durationGuessed], ['세미나', '11:00', 120, false]);
+  assert.equal(V.durationSpan('11시~1시', '11:00').minutes, 120);
+  assert.equal(V.durationSpan('2시~4시', '14:00').minutes, 120);
+  assert.equal(V.durationSpan('9시~10시', '09:00').minutes, 60);
+});

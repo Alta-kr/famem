@@ -122,6 +122,11 @@
         mem.open = false;
         mem.minutes = null; mem.choice = null; mem.skip = []; mem.error = null;
         paint();
+        // 누른 [지금 시작]은 패널과 함께 사라진다 — 포커스가 갈 곳을 잃었으면 입력창으로
+        setTimeout(function () {
+          var a = document.activeElement;
+          if (!destroyed && (!a || a === document.body || !document.documentElement.contains(a))) focusInput();
+        }, 0);
       });
     }
     function breakdown(id) { if (DN.assistant && DN.assistant.breakdown) DN.assistant.breakdown(id); }
@@ -166,8 +171,7 @@
     function paintResults() {
       var act = document.activeElement;
       var focusAct = act && results.contains(act) ? act.getAttribute('data-act') : null;
-      results.textContent = '';
-      if (mem.minutes == null) return;
+      if (mem.minutes == null) { results.textContent = ''; return; }
       var now = A.now();
       var R = DN.recommend;
       var r = R.recommend(S.state, {
@@ -190,7 +194,7 @@
         out.push(h('p.rec-empty', dur + ' 안에 끝낼 수 있는 할 일이 없어요.'),
           h('div.rec-actions',
             bigger != null ? h('button.btn.btn-sm', { type: 'button', 'data-act': 'bigger', onclick: function () { input.value = ''; mem.customText = ''; choose(bigger, String(bigger)); } }, D.duration(bigger) + '으로 보기') : null,
-            r.tooLong && r.tooLong[0] ? h('button.btn.btn-sm', { type: 'button', 'data-act': 'split', onclick: function () { breakdown(r.tooLong[0].taskId); } }, '큰 일 나눠 보기') : null));
+            r.tooLong && r.tooLong[0] ? h('button.btn.btn-sm', { type: 'button', 'data-act': 'split', 'data-task': r.tooLong[0].taskId, onclick: function () { breakdown(r.tooLong[0].taskId); } }, '큰 일 나눠 보기') : null));
       } else if (r.empty === 'all_hidden') {
         out.push(h('p.rec-empty', '지금(‘' + label(st) + '’)은 할 만한 일이 없어요. 쉬어도 돼요.'),
           h('div.rec-actions', h('button.btn.btn-sm', { type: 'button', 'data-act': 'hidden', onclick: function () {
@@ -206,7 +210,12 @@
         out.push(h('p.rec-empty', '후보를 모두 봤어요.'),
           h('div.rec-actions', h('button.btn.btn-sm', { type: 'button', 'data-act': 'reset', onclick: function () { mem.skip = []; paintResults(); } }, '처음부터 다시')));
       }
-      out.forEach(function (x) { if (x) results.appendChild(x); });
+      // 그린 결과가 지금과 같으면 그대로 둔다 — 저장소가 바뀔 때마다 aria-live 가 같은 글을 다시 읽거나 포커스가 튀지 않게
+      var box = document.createElement('div');
+      out.forEach(function (x) { if (x) box.appendChild(x); });
+      if (box.innerHTML === results.innerHTML) return;
+      results.textContent = '';
+      while (box.firstChild) results.appendChild(box.firstChild);
       if (focusAct) {
         var b = results.querySelector('[data-act="' + focusAct + '"]');
         if (b) b.focus();
@@ -221,7 +230,7 @@
       var sum = h('div.rec-sum', dur + ' 안에 할 만한 일' + (r.tooLong && r.tooLong.length ? ' · 더 긴 일 ' + r.tooLong.length + '개는 뺐어요' : ''));
       var reasons = (p.reasons || []).slice(0, 2);
       var chips = h('div.rec-chips-row', ui.estimateChip(t), ui.dueChip(t, now));
-      var item = h('div.rec-item.is-primary',
+      var item = h('div.rec-item.is-primary', { 'data-task': t.id },
         h('div.rec-item-title', titleLink(t)),
         p.step ? h('div.rec-step', '먼저 이 단계부터: ‘' + p.step.title + '’') : null,
         reasons.length ? h('ul.rec-reasons', reasons.map(function (x) { return h('li', x); })) : null,
@@ -235,7 +244,7 @@
       var alts = (r.alternatives || []).map(function (a) {
         var at = taskOf(a.taskId);
         if (!at) return null;
-        return h('li.rec-alt', titleLink(at),
+        return h('li.rec-alt', { 'data-task': at.id }, titleLink(at),
           at.estimateMinutes != null ? h('span.meta', '약 ' + D.duration(at.estimateMinutes)) : null,
           h('button.btn.btn-xs', { type: 'button', 'aria-label': '‘' + at.title + '’ 시작', onclick: function () { startTask(at.id); } }, '시작'));
       }).filter(Boolean);

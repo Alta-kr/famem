@@ -65,8 +65,15 @@
       return { ok: false, error: { type: 'server', message: '가짜 AI: 일시적 서버 오류(시험용)', retryable: true } };
     }
     // 앱이 이미 처리한 상태 보고 줄은 빼고 본다 (줄 번호는 그대로 — 남은 부분은 원문 줄 안에 있다)
+    //   상태 문장은 글 머리의 한 곳뿐이다 — 처음 나온 줄에서 한 번만 뺀다('퇴근!\n퇴근하고 우유 사기' 의 둘째 줄은 그대로)
     if (input.purpose === 'capture' && input.statusLine) {
-      input = Object.assign({}, input, { lines: input.lines.map(function (l) { return withoutStatus(l, input.statusLine); }) });
+      var stripped = false;
+      input = Object.assign({}, input, { lines: input.lines.map(function (l) {
+        if (stripped) return l;
+        var w = withoutStatus(l, input.statusLine);
+        if (w !== null) { stripped = true; return w; }
+        return l;
+      }) });
     }
     var ref = new Date(input.referenceTime);
     var note = { id: input.noteId, title: input.title, body: input.lines.join('\n'), updatedAt: input.referenceTime };
@@ -122,15 +129,19 @@
     };
   }
 
+  // 줄에서 상태 문장을 뺀 나머지. 그 줄에 상태 문장이 없으면 null.
+  //   문장 부호 없이 적힌 경우('퇴근 가는 길에 …')는 낱말 경계일 때만 — '퇴근하고'·'퇴근길에' 의 '퇴근' 은 상태 문장이 아니다
   function withoutStatus(line, statusLine) {
     var sl = String(statusLine || '').trim();
-    if (!sl) return line;
-    var i = line.indexOf(sl);
+    if (!sl) return null;
+    var i = /[.!?~…]$/.test(sl) ? line.indexOf(sl) : -1;
     if (i === -1) {
       var bare = sl.replace(/[.!?~…]+$/, '');
-      i = bare.length >= 2 ? line.indexOf(bare) : -1;
-      if (i === -1) return line;
-      sl = line.slice(i).match(new RegExp('^' + bare.replace(/[.*+?^${}()|[\]\\]/g, '\\$&') + '[.!?~…]*'))[0];
+      if (!bare) return null;
+      var m = new RegExp('(^|[\\s,])(' + bare.replace(/[.*+?^${}()|[\]\\]/g, '\\$&') + '[.!?~…]*)(?=[\\s,.!?~…]|$)').exec(line);
+      if (!m) return null;
+      i = m.index + m[1].length;
+      sl = m[2];
     }
     return (line.slice(0, i) + ' ' + line.slice(i + sl.length)).replace(/\s+/g, ' ').trim();
   }
@@ -159,9 +170,13 @@
     if (tm && withTime) {
       s = s.slice(0, tm.index) + ' ' + s.slice(tm.index + tm.text.length).replace(/^\s*(?:에|부터|까지)(?=[\s,.]|$)/, '');
     }
+    //   걸리는 시간은 '걸리는·걸릴 듯·간·동안' 처럼 걸리는 시간이라고 말한 때만 뗀다 ('5분 스피치 준비' 의 '5분' 은 제목의 일부)
+    var TAKES_RE = /^\s*(?:(?:간|동안)(?:\s*정도)?(?:\s*(?:걸리는|걸릴\s*듯|걸림|걸려요?|걸릴))?|(?:정도\s*)?(?:걸리는|걸릴\s*듯|걸림|걸려요?|걸릴))(?=[\s,.]|$)/;
     (V.durationMentions ? V.durationMentions(s) : []).reverse().forEach(function (d) {
-      var rest = s.slice(d.index + d.text.length).replace(/^\s*(?:간|동안)?\s*(?:정도\s*)?(?:걸리는|걸릴\s*듯|걸림|걸려요?|걸릴)?(?=[\s,.]|$)/, '');
-      s = s.slice(0, d.index) + ' ' + rest;
+      var after = s.slice(d.index + d.text.length);
+      var m = after.match(TAKES_RE);
+      if (!m) return;
+      s = s.slice(0, d.index) + ' ' + after.slice(m[0].length);
     });
     s = s.replace(/\s+/g, ' ').replace(/^[\s,.]+|[\s,.]+$/g, '').replace(/^(?:에|까지|부터)(?:\s+|$)/, '').trim();
     return s || String(title || '');
@@ -232,7 +247,9 @@
         if (tq && tq.candidates.length === 1 && !/^\s*까지/.test(q.slice(tq.index + tq.text.length))) {
           var dt = t.due && t.due.text ? t.due : null;
           var joined = dt ? dt.text + ' ' + tq.text : tq.text;
-          if (q.indexOf(joined) !== -1) {
+          // 날짜 표현 없이 오늘 이미 지난 시각('오전 9시에 운동', 지금 10시)은 할 시각으로 두지 않는다 (규칙 추출 rulesItem 과 같게)
+          var past = !dt && D.parseYmd(D.ymd(ref), tq.candidates[0]) < ref;
+          if (q.indexOf(joined) !== -1 && !past) {
             t.do_at = { text: joined, date: dt ? dt.date : null, time: tq.candidates[0] };
             t.due = { text: null, date: null, time: null };
             timed = true;

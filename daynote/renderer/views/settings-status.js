@@ -567,7 +567,32 @@
         } }, '모두 기본값으로'));
     }
     fill();
+    watchWorkHours(section, workHoursText);
     return section;
+  }
+
+  // '근무 시간' 카드는 조용히(silent) 저장하고 그 자리에서 고친다 — 이 카드의 '근무 시간: …' 줄도 따라 고친다.
+  // 설정 화면 안의 change·click 뒤에 글만 비교해 바꾼다. 카드가 문서에서 빠지면(다시 그리기·화면 이동) 듣기를 그만둔다.
+  var whWatch = null;
+  function unwatchWorkHours() {
+    if (!whWatch) return;
+    document.removeEventListener('change', whWatch, true);
+    document.removeEventListener('click', whWatch, true);
+    whWatch = null;
+  }
+  function watchWorkHours(section, textFn) {
+    unwatchWorkHours();
+    var fn = whWatch = function () {
+      setTimeout(function () {
+        if (whWatch !== fn) return;
+        if (!section.isConnected) { if (document.getElementById('set-status') !== section) unwatchWorkHours(); return; }
+        var el = section.querySelector('.st-workhours');
+        var txt = '근무 시간: ' + textFn();
+        if (el && el.textContent !== txt) el.textContent = txt;
+      }, 0);
+    };
+    document.addEventListener('change', fn, true);
+    document.addEventListener('click', fn, true);
   }
 
   function scrollToCard(id) {
@@ -588,6 +613,6 @@
     render: render,
     // 상태·설정 쓰기(source 'status')로는 다시 그리지 않는다 — 입력 중인 칸과 포커스를 지킨다
     onChange: function (info) { return !!(info && info.source === 'status'); },
-    destroy: function () {}
+    destroy: function () { unwatchWorkHours(); }
   };
 })();

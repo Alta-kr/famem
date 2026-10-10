@@ -77,6 +77,10 @@
       t = setTimeout(function () { S.mutate(null, function (s) { s.quickDraft = { text: ta.value, projectId: null }; }, { source: 'today' }); }, 300);
     }
     function clearNote() { if (note) { note.remove(); note = null; } }
+    function clearDraft() {   // 보낸 글은 초안에서 지운다 (다시 그릴 때 입력창에 되살아나지 않게)
+      clearTimeout(t);
+      S.mutate(null, function (s) { s.quickDraft = { text: '', projectId: null }; }, { source: 'today', silent: true });
+    }
     function sendNow() {
       var v = ta.value;
       if (!v.trim()) return;
@@ -89,8 +93,7 @@
         return;
       }
       clearNote();
-      clearTimeout(t);
-      S.mutate(null, function (s) { s.quickDraft = { text: '', projectId: null }; }, { source: 'today', silent: true });
+      clearDraft();
       ta.value = ''; grow();
       AS.send(v, null);
       setTimeout(function () { var x = document.querySelector('.chat-input textarea'); if (x) x.focus(); }, 0);
@@ -106,7 +109,7 @@
     var slash = DN.slash && DN.slash.attach ? DN.slash.attach(ta, {
       mount: inputBox, placement: 'above', idPrefix: 'slash',
       iconFor: function (n) { return ui.icon(n); },
-      onExecute: function (text) { clearNote(); ta.value = ''; grow(); AS.send(text, null); }
+      onExecute: function (text) { clearNote(); clearDraft(); ta.value = ''; grow(); AS.send(text, null); }
     }) : null;
     ta.addEventListener('input', function () { clearNote(); grow(); keep(); });
     ta.addEventListener('keydown', function (e) {

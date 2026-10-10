@@ -236,7 +236,10 @@ html.dp-dragging, html.dp-dragging * { -webkit-user-select: none; user-select: n
 
 /* ------------------------------------------------------------- 폰 (≤ 640px) */
 @media (max-width: 640px) {
-  .cal-layout { overflow: hidden; }
+  /* .app 은 폰에서 column-reverse 라 내용이 넘치면 위로 밀려난다 — 캘린더는 화면 높이 안에서 안쪽만 스크롤한다 */
+  .cal-layout { overflow: hidden; min-height: 0; }
+  .cal-main { min-height: 0; flex: 1 1 0; }
+  .cal-scroll { min-height: 0; }
   .cal-side { flex: 0 0 auto; border-right: 0; border-bottom: 1px solid var(--border-deco); max-height: 46dvh; }
   .cal-side-head { padding: 8px 12px; display: flex; align-items: center; }
   .cal-side-head h2, .cal-side-head .meta { display: none; }

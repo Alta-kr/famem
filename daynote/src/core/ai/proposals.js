@@ -608,7 +608,8 @@
     });
     if (byL) return note;
     if (note.capture) note.capture.projectByAi = false;
-    learnFrom(state, note, { type: 'project', from: from, to: projectId || 'none', text: note.body }, now);
+    // 같은 프로젝트를 다시 고른 것은 교정이 아니다 (배운 대로 붙인 프로젝트를 확인한 것 — 벌점도 주지 않는다)
+    if (from !== (projectId || 'none')) learnFrom(state, note, { type: 'project', from: from, to: projectId || 'none', text: note.body }, now);
     return note;
   }
 

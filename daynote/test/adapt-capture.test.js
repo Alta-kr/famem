@@ -360,3 +360,21 @@ test('#19 보내는 요청: 힌트 블록은 있고 프로젝트 id·규칙 id �
     delete require.cache[require.resolve('../services/ai')];
   }
 });
+
+test('captureSetProject: 배운 대로 붙인 프로젝트를 같은 값으로 다시 고르면 교정이 아니다 (벌점·학습 없음)', () => {
+  const st = setup();
+  for (const text of ['삼성 견적서 보내기', '삼성 미팅 자료', '삼성 출장 일정']) { const n = submit(st, text); P.captureSetProject(st, n.id, 'p1', NOW); }
+  const note = submit(st, '삼성 계약서 검토하기');
+  P.applyLearned(st, note.id, NOW, { hinted: [] });
+  assert.equal(note.projectId, 'p1');
+  const snap = JSON.stringify(st.learned.rules);
+  P.captureSetProject(st, note.id, 'p1', NOW);
+  assert.equal(JSON.stringify(st.learned.rules), snap);
+  assert.equal(st.learned.metrics.reverted || 0, 0);
+  assert.equal(note.capture.learned.length, 1);
+  // 다른 프로젝트로 바꾸면 그때 벌점과 학습
+  P.captureSetProject(st, note.id, 'p2', NOW);
+  assert.equal(st.learned.metrics.reverted, 1);
+  assert.equal(note.capture.learned.length, 0);
+  assert.ok(rulesOf(st, 'project').some((r) => r.to === 'p2'));
+});

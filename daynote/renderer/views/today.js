@@ -189,6 +189,8 @@
 
   // ------------------------------------------------------------------ 상태별 묶음 (STATUS §9.3–9.6)
   var WHEN_HEAD = { off: '퇴근하고 하기로 한 일', work: '출근하면 하기로 한 일', out: '나간 김에 할 일', rest: '쉬는 날 하기로 한 일', pause: '쉬는 시간에 하기로 한 일' };
+  // 조사만: particle('퇴근 후', '라/이라') → '라'
+  function particle(word, pair) { return ui.josa(word, pair).slice(String(word || '').length); }
 
   function ctxChipOf(t) {
     var chip = null;
@@ -215,16 +217,33 @@
     var groups = { when: part.when.slice(), upNormal: part.up.concat(part.normal), down: part.down.slice() };
     var count = part.when.length + part.up.length + part.normal.length + part.down.length;
 
+    // 숨긴 일은 지금 목록에서 차지하던 자리를 그대로 두고, 나머지 자리를 joinOrder 순서로 채운다 —
+    // 숨긴 일도 함께 다시 매기므로 상태가 바뀌어 다시 보여도 같은 sortOrder 가 생기지 않는다
+    var hiddenSet = {};
+    part.hidden.forEach(function (id) { hiddenSet[id] = true; });
+    function withHidden(joined) {
+      var queue = joined.slice(), out = [], seen = {};
+      tl.open.forEach(function (t) {
+        var id = hiddenSet[t.id] ? t.id : queue.shift();
+        if (id != null && !seen[id]) { seen[id] = true; out.push(id); }
+      });
+      queue.forEach(function (id) { if (!seen[id]) { seen[id] = true; out.push(id); } });
+      return out;
+    }
     function commitOrder(key) {
       return function (ids) {
-        var order = ST.joinOrder(groups, key, ids);
+        var order = withHidden(ST.joinOrder(groups, key, ids));
         S.mutate('할 일 순서 바꾸기', function (s) { order.forEach(function (id, i) { var t = M.byId(s.tasks, id); if (t) t.sortOrder = (i + 1) * 10; }); });
       };
     }
+    // 띄움·보통은 한 묶음이지만 띄움이 늘 위에 온다(§7.1) — 그 경계를 넘는 끌기는 저장해도 보이는 순서가 그대로라 막는다
+    var isUp = {};
+    part.up.forEach(function (id) { isUp[id] = true; });
+    function sameLevel(a, b) { return !!isUp[a] === !!isUp[b]; }
     function list(label, ts, opts, key) {
       var ul = h('ul.home-list', { 'aria-label': label + (key ? ' (끌어서 순서 바꾸기, Alt+위/아래)' : '') },
         ts.map(function (t) { return taskRow(st, t, now, t.id === sel, Object.assign({ noDrag: !key }, opts)); }));
-      if (key) sortable(ul, ts.map(function (t) { return t.id; }), commitOrder(key));
+      if (key) sortable(ul, ts.map(function (t) { return t.id; }), commitOrder(key), key === 'upNormal' ? sameLevel : null);
       return ul;
     }
     var out = [];
@@ -234,8 +253,8 @@
     // 잘 시간 — 내일 첫 일정 · 내일 마감만 한 줄로, [그래도 보기]로 전부
     if (sv.category === 'sleep') {
       var all = tasksOf(part.when.concat(part.up, part.normal, part.extra, part.down, part.hidden));
-      out.push(h('div.today-sleep', h('span', sleepLine(st, now)),
-        all.length ? h('button.link-btn', { type: 'button', 'aria-expanded': mem.sleepOpen ? 'true' : 'false',
+      out.push(h('div.today-sleep', h('span', sleepLine(st, now, pf)),
+        all.length ? h('button.link-btn', { type: 'button', 'aria-expanded': mem.sleepOpen ? 'true' : 'false', 'data-focus-key': 'today-sleep',
           onclick: function () { mem.sleepOpen = !mem.sleepOpen; if (repaintToday) repaintToday(); } }, mem.sleepOpen ? '접기' : '그래도 보기') : null));
       if (mem.sleepOpen && all.length) out.push(list('지금은 뒤로 미룬 일', all, { dim: true, ctx: true }, null));
       if (doneUl) out.push(doneUl);
@@ -252,9 +271,12 @@
         : '지금(‘' + sv.label + '’)은 할 만한 일이 없어요. 쉬어도 돼요.'));
     }
     if (whenT.length) {
+      // 걸어 둔 때가 섞이면(퇴근길: 퇴근하고 + 나가는 김에) 한쪽 머리를 붙이지 않는다
       var mode = whenT[0].atMode;
-      out.push(h('div.today-group-head.is-when', h('span', { 'aria-hidden': 'true' }, '★'), WHEN_HEAD[mode] || '하기로 한 일'));
-      out.push(list(WHEN_HEAD[mode] || '하기로 한 일', whenT, { ctx: true }, 'when'));
+      var mixed = whenT.some(function (t) { return t.atMode !== mode; });
+      var whenHead = (!mixed && WHEN_HEAD[mode]) || '지금 하기로 한 일';
+      out.push(h('div.today-group-head.is-when', h('span', { 'aria-hidden': 'true' }, '★'), whenHead));
+      out.push(list(whenHead, whenT, { ctx: true }, 'when'));
     }
     if (upNormalT.length) out.push(list('오늘의 할 일', upNormalT, {}, 'upNormal'));
     if (extraT.length) {
@@ -262,15 +284,20 @@
       out.push(list('지금 하기 좋은 일', extraT, { ctx: true, estimate: true }, null));
     }
     if (downT.length) {
-      var toggle = h('button.today-group-toggle', { type: 'button', 'aria-expanded': mem.downOpen ? 'true' : 'false',
+      var toggle = h('button.today-group-toggle', { type: 'button', 'aria-expanded': mem.downOpen ? 'true' : 'false', 'data-focus-key': 'today-down',
         onclick: function () { mem.downOpen = !mem.downOpen; if (repaintToday) repaintToday(); } },
         ui.icon(mem.downOpen ? 'chevronDown' : 'chevronRight'),
-        sv.guessed ? '시간표로 보면 지금은 ‘' + sv.label + '’이라 뒤로 미룬 일 ' + downT.length + '개'
+        sv.guessed ? '시간표로 보면 지금은 ‘' + sv.label + '’' + particle(sv.label, '라/이라') + ' 뒤로 미룬 일 ' + downT.length + '개'
                    : '지금은 뒤로 미룬 일 ' + downT.length + '개');
       out.push(h('div.today-group-head.is-down', toggle,
         sv.guessed ? h('button.link-btn.today-confirm', { type: 'button', onclick: function () {
-          if (DN.status && DN.status.confirmGuess) DN.status.confirmGuess();
-        } }, '‘' + sv.label + '’' + ui.josa(sv.label, '로/으로').slice(String(sv.label).length) + ' 정하기') : null));
+          if (!(DN.status && DN.status.confirmGuess)) return;
+          DN.status.confirmGuess();
+          // 누른 버튼은 다시 그리며 사라진다 — 접힌 숨김 줄(없으면 뒤로 미룬 일 머리)로 포커스를 옮긴다
+          var host = document.getElementById('home-sec-tasks');
+          var next = host && (host.querySelector('[data-focus-key="today-hidden"]') || host.querySelector('[data-focus-key="today-down"]'));
+          if (next && next.focus) next.focus();
+        } }, '‘' + sv.label + '’' + particle(sv.label, '로/으로') + ' 정하기') : null));
       if (mem.downOpen) out.push(list('지금은 뒤로 미룬 일', downT, { dim: true, ctx: true }, 'down'));
     }
     if (hiddenT.length) {
@@ -285,6 +312,8 @@
         out.push(list('숨긴 할 일', hiddenT, { dim: true, ctx: true, onOpen: function (t) {
           if (DN.status && DN.status.markShown) DN.status.markShown(t.id);
           A.openTask(t.id);
+          // markShown 은 조용한(silent) 쓰기라 저장소 알림이 없다 — 보통 묶음으로 옮겨 다시 그린다
+          if (repaintToday) repaintToday();
         } }, null));
       }
     }
@@ -293,12 +322,17 @@
   }
 
   // 잘 시간 한 줄: 내일 첫 일정 10:00 ‘팀 회의’ · 내일 마감 ‘견적서 보내기’ 외 1개
-  function sleepLine(st, now) {
-    var tomorrow = D.addDays(D.startOfDay(now), 1);
+  // '내일'은 하루 시작(기본 04:00) 기준이다 — 토 01:25 에 자러 가면 내일은 토요일
+  function sleepLine(st, now, pf) {
+    var base = D.startOfDay(now);
+    var ds = pf && pf.schedule && typeof pf.schedule.dayStartMin === 'number' ? pf.schedule.dayStartMin : 4 * 60;
+    if (now.getHours() * 60 + now.getMinutes() < ds) base = D.addDays(base, -1);
+    var tomorrow = D.addDays(base, 1);
     var tYmd = D.ymd(tomorrow);
     var parts = [];
     var items = M.calendarItems ? M.calendarItems(st, tomorrow.toISOString(), D.addDays(tomorrow, 1).toISOString(), { includeAllDay: false }) : [];
-    var first = items.filter(function (x) { return D.ymd(x.start) === tYmd; })[0];
+    // 일정만 (할 일 작업 블록은 빼고) — 상태 카드의 '내일 첫 일정'과 같은 기준
+    var first = items.filter(function (x) { return D.ymd(x.start) === tYmd && (x.kind === 'event' || x.external); })[0];
     if (first) {
       var ft = first.taskId && M.byId(st.tasks, first.taskId);
       parts.push('내일 첫 일정 ' + D.hm(first.start) + ' ‘' + (ft ? ft.title : (first.title || '일정')) + '’');
@@ -498,11 +532,13 @@
   }
 
   // ------------------------------------------------------------------ 끌어 놓아 순서 바꾸기 (+ Alt+↑/↓)
-  function sortable(ul, ids, commit) {
+  // canMove(id, targetId) (선택): false 면 그 자리로는 옮기지 않는다 — 띄움·보통이 한 묶음일 때 띄움은 늘 위라서
+  function sortable(ul, ids, commit, canMove) {
     var dragId = null;
     function rows() { return Array.prototype.slice.call(ul.querySelectorAll('li[data-id]')); }
     function clearMarks() { rows().forEach(function (r) { r.classList.remove('drop-before', 'drop-after', 'is-dragging'); }); }
     function move(id, targetId, after) {
+      if (canMove && !canMove(id, targetId)) return;
       var order = ids.filter(function (x) { return x !== id; });
       var i = order.indexOf(targetId);
       if (i < 0) return;
@@ -520,8 +556,9 @@
     ul.addEventListener('dragover', function (e) {
       if (!dragId) return;
       var li = e.target.closest && e.target.closest('li[data-id]');
-      e.preventDefault();
       rows().forEach(function (r) { r.classList.remove('drop-before', 'drop-after'); });
+      if (li && canMove && !canMove(dragId, li.getAttribute('data-id'))) return;   // 놓을 수 없는 자리
+      e.preventDefault();
       if (!li || li.getAttribute('data-id') === dragId) return;
       var r = li.getBoundingClientRect();
       li.classList.add(e.clientY < r.top + r.height / 2 ? 'drop-before' : 'drop-after');
@@ -546,7 +583,7 @@
       var i = ids.indexOf(id), j = e.key === 'ArrowUp' ? i - 1 : i + 1;
       if (i < 0 || j < 0 || j >= ids.length) return;
       move(id, ids[j], e.key === 'ArrowDown');
-      setTimeout(function () { var x = document.querySelector('li[data-id="' + id + '"]'); if (x) x.focus(); }, 0);
+      setTimeout(function () { var x = document.querySelector('.home-lists li[data-id="' + id + '"]'); if (x) x.focus(); }, 0);
     });
   }
 

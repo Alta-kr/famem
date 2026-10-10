@@ -62,16 +62,23 @@
 .agenda-allday .time { color: var(--text-tertiary); }
 
 @media (max-width: 860px) {
+  /* 세로로 쌓이는 홈(≤860): 할 일·메모 칸이 flex-basis 0 이라 높이 0 으로 접히던 문제(기본 styles.css 그대로일 때) —
+     폰처럼 칸을 내용 높이로 쌓고 .home 이 스크롤한다 (보기 칸은 today.js 가 overflow:hidden 으로 둔다) */
+  .home { height: 100%; }
+  .home-today { flex: none; overflow: visible; }
+  .home-sec, .home-sec-tasks, .home-sec-memos, .home-sec-agenda { flex: none !important; height: auto !important; }
+  .home-scroll { overflow: visible; }
   .home.has-status { grid-template-rows: auto 60vh auto; }
   .home.has-status .home-status { display: flex; align-items: center; gap: 8px; position: sticky; top: 0; z-index: 5; min-height: 44px;
-    background: var(--bg-app); grid-column: 1 / -1; min-width: 0; }
+    background: var(--bg-app); grid-column: 1 / -1; min-width: 0;
+    box-shadow: 0 -16px 0 var(--bg-app); }   /* 붙어 있는 동안 위쪽 여백(.home padding)으로 내용이 비치지 않게 */
   .home-status .status-chip { height: 36px; margin-left: 0; }
   .home-today-head .status-chip { display: none; }
 }
 
 @media (max-width: 640px) {
-  /* 폰: 홈 전체가 한 줄로 쌓이고 .home 이 스크롤한다 (보기 칸은 today.js 가 overflow:hidden 으로 둔다) */
-  .home { height: 100%; grid-template-rows: max-content max-content; }
+  /* 폰: 홈 전체가 한 줄로 쌓이고 .home 이 스크롤한다 */
+  .home { grid-template-rows: max-content max-content; }
   .home.has-status { grid-template-rows: max-content max-content max-content; }
   .rec-cta-text { flex-basis: 100%; }
   .rec-cta-actions { width: 100%; margin-left: 0; }

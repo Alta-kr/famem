@@ -282,7 +282,12 @@
           mem.focusYmd = ymd;
           endPick(false, true);
           if (CP()) CP().dropOnDay(taskId, ymd, cell).then(function () {
-            setTimeout(function () { if (!mem.popOpen) focusCard(taskId); }, 0);
+            // 카드로 포커스를 돌려준다. 다 넣어 목록에서 빠졌으면 그 날짜 칸으로.
+            setTimeout(function () {
+              if (mem.popOpen || focusCard(taskId)) return;
+              var m = live && live.month ? live.month() : null;
+              if (m) m.focusDay(ymd);
+            }, 0);
           });
         },
         onCancelPick: function () { endPick(true); },
@@ -349,8 +354,11 @@
         for (var i = 0; i < 48; i++) col.appendChild(h('div.cal-slot' + (i % 2 === 0 ? '.hour' : ''), { style: { top: minToPx(i * 30) + 'px', height: minToPx(30) + 'px' } }));
         if (tl) tl.paintItems(col, key, { armBlock: armBlock });
         if (key === today) col.appendChild(h('div.cal-now', { style: { top: minToPx(now.getHours() * 60 + now.getMinutes()) + 'px' }, 'aria-hidden': 'true' }));
+        // 빈 칸을 눌렀다 뗀 클릭만 '일정 추가'로 본다 (블록에서 누르고 다른 곳에서 뗀 클릭은 무시)
+        var downEmpty = false;
+        col.addEventListener('pointerdown', function (e) { downEmpty = e.target === col || e.target.classList.contains('cal-slot'); });
         col.addEventListener('click', function (e) {
-          if (e.target !== col && !e.target.classList.contains('cal-slot')) return;
+          if (!downEmpty || (e.target !== col && !e.target.classList.contains('cal-slot'))) return;
           var start = tl ? tl.timeAt(col, key, e.clientY, 0) : D.parseYmd(key, '09:00');
           DN.views.schedule.open({ event: true, start: start });
         });
@@ -473,7 +481,9 @@
 
   function focusCard(id) {
     var c = document.querySelector('[data-focus-key="unsched:' + id + '"]');
-    if (c && c.isConnected) try { c.focus(); } catch (e) { /* 없음 */ }
+    if (!c || !c.isConnected) return false;
+    try { c.focus(); } catch (e) { return false; }
+    return document.activeElement === c;
   }
 
   // ------------------------------------------------------------------ 끌기 (CAL §4, §10.1)

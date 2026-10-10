@@ -102,7 +102,8 @@
       // 길이: 상대 시각 표현("1시간 후")은 길이가 아니므로 가리고 찾는다
       var scan = relRange ? line.slice(0, relRange[0]) + new Array(relRange[1] - relRange[0] + 1).join(' ') + line.slice(relRange[1]) : line;
       var span = V.durationSpan(scan, time);
-      if (span) used.push([span.index, span.index + span.text.length]);
+      // "3시간 동안 스터디" 의 '동안'·'간' 도 함께 뗀다
+      if (span) used.push([span.index, extend(line, span.index + span.text.length, /^\s*(?:간|동안)(?=[\s,.]|$)/)]);
       var etitle = cut(line, used);
       return { kind: 'event', title: clip(etitle || fallback), date: date, time: time, timeUncertain: uncertain,
         durationMinutes: span ? span.minutes : EVENT_MIN, durationGuessed: !span };

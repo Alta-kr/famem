@@ -153,3 +153,16 @@ test('#74 프롬프트: SYSTEM 에 규칙 ‘N. 배치 힌트’, 버전 capture
   assert.match(C.SYSTEM, /^N\. 배치 힌트: tasks 마다 sched 를 채웁니다/m);
   assert.ok(C.SYSTEM.indexOf('N. 배치 힌트') > C.SYSTEM.indexOf('M. 걸어 둔 상태'));
 });
+
+test('가짜 AI 제목: 걸리는 시간이라고 말한 길이만 떼고(‘1시간 정도 걸리는’), 제목의 일부인 ‘5분 스피치’ 는 그대로', () => {
+  const st = M.emptyState();
+  const o1 = fake.organize(C.buildInput(addNote(st, '1시간 정도 걸리는 보고서 작성'), { today: '2026-10-05 (월)', projects: [], openTasks: [] })).output;
+  assert.deepEqual([o1.tasks[0].title, o1.tasks[0].sched.minutes], ['보고서 작성', 60]);
+  const o2 = fake.organize(C.buildInput(addNote(st, '5분 스피치 준비하기'), { today: '2026-10-05 (월)', projects: [], openTasks: [] })).output;
+  assert.equal(o2.tasks[0].title, '5분 스피치 준비하기');
+  // 날짜 없이 오늘 이미 지난 시각(10:00 기준 오전 9시)은 할 시각으로 두지 않는다
+  const o3 = fake.organize(C.buildInput(addNote(st, '오전 9시에 운동하기'), { today: '2026-10-05 (월)', projects: [], openTasks: [] })).output;
+  assert.deepEqual(o3.tasks[0].do_at, NOWHEN);
+  const o4 = fake.organize(C.buildInput(addNote(st, '오후 3시에 보고서 작성'), { today: '2026-10-05 (월)', projects: [], openTasks: [] })).output;
+  assert.equal(o4.tasks[0].do_at.time, '15:00');
+});

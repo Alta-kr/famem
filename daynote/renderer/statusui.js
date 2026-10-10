@@ -46,14 +46,17 @@
     if (!p) return '-';
     return [p.activatedAt, JSON.stringify(p.current), (p.shown || []).length, (p.parked || []).length, (p.log || []).length].join('|');
   }
+  // 저장 상태 객체는 mutate 마다(emit 보다 먼저) 새 객체로 바뀐다 — 구독 순서와 상관없이 캐시를 버리는 신호로 쓴다.
+  // (app.js 의 구독이 이 파일보다 먼저 걸리면, 같은 분·같은 rev 로 다시 그리는 화면이 바뀌기 전 view 를 받는 일이 생긴다)
+  function saveMark() { return S() && typeof S().status === 'function' ? S().status() : null; }
   function view(n) {
     if (!ready()) return null;
     n = n ? toDate(n) : now();
-    var st = S().state, pf = profile();
+    var st = S().state, pf = profile(), mark = saveMark();
     var key = Math.floor(n.getTime() / MIN) + '|' + rev + '|' + pf.hash + '|' + presenceKey(st);
-    if (viewCache.key === key) return viewCache.v;
+    if (viewCache.key === key && viewCache.st === st && viewCache.mark === mark) return viewCache.v;
     var v = ST().view(st, pf, n);
-    viewCache = { key: key, v: v };
+    viewCache = { key: key, v: v, st: st, mark: mark };
     return v;
   }
   function effective(n) { return ready() ? ST().effective(S().state, profile(), n || now()) : null; }
@@ -282,6 +285,8 @@
     var verb = cur.id === 'break' ? mins + '분 쉬어요' : (d && d.overlay ? mins + '분 동안 ' + q(cur.label) : q(cur.label) + ' · ' + mins + '분');
     return verb + ' · ' + D().hm(cur.until) + '에 ' + (backTo ? q(backTo) + jo(backTo, '로/으로') : '시간표대로') + ' 돌아갈게요.';
   }
+  // '‘가게 오픈 준비’라는 …' / '‘없는것’이라는 …' (받침에 맞춘 조사)
+  function unknownMessage(u) { return q(u) + jo(u, '라는/이라는') + ' 상태가 없어요. 설정 › 현재 상태에서 만들 수 있어요.'; }
   function setFromCommand(args, opts) {
     opts = opts || {};
     if (!ready()) return { ok: false, message: '상태 기능을 불러오지 못했어요.' };
@@ -304,15 +309,12 @@
       var rl = rt.to && rt.to.label ? rt.to.label : '시간표';
       return { ok: true, label: rl, message: q(rl) + jo(rl, '로/으로') + ' 되돌렸어요.' };
     }
-    if (a.cmd !== 'set') {
-      var u = a.label || String(args || '').trim();
-      return { ok: false, message: q(u) + '라는 상태가 없어요. 설정 › 현재 상태에서 만들 수 있어요.' };
-    }
+    if (a.cmd !== 'set') return { ok: false, message: unknownMessage(a.label || String(args || '').trim()) };
     var target = { id: a.id, label: a.label };
     if (a.until) target.until = a.until;
     if (a.minutes) target.minutes = a.minutes;
     var tr = write(function (s) { return ST().setStatus(s, target, { source: opts.source || 'command' }, pf, n); });
-    if (!tr) return { ok: false, message: q(a.label || args) + '라는 상태가 없어요. 설정 › 현재 상태에서 만들 수 있어요.' };
+    if (!tr) return { ok: false, message: unknownMessage(a.label || String(args || '').trim()) };
     var label = tr.to && tr.to.label ? tr.to.label : a.label;
     if (tr.noop) {
       return { ok: true, noop: true, label: label, message: '이미 ' + q(label) + jo(label, '예요/이에요') + (tr.since ? ' (' + D().hm(tr.since) + '부터).' : '.') };
@@ -341,7 +343,12 @@
     n = n ? toDate(n) : now();
     var pf = profile(), st = S().state;
     if (!st.presence || !st.presence.activatedAt) return false;
-    var changed = !!write(function (s) { return ST().settle(s, pf, n); }, true);
+    // 먼저 사본으로 해 보고, 정리할 것이 있을 때만 저장한다 (1분마다 저장 파일을 다시 쓰지 않게)
+    var changed = false;
+    if (st.presence.current) {
+      var probe = { presence: JSON.parse(JSON.stringify(st.presence)), prefs: st.prefs };
+      if (ST().settle(probe, pf, n)) changed = !!write(function (s) { return ST().settle(s, pf, n); }, true);
+    }
     if (changed) viewCache.key = null;
     // 프리셋 맞추기 제안 — 홈이 보이고 타이핑 중이 아닐 때, 예산 안에서
     try {
@@ -546,6 +553,7 @@
       actions.push(revertBtn);
     } else if (cat === 'life' || cat === 'rest') {
       var outPlace = def && def.place === 'out';
+      var listed = {};   // 위 줄에 이미 적은 할 일은 '지금 하기 좋은 일'로 다시 적지 않는다
       var thanks = to.id === 'off' ? '수고했어요. ' : '';
       if (cat === 'rest') line('오늘은 쉬는 날로 둘게요.' + (hid ? ' ' + hid + jo(hid, '는/은') + ' 접어 뒀어요.' : ''));
       else if (hid) line(thanks + hid + jo(hid, '는/은') + ' 출근하면 다시 보여 드릴게요.');
@@ -555,6 +563,7 @@
         var seen = {};
         outs = outs.filter(function (t) { if (seen[t.id]) return false; seen[t.id] = true; return true; });
         if (outs.length) line('밖에 있는 김에: ' + titles(outs));
+        outs.slice(0, 3).forEach(function (t) { listed[t.id] = true; });
       }
       var bt = levelTasks(v, function (l) { return l.breakthrough && !l.breakthrough.soon && l.level === 'down'; })[0];
       if (bt && v.levels[bt.id].breakthrough) {
@@ -568,7 +577,7 @@
         if (anc.length) line(SW().ATMODE_HEAD[anc[0].atMode] + ': ' + titles(anc.filter(function (t) { return t.atMode === anc[0].atMode; })));
       }
       rec = recommendOne(v, n);
-      if (rec) line('지금 하기 좋은 일: ' + q(rec.task.title) + (rec.minutes ? ' · ' + D().duration(rec.minutes) : ''));
+      if (rec && !listed[rec.task.id]) line('지금 하기 좋은 일: ' + q(rec.task.title) + (rec.minutes ? ' · ' + D().duration(rec.minutes) : ''));
       if (rec) actions.push(btn('지금 시작', function () { startTask(rec.task.id); }, true));
       if (parked.length) {
         actions.push(btn('멈춰 두기', function () {
@@ -743,8 +752,10 @@
       setTimeout(function () {
         var a = document.activeElement;
         if (a && a !== document.body) return;
+        // 행까지 숨은 묶음으로 들어갔으면 숨긴 줄의 [보기] 버튼으로
         var el = (key && document.querySelector('[data-focus-key="' + key + '"]')) ||
-          document.querySelector('[data-id="' + taskId + '"][tabindex], [data-task-id="' + taskId + '"]');
+          document.querySelector('[data-id="' + taskId + '"][tabindex], [data-task-id="' + taskId + '"]') ||
+          document.querySelector('.hidden-line button');
         if (el && el.focus) try { el.focus(); } catch (e) {}
       }, 0);
     }

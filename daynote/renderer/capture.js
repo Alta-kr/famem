@@ -83,9 +83,15 @@
     if (!st.configured) {
       delete inflight[noteId];
       setCapture(noteId, { status: 'no_ai', reason: st.reason || 'AI가 연결되어 있지 않아요.' });
-      if (!isCmd) applyLearnedOffline(noteId);
       notify();
-      return Promise.resolve({ ok: false, reason: 'not_configured' });
+      if (isCmd) return Promise.resolve({ ok: false, reason: 'not_configured' });
+      // '배운 대로 정리' 는 보낸 쪽이 결과 카드를 흐름에 올린 뒤(다음 마이크로태스크)에 한다 —
+      // 같은 순간에 하면 되돌리기 스냅숏에 카드가 없어서 Ctrl+Z 가 카드까지 지운다
+      return Promise.resolve().then(function () {
+        try { applyLearnedOffline(noteId); } catch (e) { console.error(e); }
+        notify();
+        return { ok: false, reason: 'not_configured' };
+      });
     }
     var sent = JSON.parse(JSON.stringify(note));
     var AD = DN.adapt, SU = DN.status, F = forced();

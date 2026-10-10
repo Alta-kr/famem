@@ -123,7 +123,7 @@
       return null;
     } else if (!args) {
       var cur = SU.current ? SU.current(now()) : null;
-      text = cur ? '지금 상태는 ‘' + cur.label + '’예요. 바꾸려면 ‘/상태 회의 중’처럼 적어 주세요.'
+      text = cur ? '지금 상태는 ‘' + cur.label + '’' + DN.ui.josa(cur.label, '예요/이에요').slice(cur.label.length) + '. 바꾸려면 ‘/상태 회의 중’처럼 적어 주세요.'
         : '‘/상태 회의 중’처럼 적으면 지금 상태를 바꿔요.';
     } else {
       r = SU.setFromCommand(args, { now: now(), source: 'command', surface: surface });
@@ -163,7 +163,12 @@
       });
       return r;
     }
-    if (r.empty === 'quiet' && sv) { post({ kind: 'text', text: '‘' + sv.label + '’ 중이라 추천은 쉬어요. 끝나면 다시 골라 드릴게요.' }); return r; }
+    if (r.empty === 'quiet' && sv) {
+      // 추천을 쉬게 한 건 덧씌운 상태(회의·운전 등)일 수 있다 — 그 이름으로 알린다. '회의 중' 뒤에 '중'을 또 붙이지 않는다
+      var ql = (sv.overlay && sv.overlay.rec === 'none' && sv.overlay.label) || sv.label;
+      post({ kind: 'text', text: '‘' + ql + '’' + (/중$/.test(ql) ? '이라' : ' 중이라') + ' 추천은 쉬어요. 끝나면 다시 골라 드릴게요.' });
+      return r;
+    }
     if (r.empty === 'all_hidden' && sv) { post({ kind: 'text', text: '지금(‘' + sv.label + '’)은 할 만한 일이 없어요. 쉬어도 돼요.', actions: ['showHidden'] }); return r; }
     if (r.empty === 'all_skipped') { post({ kind: 'text', text: '추천할 후보를 모두 보여 드렸어요. 넘긴 할 일도 그대로 남아 있어요.' }); return r; }
     if (r.empty === 'time_short') { post({ kind: 'text', text: '남은 시간 안에 끝낼 수 있는 할 일이 없어요. 큰 일을 작게 나눠 볼까요?' }); breakdown(r.tooLong && r.tooLong[0] && r.tooLong[0].taskId); return r; }

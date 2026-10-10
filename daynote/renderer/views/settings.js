@@ -19,6 +19,7 @@
   var advOpen = false;          // AI 카드 '고급' 열림 여부 — 다시 그려도 유지
   var lastCheck = null;         // 마지막 연결 확인 결과 { ok, ms, model, message }
   var rendered = [];            // 지금 그려진 등록 카드 (destroy 용)
+  var liveRoot = null;          // 설정 화면이 그려져 있는 root — 다른 화면으로 가면 null (늦게 온 다시 그리기를 막는다)
 
   var STATUS = {
     disconnected: { text: '연결된 메일 없음', dot: '' },
@@ -255,8 +256,8 @@
       var days = cur.days.slice(), i = days.indexOf(n);
       if (i === -1) days.push(n); else days.splice(i, 1);
       days.sort(function (a, b) { return a - b; });
-      // 시각 칸이 저장 전 값일 수 있으므로 저장된 시각을 기준으로 한다
-      if (commit({ start: cur.start, end: cur.end, days: days })) paintDays();
+      // 후보는 화면에 보이는 값으로 만든다 — 시각 칸이 틀린 채로 남아 있으면 그 오류를 그대로 보여 주고 저장하지 않는다
+      if (commit({ start: startIn.value, end: endIn.value, days: days })) paintDays();
     }
     function restoreDefault() {
       S.mutate(null, function (s) { delete s.prefs.workHours; }, { silent: true, source: 'settings' });
@@ -397,7 +398,12 @@
     }));
     var motion = h('input', {
       type: 'checkbox', id: 'set-motion', checked: !!st.prefs.reduceMotion,
-      onchange: function () { S.mutate(null, function (s) { s.prefs.reduceMotion = motion.checked; }); }
+      onchange: function () {
+        // 설정값 쓰기는 조용히(§2.7) — 다시 그리지 않아 체크박스 포커스가 남는다
+        var v = motion.checked;
+        S.mutate(null, function (s) { s.prefs.reduceMotion = v; }, { silent: true, source: 'settings' });
+        A().applyPrefs();
+      }
     });
     // 창을 닫아도 트레이에 남아 빠른 메모 단축키가 계속 동작한다 (기본: 켬)
     var tray = h('input', {
@@ -449,9 +455,18 @@
 
   function render(root, params) {
     destroyCards();
+    liveRoot = root;
     var ctx = {
       params: params || {},
-      rerender: function () { root.textContent = ''; render(root, {}); }
+      // 카드가 부르는 다시 그리기. 비동기(키 저장 뒤 등)로 늦게 불려도 설정 화면을 떠났으면 아무것도 하지 않는다
+      // (root 는 모든 화면이 함께 쓰는 #view 라 다른 화면을 지워 버리면 안 된다). 스크롤 위치는 지킨다.
+      rerender: function () {
+        if (liveRoot !== root) return;
+        var top = root.scrollTop;
+        root.textContent = '';
+        render(root, {});
+        root.scrollTop = top;
+      }
     };
     var kids = [
       safe(function () { return aiCard(ctx); }),
@@ -467,15 +482,22 @@
       h('div.page-head', h('div', h('div.page-title', '연결과 설정'), h('div.page-sub', 'AI·근무 시간·연결·데이터·화면을 정해요.'))),
       kids));
 
-    // 바로 가기 — 한 번만 (다시 그릴 때는 params 가 비어 있다)
+    // 바로 가기 — 한 번만 (archive 패턴: 앱은 다시 그릴 때도 같은 params 객체를 넘기므로 읽은 뒤 지운다).
+    // 앱이 render 뒤에 #view 의 scrollTop 을 되돌리므로 스크롤·포커스는 그다음 틱에 한다.
     var sec = params && params.section;
+    if (params) params.section = undefined;
     if (sec && /^(ai|learn|work|status|conn|gcal|data|view)$/.test(sec)) {
-      var target = root.querySelector('#set-' + sec);
-      if (target) {
+      setTimeout(function () {
+        if (liveRoot !== root) return;
+        var target = root.querySelector('#set-' + sec);
+        if (!target) return;
         if (target.scrollIntoView) target.scrollIntoView({ block: 'start' });
         var head = target.querySelector('h3');
-        if (head) { if (!head.hasAttribute('tabindex')) head.setAttribute('tabindex', '-1'); head.focus(); }
-      }
+        if (head) {
+          if (!head.hasAttribute('tabindex')) head.setAttribute('tabindex', '-1');
+          try { head.focus({ preventScroll: true }); } catch (e) { head.focus(); }
+        }
+      }, 0);
     }
 
     return {
@@ -491,7 +513,10 @@
         }
         return SKIP_SOURCES.indexOf(info.source) !== -1;
       },
-      destroy: destroyCards
+      destroy: function () {
+        if (liveRoot === root) liveRoot = null;
+        destroyCards();
+      }
     };
   }
 

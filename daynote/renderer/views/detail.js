@@ -197,6 +197,15 @@
 
   // ------------------------------------------------------------------ 맥락 · 언제 할까요 (STATUS §10.6) — 현재 상태를 켠 뒤에만
   var LEVEL_WORD = { up: '맨 위', normal: '보통', down: '뒤로', hide: '숨김' };
+  // '맥락 바꾸기'·'언제 할지 바꾸기'는 패널을 다시 그린다(이유·지금 효과 줄이 바뀐다) — 고른 칸으로 포커스를 돌려준다
+  function refocusHost(el) { var p = el.closest ? el.closest('aside.detail') : null; return p ? p.parentNode : null; }
+  function refocus(host, label) {
+    if (!host) return;
+    var a = document.activeElement;
+    if (a && a !== document.body && host.contains(a)) return;
+    var x = host.querySelector('select[aria-label="' + label + '"]');
+    if (x) try { x.focus(); } catch (e) {}
+  }
   function contextRows(st, t, now) {
     var SU = DN.status, ST = DN.statusCore, SW = DN.statusWords;
     if (!SU || !ST || !SU.isActive || !SU.isActive() || !SU.profile) return null;
@@ -206,7 +215,9 @@
       pf.contextIds.map(function (id) { return h('option', { value: id, selected: r.value === id }, pf.contexts[id].label); }),
       h('option', { value: '', selected: !r.value }, '정하지 않음'));
     ctxSel.addEventListener('change', function () {
+      var host = refocusHost(ctxSel);
       if (SU.setTaskContext) SU.setTaskContext(t.id, ctxSel.value || null, { source: 'detail' });
+      refocus(host, '맥락');
     });
     var lab = r.value ? ST.contextLabel(pf, r.value) : '정하지 않음';
     var why = r.source === 'user' ? (r.value ? '직접 정함' : '직접 ‘정하지 않음’으로 정함')
@@ -239,7 +250,11 @@
       ((SW && SW.ATMODES) || ['work', 'off', 'out', 'pause', 'rest']).map(function (m) {
         return h('option', { value: m, selected: t.atMode === m }, (SW && SW.ATMODE_LABEL && SW.ATMODE_LABEL[m]) || m);
       }));
-    at.addEventListener('change', function () { if (SU.setTaskAtMode) SU.setTaskAtMode(t.id, at.value || null, { source: 'detail' }); });
+    at.addEventListener('change', function () {
+      var host = refocusHost(at);
+      if (SU.setTaskAtMode) SU.setTaskAtMode(t.id, at.value || null, { source: 'detail' });
+      refocus(host, '언제 할까요');
+    });
     var atWhy = !t.atMode ? null : t.atModeSource === 'ai' ? 'AI가 정했어요' : t.atModeSource === 'rule' ? '제목 앞의 말로 알아봤어요' : null;
     return h('div.detail-section.st-detail',
       h('div.field', h('label', '맥락'), ctxSel,

@@ -51,9 +51,16 @@
   }
   function hideHelp() { qhelp.classList.remove('is-open'); fit(); }
 
+  // 받침 있으면 '은', 없으면(영문 포함) '는' — 창에 ui.js 가 없어서 따로 둔다
+  function eunNeun(w) {
+    var c = String(w).charCodeAt(String(w).length - 1);
+    return c >= 0xAC00 && c <= 0xD7A3 && (c - 0xAC00) % 28 ? '은' : '는';
+  }
+
   function done(msg, ok) {
     document.getElementById('sent-text').textContent = msg;
     if (ok) ta.value = '';
+    if (slash) slash.close();
     document.body.classList.add('is-sent');
     Q.resize(Math.ceil(panel.getBoundingClientRect().height) + 44);
     clearTimeout(hideTimer);
@@ -72,7 +79,7 @@
       var KL = { task: '할 일로', event: '일정으로', memo: '메모로', idea: '아이디어로', link: '링크로' };
       okMsg = (KL[p.kind] || '메모로') + ' 보냈어요. Daynote 오늘 화면에서 볼 수 있어요.';
     } else if (p && p.command === 'status') okMsg = '상태 바꾸기를 보냈어요.';
-    else if (p && p.unknown) okMsg = '보냈어요 · ‘/' + p.unknown + '’는 없는 명령어라 글로 적었어요.';
+    else if (p && p.unknown) okMsg = '보냈어요 · ‘/' + p.unknown + '’' + eunNeun(p.unknown) + ' 없는 명령어라 글로 적었어요.';
     note('');
     Q.submit(text).then(function (r) {
       if (!r || !r.ok) done('보내지 못했어요. Daynote 창에서 다시 시도해 주세요.', false);

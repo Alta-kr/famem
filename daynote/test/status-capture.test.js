@@ -214,3 +214,12 @@ test('#141 할 일 → 일정 → 할 일 왕복 뒤에도 context·contextSourc
   assert.notEqual(t1.id, t0.id);
   assert.deepEqual([t1.context, t1.contextSource, t1.atMode, t1.atModeSource], want);
 });
+
+test('가짜 AI: 상태 문장은 글 머리 한 곳에서만 뺀다 — 다음 줄의 ‘퇴근하고·퇴근길에’ 는 그대로 걸어 둔 상태', () => {
+  const st = M.emptyState();
+  viaFake(st, addNote(st, '퇴근!\n퇴근하고 우유 사기', { statusLine: '퇴근!' }));
+  assert.deepEqual(M.liveTasks(st).map((t) => [t.title, t.atMode]), [['우유 사기', 'off']]);
+  const st2 = M.emptyState();
+  viaFake(st2, addNote(st2, '퇴근\n퇴근길에 우유 사기', { statusLine: '퇴근' }));
+  assert.deepEqual(M.liveTasks(st2).map((t) => [t.title, t.atMode]), [['우유 사기', 'out']]);
+});

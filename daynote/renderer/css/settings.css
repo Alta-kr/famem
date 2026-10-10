@@ -37,8 +37,8 @@
   /* 폰에서 .main 이 내용 높이만큼 늘어나 스크롤되지 않는 것을 설정 화면에서만 막는다 (전체 수정은 styles.css 담당에게 REQUEST) */
   .main:has(#set-ai) { min-height: 0; }
   .settings-card { padding: 16px; }
-  .settings-row { gap: 8px; }
-  .settings-row .lbl { flex: 1 0 100%; }
+  #set-work .settings-row { gap: 8px; }
+  #set-work .settings-row .lbl { flex: 1 0 100%; }
   #set-work .input[type="time"] { flex: 1 1 110px; width: auto; min-width: 0; }
   .learn-row { flex-wrap: wrap; }
   .learn-key { flex: 1 1 100%; }
