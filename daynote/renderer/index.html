@@ -8,6 +8,13 @@
   <link rel="stylesheet" href="vendor/codemirror.min.css">
   <link rel="stylesheet" href="styles.css">
   <link rel="stylesheet" href="editor.css">
+  <link rel="stylesheet" href="css/capture.css">
+  <link rel="stylesheet" href="css/slash.css">
+  <link rel="stylesheet" href="css/today.css">
+  <link rel="stylesheet" href="css/status.css">
+  <link rel="stylesheet" href="css/settings.css">
+  <link rel="stylesheet" href="css/gcal.css">
+  <link rel="stylesheet" href="css/schedule.css">
 </head>
 <body>
   <div id="app"></div>
@@ -15,15 +22,22 @@
   <!-- 업무 규칙 (화면과 분리 — Node 에서 그대로 테스트한다) -->
   <script src="../src/core/dates.js"></script>
   <script src="../src/core/model.js"></script>
+  <script src="../src/core/slots.js"></script>
+  <script src="../src/core/adapt.js"></script>
+  <script src="../src/core/statusWords.js"></script>
+  <script src="../src/core/status.js"></script>
   <script src="../src/core/recommend.js"></script>
   <script src="../src/core/suggest.js"></script>
   <script src="../src/core/weekly.js"></script>
   <script src="../src/core/split.js"></script>
+  <script src="../src/core/gcal.js"></script>
+  <script src="../src/core/commands.js"></script>
   <!-- AI 층: 요청 정의 · 응답 검증 · 초안 관리 (검증·저장은 앱 책임) -->
   <script src="../src/core/ai/organizeNote.js"></script>
   <script src="../src/core/ai/validate.js"></script>
   <script src="../src/core/ai/proposals.js"></script>
   <script src="../src/core/ai/capture.js"></script>
+  <script src="../src/core/ai/forced.js"></script>
   <script src="../src/core/ai/assist.js"></script>
   <script src="../src/core/ai/fake.js"></script>
 
@@ -38,10 +52,15 @@
   <script src="ui.js"></script>
   <script src="app.js"></script>
   <script src="aiflow.js"></script>
+  <script src="gcalsync.js"></script>
   <script src="capture.js"></script>
   <script src="assistant.js"></script>
+  <script src="slash.js"></script>
+  <script src="statusui.js"></script>
   <script src="views/detail.js"></script>
   <script src="views/schedule.js"></script>
+  <script src="views/extevent.js"></script>
+  <script src="views/recpanel.js"></script>
   <script src="views/chat.js"></script>
   <script src="views/today.js"></script>
   <script src="views/archive.js"></script>
@@ -52,6 +71,9 @@
   <script src="views/projects.js"></script>
   <script src="views/weekly.js"></script>
   <script src="views/inbox.js"></script>
+  <script src="views/settings-learn.js"></script>
+  <script src="views/settings-status.js"></script>
+  <script src="views/settings-google.js"></script>
   <script src="views/settings.js"></script>
   <script src="palette.js"></script>
 </body>
