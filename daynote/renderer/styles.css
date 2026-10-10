@@ -1335,6 +1335,7 @@ kbd {
 /* 사이드바는 아래 탭 막대가 되고, 홈은 흐름 → 오늘 순서로 한 줄로 쌓인다 */
 @media (max-width: 640px) {
   .app { flex-direction: column-reverse; height: 100dvh; }
+  .main { min-height: 0; }
   .app .sidebar, .app.sidebar-collapsed .sidebar {
     flex: 0 0 auto; width: 100%; height: auto; flex-direction: row; align-items: center;
     padding: 4px 6px calc(4px + env(safe-area-inset-bottom)); border-right: 0; border-top: 1px solid var(--border-deco);

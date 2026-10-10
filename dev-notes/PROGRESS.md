@@ -15,6 +15,6 @@
 - [x] gate. index.html 태그·자리 파일 (커밋 a3e1f79)
 - [x] 1.5 캘린더 설계(DAYNOTE_CALENDAR_DESIGN.md, 계획 §8) + planner.js + 검증 완료 (614 tests)
 - [x] 2. 2차 UI 연결 9개 + 캘린더 확장 구현·검증 완료
-- [ ] 3. 전체 적대적 리뷰 + 수정
+- [ ] 3. 전체 적대적 리뷰 + 수정 (진행 중: wf_5e6ad21b-0ac, 스크립트 ~/.claude/projects/-home-user-famem-daynote/.../daynote-final-review-wf_5e6ad21b-0ac.js)
 - [ ] 4. 브라우저 확인(390px·1440px), 웹 데모 빌드·재게시 (https://claude.ai/artifact/91gd47VYtXeVJnJjWZnyAv)
 - [ ] 5. README·보고
