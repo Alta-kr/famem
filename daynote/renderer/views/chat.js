@@ -287,7 +287,9 @@
       }
       items = CP.items(n);
       var settingsBtn = h('button.btn.btn-xs', { type: 'button', onclick: function () { DN.app.go('settings'); } }, ui.icon('settings'), '설정 열기');
-      if (c.status === 'no_ai' && learned.length) {
+      // AI 없이 배운 대로 바꾼 글 — 종류를 바꾸면 core 가 status 를 'done' 으로 적을 수 있어 runId 가 없는 것도 본다
+      var noAiLearned = learned.length && !c.changedByUser && (c.status === 'no_ai' || (c.status === 'done' && !c.runId));
+      if (noAiLearned) {
         head = h('div.cap-head', h('span', summary(items, now)), h('span.cap-head-sub', ' · AI 없이 배운 대로'));
         ft = h('div.cap-foot', settingsBtn, whyBtn(n));
       } else if (c.status === 'no_ai') {
