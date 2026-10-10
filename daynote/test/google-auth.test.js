@@ -794,3 +794,33 @@ test('기기 id: 처음 한 번 16자리 hex 로 만들고 다시 켜도 같다'
   assert.equal(setup({ dir }).auth.deviceId(), a);
   assert.equal(setup({ dir }).auth.status().deviceId, a);
 });
+
+// ---------------------------------------------------------------- 2차 검증에서 더한 것
+test('parseClientInput: 칸을 바꿔 붙여 넣어도 받는다 (ID 칸에 JSON 전체, JSON 칸에 ID 만)', () => {
+  const installed = JSON.stringify({ installed: { client_id: CLIENT_ID, client_secret: CLIENT_SECRET } });
+  assert.deepEqual(A.parseClientInput({ clientId: installed, clientSecret: '', text: '' }), { ok: true, clientId: CLIENT_ID, clientSecret: CLIENT_SECRET });
+  assert.deepEqual(A.parseClientInput({ clientId: '', clientSecret: '', text: ` "${CLIENT_ID}"\n` }), { ok: true, clientId: CLIENT_ID, clientSecret: null });
+  assert.equal(A.parseClientInput({ clientId: '{"web":{"client_id":"' + CLIENT_ID + '"}}' }).error.message,
+    '웹 애플리케이션 유형의 클라이언트예요. ‘데스크톱 앱’ 유형으로 새로 만들어 주세요.');
+  assert.equal(A.parseClientInput({ text: 'not-an-id' }).ok, false);              // ID 도 JSON 도 아니면 거부
+});
+
+test('redact: URL 인코딩된 refresh token·code 도 가린다', () => {
+  const out = A.redact('body=refresh_token%3D1%2F%2F0gAbc-def&code%3D4%2F0AeXyz grant 1%2F%2F0gZZZ');
+  ['0gAbc', '0AeXyz', '0gZZZ'].forEach((frag) => assert.ok(!out.includes(frag), frag + ': ' + out));
+});
+
+test('getAccessToken·signIn 은 null 인자도 받는다 (예외 없이 Promise)', async () => {
+  const t = setup({ env: null });
+  assert.equal((await t.auth.getAccessToken(null)).error.type, 'not_signed_in');
+  assert.equal((await t.auth.signIn(null)).error.type, 'not_configured');
+});
+
+test('사진: 파일 이름이 있는 옛 주소에는 크기 접미사를 붙이지 않는다', async () => {
+  const png = Buffer.from([0x89, 0x50, 0x4e, 0x47, 9]);
+  const t = setup({ claims: { picture: 'https://lh3.googleusercontent.com/-abc/AAAA/photo.jpg' },
+    other: () => ({ status: 200, headers: { 'Content-Type': 'image/jpeg' }, bytes: png }) });
+  const r = await t.auth.signIn();
+  assert.equal(r.status.picture, 'data:image/jpeg;base64,' + png.toString('base64'));
+  assert.equal(t.fetch.calls.find((c) => c.url.hostname === 'lh3.googleusercontent.com').url.href, 'https://lh3.googleusercontent.com/-abc/AAAA/photo.jpg');
+});

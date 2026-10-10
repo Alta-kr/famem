@@ -777,7 +777,8 @@ Source: `/home/user/famem/DAYNOTE_CALENDAR_DESIGN.md` (= **CAL**). This section 
 | K8 | State | `normalizeTask` default `schedHints: null` (added to `TASK_NULLABLE`); `updateTask` clears `schedHints` when the title changes and `schedHints.source === 'ai'` and the patch has no `schedHints`. No schema bump (stays 4). New prefs key `calendarMode`. Blocks: no new fields. |
 | K9 | Labels / sources | New undo labels `'자동 배치'` (arrangeDay commit), `'배치 힌트 바꾸기'` (detail). Reused: `'일정에 배치'`, `'일정 변경'`. New mutate source `'calendar'` (not in the settings skip list). §2.13 is amended accordingly. |
 | K10 | Calendar re-render | `calendar.js` `onChange` returns `true` (and sets `mem.dirty`) while `DN.dragPlace.active()` or a calendar popover is open; `onTick` repaints only the now line / today mark (full refresh only on date change when idle); after drag end with `mem.dirty` → `A.refresh()`. CAL §10.1. |
-| K11 | Multi-action toast | `ui.toast(msg, {actions:[{label, fn}], duration})` + flag `DN.ui.TOAST_ACTIONS = true` (W2-status). Callers guard: `ui.TOAST_ACTIONS ? toast(…actions…) : undoToast(msg)`. CAL §7.4. |
+| K11 | Multi-action toast · popover on phones | `ui.toast(msg, {actions:[{label, fn}], duration})` + flag `DN.ui.TOAST_ACTIONS = true` (W2-status). Callers guard: `ui.TOAST_ACTIONS ? toast(…actions…) : undoToast(msg)`. `ui.popover(…, {keepOnResize:true})` repositions instead of closing on `resize` (phone soft keyboard) + flag `DN.ui.POPOVER_KEEP_ON_RESIZE = true`; all calendar popovers pass it; without the flag the duration popover hides its custom input at ≤640px. CAL §3.2, §7.4. |
+| K12 | Planner policy semantics | Status matrix is applied **without** `levelOf`'s guessed-status softening (planning uses the user's declared policy); only `ctxSource==='hint'` turns `hide`→`down`; column `'_none'` when the ctx is not in the row; `presence.current`/overlays are ignored (bands come from `ST.timeline`). The `history` term is 0 when `prefs.learning === false`. Planner never requires `adapt` (learned contexts arrive through `ST.contextOf`). CAL §5.5, §5.7, D6. |
 
 ### 8.2 New package **W1.5-planner** (runs after the wave-1 verification, before wave 2)
 **Owns:** `src/core/planner.js` (new), `test/planner.test.js` (new), and — limited to the K8 change only — `src/core/model.js`, `test/model.test.js`. It must not touch any other model behaviour (other engineers may be verifying wave-1 files concurrently; rebase on the latest tree before editing `model.js`).
@@ -801,7 +802,7 @@ splitPlan(state, taskId, ymd, opts) → null | { first, chunkMinutes, restMinute
 fmtDay(date, now) → '오늘'|'내일'|'10/12(일)';  fmtRange(start, end) → '19:30–20:00'
 // opts: { now (required), minutes?, workHours?, profile?, statusActive?, noStatus?, external?, ignoreBlockId?, extraBusy?, allowAfterDue?, limit?, historyDays?, days?, maxTasks?, maxMinutes?, includePoor? }
 ```
-**Do:** CAL §5 literally (bands §5.4, levels §5.5 incl. the fallback table and the atMode table, candidate generation §5.6 incl. diversity, scoring §5.7, reasons §5.8, failures §5.9, nearestDay §5.10, splitPlan §5.11, arrangeDay §5.12, purity §5.13). Busy time only via `SL.collectBusy` (+`opts.extraBusy`), so Google busy events are included (C2). Never read the clock. UMD header per CAL §5.1. Header comment in Korean.
+**Do:** CAL §5 literally (bands §5.4, levels §5.5 incl. the fallback table, the K12 status rules and the atMode table, candidate generation §5.6 incl. diversity, scoring §5.7, reasons §5.8, failures §5.9, nearestDay §5.10, splitPlan §5.11, arrangeDay §5.12, purity §5.13). Busy time only via `SL.collectBusy` (+`opts.extraBusy`), so Google busy events are included (C2). Never read the clock. UMD header per CAL §5.1. Header comment in Korean.
 **model.js:** K8 only (+ comment line on `schedHints` in `normalizeTask`).
 **Tests:** CAL §12.1 #1–64 → `test/planner.test.js` (one data table for #16 and #38); CAL §12.2 #65–66 appended to `test/model.test.js`. Both TZs green; `npm test` 0 fail / 0 skipped.
 
@@ -826,7 +827,7 @@ fmtDay(date, now) → '오늘'|'내일'|'10/12(일)';  fmtRange(start, end) → 
 
 **W2-status** (adds to §4.3 W2-status):
 - `detail.js`: '배치 힌트' rows (CAL §7.2), always rendered when `DN.planner` exists (not gated on status activation); label `'배치 힌트 바꾸기'`; no change to the onChange regex.
-- `ui.js`: K11 multi-action toast (`opts.actions`, `TOAST_ACTIONS` flag); existing `action`/`undoToast` behaviour unchanged.
+- `ui.js`: K11 multi-action toast (`opts.actions`, `TOAST_ACTIONS` flag) and `popover` `opts.keepOnResize` (`POPOVER_KEEP_ON_RESIZE` flag); existing `action`/`undoToast`/popover defaults unchanged.
 
 **W2-main** (adds to §4.3 W2-main):
 - `README.md`: features list gains "캘린더 월간 보기 · 끌어서 자동 배치 · 날짜 위에서 1초 기다리면 그날 열기 · 배치 힌트(AI가 함께 짐작)"; test file list gains `planner.test.js`, `sched-capture.test.js`.

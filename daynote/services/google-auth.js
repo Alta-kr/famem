@@ -94,6 +94,8 @@ function redact(text) {
     .replace(/1\/\/[A-Za-z0-9_\-.]+/g, MASK)                                                        // refresh token
     .replace(/GOCSPX-[A-Za-z0-9_\-]+/g, MASK)                                                       // client secret
     .replace(/\b(code|code_verifier|refresh_token|access_token|id_token|client_secret|token)=[^&\s"'<>]+/g, '$1=' + MASK)
+    .replace(/1%2F%2F[A-Za-z0-9_\-.%]+/gi, MASK)                                                   // URL 인코딩된 refresh token
+    .replace(/\b(code|code_verifier|refresh_token|access_token|id_token|client_secret|token)%3D[^&\s"'<>]+/gi, '$1%3D' + MASK)
     .replace(/("(?:code|code_verifier|refresh_token|access_token|id_token|client_secret|refreshToken|accessToken|clientSecret)"\s*:\s*)"[^"]*"/g, '$1"' + MASK + '"')
     .replace(/\bBearer\s+[A-Za-z0-9_\-.~+\/]+=*/g, 'Bearer ' + MASK);
 }
@@ -173,7 +175,10 @@ function parseClientInput(input) {
   const o = input && typeof input === 'object' ? input : {};
   let id = cleanValue(o.clientId);
   let secret = cleanValue(o.clientSecret);
-  const text = String(o.text == null ? '' : o.text).trim();
+  let text = String(o.text == null ? '' : o.text).trim();
+  // 칸을 바꿔 붙여 넣은 경우도 받아 준다: ID 칸에 JSON 전체, JSON 칸에 ID 만
+  if (!text && /^\s*\{/.test(String(o.clientId == null ? '' : o.clientId))) { text = String(o.clientId).trim(); }
+  if (text && text.charAt(0) !== '{' && CLIENT_ID_RE.test(cleanValue(text))) { id = cleanValue(text); text = ''; }
   if (text) {
     let j;
     try { j = JSON.parse(text); } catch (e) { return bad(MSG_BAD_JSON); }
@@ -398,7 +403,10 @@ function create(opts = {}) {
 
   async function fetchPicture(url) {
     if (typeof url !== 'string' || !/^https:\/\/[^\s]+$/.test(url)) return null;
-    const sized = /=s\d+(-c)?$/.test(url) ? url.replace(/=s\d+(-c)?$/, '=s64-c') : url + '=s64-c';
+    // lh3 주소는 '=s96-c' 같은 크기 접미사를 붙여 받는다. 파일 이름·쿼리가 있는 옛 주소에 붙이면 404 가 나므로 그대로 받는다.
+    const lastSeg = url.split('?')[0].split('/').pop() || '';
+    const sized = /=s\d+(-c)?$/.test(url) ? url.replace(/=s\d+(-c)?$/, '=s64-c')
+      : (url.indexOf('?') >= 0 || /\.[A-Za-z0-9]{2,5}$/.test(lastSeg)) ? url : url + '=s64-c';
     const ac = typeof AbortController === 'function' ? new AbortController() : null;
     const timer = ac ? setTimer(() => ac.abort(), PICTURE_TIMEOUT_MS) : null;
     try {
@@ -461,7 +469,8 @@ function create(opts = {}) {
     if (pending) pending.finish({ ok: false, error: authError(type) });
   }
 
-  function signIn(o = {}) {
+  function signIn(o) {
+    o = o && typeof o === 'object' ? o : {};
     cancelPending('canceled');
     const client = effectiveClient();
     if (!client) return Promise.resolve(failWith(authError('not_configured')));
@@ -571,7 +580,8 @@ function create(opts = {}) {
   }
 
   // ---------------- access token
-  function getAccessToken(o = {}) {
+  function getAccessToken(o) {
+    o = o && typeof o === 'object' ? o : {};
     const client = effectiveClient();
     const t = currentToken(client);
     if (!client || !t) return Promise.resolve({ ok: false, error: authError('not_signed_in') });

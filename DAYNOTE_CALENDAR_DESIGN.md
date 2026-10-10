@@ -18,7 +18,7 @@
 | D3 | 날짜 칸에 놓기 = **자동 배치**. 소요 시간이 없으면 먼저 소요 시간 팝오버. 배치 결과는 바로 저장하고(되돌리기 가능) 토스트로 알린다: [다른 시간] [되돌리기]. | 요청 ②④. "확인 후 저장"보다 빠르고, 되돌리기로 안전하다. |
 | D4 | 같은 날짜 칸 위에 **1000 ms 머무르면** 칸이 300 ms "띵" 흔들림(+가능하면 `navigator.vibrate(20)`) 뒤 **그날 시간표(하루 패널)** 가 월간 보기 위에 열리고, 끌기는 계속된다. 패널에 놓으면 그 시각(15분 단위)에 넣는다. 추천 시간대가 순위 배지와 함께 보인다. | 요청 ③. |
 | D5 | **소리는 넣지 않는다**(설정도 만들지 않음). 진동은 터치 끌기일 때만. 동작 줄이기 설정이면 흔들림 대신 색 강조. | 보수적으로. 업무 중 소리는 방해가 된다. 나중에 넣는다면 `prefs.calendarSound`(기본 끔) 이름을 예약만 해 둔다. |
-| D6 | 배치 알고리즘은 새 순수 모듈 **`src/core/planner.js`**(`DN.planner`, `PL`). 의존: `dates`, `model`, `slots` 필수, `status` 선택. `adapt`는 v1에서 쓰지 않는다(학습 대신 "지난 블록 기록" 친화도 항을 코어 안에서 계산). | 테스트 가능한 코어. 다른 모듈을 고치지 않는다. |
+| D6 | 배치 알고리즘은 새 순수 모듈 **`src/core/planner.js`**(`DN.planner`, `PL`). 의존: `dates`, `model`, `slots` 필수, `status` 선택. `adapt`를 직접 require 하지 않는다: `adapt`의 유형은 `kind·project·date·context`뿐이라 "시간대" 학습이 없다. 학습은 두 길로 들어온다 — ① 맥락은 `ST.contextOf`가 이미 `adapt`의 배운 맥락을 쓴다(간접), ② "평소 이 시간대" 선호는 지난 작업 블록 기록 친화도 항(`history`, §5.7)으로 코어 안에서 계산한다. `prefs.learning === false`이면 ②도 끈다(점수 0). | 테스트 가능한 코어. 다른 모듈을 고치지 않는다. 학습 끄기 설정을 존중한다. |
 | D7 | 시간대 판단은 **하루를 띠(band)로 나눈다**: 출근 전 · 업무 · 점심 · 퇴근 후 · 늦은 밤 / 쉬는 날. 띠마다 상태 id를 붙이고(STATUS `ST.timeline`과 같은 구간), 할 일 맥락과 정책표로 띄움/보통/내림/숨김을 정한다. 현재 상태 기능이 꺼져 있으면 고정 표(§5.4)를 쓴다. | 요청 ②의 "업무중, 퇴근 이후 등". 미래 날짜는 "지금 상태"가 아니라 **시간표**로 판단해야 한다. |
 | D8 | AI 캡처 출력에 할 일마다 **`sched`** 를 더한다: `{ focus:'deep'\|'light'\|null, energy:'high'\|'low'\|null, prefer:'morning'\|'afternoon'\|'evening'\|null, splittable:boolean\|null, minutes:int\|null }`. 저장은 `task.schedHints = { focus, energy, prefer, splittable, source:'ai'\|'user', at }`(사용자 값이 이긴다). `minutes`는 글에 걸리는 시간이 **명시**됐을 때만 `estimateMinutes`(출처 `'ai'`)로 들어간다. **규칙으로 짐작한 힌트는 저장하지 않고 읽을 때 계산**한다(`PL.hintsOf`) — 맥락(STATUS §3.3)과 같은 원칙. | 요청 ⑥. 지어내지 않기, 사용자 우선. |
 | D9 | 긴 일 나누기: v1은 **제안만** 하고 버튼을 눌렀을 때 **첫 조각만** 넣는다. 남은 시간은 왼쪽 목록에 "남은 N" 칩으로 계속 보인다. | 여러 블록 자동 생성은 되돌리기·충돌 설명이 복잡하다. |
@@ -83,7 +83,7 @@ div.cm[role=grid][aria-label='2026년 10월'][aria-readonly=true]
 ### 1.3 키보드
 - 격자 안 포커스는 roving tabindex 하나(처음엔 오늘, 오늘이 이 달이 아니면 1일).
 - ←/→ 하루, ↑/↓ 한 주, Home/End 그 주 월/일, PageUp/PageDown 이전/다음 달(같은 날짜, 없으면 말일), Enter/Space → 하루 패널 열기(포커스는 패널 제목으로), Esc → (고르기 모드면) 고르기 취소.
-- 칸 `aria-label`: `'10월 12일 일요일, 일정 2개, 마감 1개'` (+ `', 오늘'`, `', 쉬는 날'`). 고르기 모드일 때 끝에 `', Enter로 ‘빨래 돌리기’ 넣기'`.
+- 칸 `aria-label`: `'10월 12일 월요일, 일정 2개, 마감 1개'` (+ `', 오늘'`, `', 쉬는 날'`). 고르기 모드일 때 끝에 `', Enter로 ‘빨래 돌리기’ 넣기'`.
 - 달이 바뀌면 같은 위치로 포커스를 옮긴다(`focusDay`).
 
 ### 1.4 폰 (≤ 640px, 390px 기준)
@@ -160,6 +160,7 @@ div.dur-foot  button.btn.btn-sm '취소'  button.btn.btn-sm.btn-primary '넣기'
 - Esc·바깥 클릭·[취소] → `null`(아무것도 바꾸지 않음).
 - 확정 결과는 §3.3 커밋의 **같은 mutate** 안에서 저장한다(체크가 켜져 있으면 `M.updateTask(s, id, { estimateMinutes: minutes }, now)` → 출처 `'user'`). 체크가 꺼져 있으면 블록만 그 길이로 만든다.
 - 팝오버는 끌기가 끝난 뒤(포인터를 놓은 뒤) 연다. 기준 칸이 다시 그려져 사라지면 `calMonth.cellFor(ymd)`로 다시 찾는다.
+- **폰 키보드**: 지금 `ui.popover`는 `resize`에 닫힌다. 폰에서 직접 입력란에 포커스하면 화상 키보드가 `resize`를 일으켜 팝오버가 사라진다. 그래서 `ui.popover`에 `opts.keepOnResize`(닫지 않고 `place()`만 다시)를 더하고(§7.4, W2-status) 소요 시간·실패·다른 시간·자동 배치 팝오버는 모두 `keepOnResize:true`로 연다. 기능 표시 `ui.POPOVER_KEEP_ON_RESIZE`가 없으면(부분 병합) 폰(≤640px)에서는 직접 입력란을 숨기고 칩만 보인다.
 
 ### 3.3 커밋과 토스트
 ```js
@@ -169,7 +170,7 @@ S.mutate('일정에 배치', function (s) {
 }, { source: 'calendar' });
 ```
 - 토스트(여러 버튼 — §7.4 `ui.toast` 확장):
-  `‘빨래 돌리기’를 10/12(일) 19:30–20:00에 넣었어요.` (오늘·내일이면 `오늘 19:30–20:00`) + (소요 시간을 저장했으면 ` 소요 시간도 30분으로 저장했어요.`)
+  `‘빨래 돌리기’를 10/12(월) 19:30–20:00에 넣었어요.` (오늘·내일이면 `오늘 19:30–20:00`) + (소요 시간을 저장했으면 ` 소요 시간도 30분으로 저장했어요.`)
   버튼: **[다른 시간]** **[되돌리기]**. 지속 9초.
 - [다른 시간] → `alternativesPopover(blockId, ymd)`: 기준은 `calMonth.cellFor(ymd)`(없으면 일정 대화상자 `schedule.open({blockId})`로 대신).
 ```
@@ -179,16 +180,16 @@ div.pl-alt-title '다른 후보'
 button.pl-alt × ≤3   '20:30–21:00 · 남은 빈 시간을 한 덩어리로 남겨요'   // PL.suggestSlots(…, {ignoreBlockId: blockId}) 에서 지금 시간을 뺀 상위 3
 button.link-btn '그날 열어서 직접 고르기'   → 하루 패널(§4.4, 이 블록을 옮기는 상태)
 ```
-  후보를 누르면 `S.mutate('일정 변경', updateBlock(start,end), {source:'calendar'})` + undoToast `10/12(일) 20:30–21:00으로 옮겼어요.`
+  후보를 누르면 `S.mutate('일정 변경', updateBlock(start,end), {source:'calendar'})` + undoToast `10/12(월) 20:30–21:00으로 옮겼어요.`
 - "왜 이 시간?"은 이 팝오버의 첫 부분이다. 하루 패널의 블록 툴팁(`title`)에는 붙이지 않는다(이유는 저장하지 않으므로 넣은 직후에만 보인다).
 
 ### 3.4 넣을 자리가 없을 때 `failPopover(r)` (기준: 그 칸)
 ```
-div.pl-fail-title  r.message                    // 예: '10/12(일)에는 30분 빈 시간이 없어요.'
+div.pl-fail-title  r.message                    // 예: '10/12(월)에는 30분 빈 시간이 없어요.'
 div.meta           r.detail                     // 예: '퇴근 후(18:30–22:30)가 일정으로 차 있어요.'
 (r.split) div.meta  '나눠서 하면 들어가요: 첫 1시간 30분을 넣고 나머지 1시간은 나중에.'
 div.pl-fail-actions
-  (r.alternatives[0]) button.btn.btn-sm.btn-primary '가장 가까운 날로 · 10/13(월) 19:30'
+  (r.alternatives[0]) button.btn.btn-sm.btn-primary '가장 가까운 날로 · 10/13(화) 19:30'
   (r.split)           button.btn.btn-sm '첫 1시간 30분만 넣기'
   button.btn.btn-sm '그날 열어서 직접'
 ```
@@ -242,13 +243,14 @@ DN.views.calDay = {
   isOpen() → bool,  ymd() → string|null,  repaint() → void
 }
 ```
-- 데스크톱: `.cal-main` 안 오른쪽 시트 `aside.cd-sheet[role=region][aria-label='10월 12일 일요일 시간표']`, 너비 `min(400px, 45%)`, 위아래 꽉, `--shadow-float`, `--surface-raised`. 들어올 때 `slideIn`(위치만).
+- 데스크톱: `.cal-main` 안 오른쪽 시트 `aside.cd-sheet[role=region][aria-label='10월 12일 월요일 시간표']`, 너비 `min(400px, 45%)`, 위아래 꽉, `--shadow-float`, `--surface-raised`. 들어올 때 `slideIn`(위치만).
 - 폰: 아래 시트 `75dvh`, 위 모서리 둥글게, 손잡이 막대. 시트 밖(월간 격자 위쪽)은 그대로 보이고 탭하면 닫힌다.
 - 머리:
 ```
 div.cd-head
-  h3[tabindex=-1] '10월 12일 일요일'
-  div.meta '쉬는 날 · 빈 시간 9시간 30분'           // 띠 이름은 PL.dayBands 의 label, 빈 시간 = 허용 띠 안 빈 분 합(모든 맥락 기준 07:00–23:00)
+  h3[tabindex=-1] '10월 12일 월요일'
+  div.meta '근무일 09:00–18:00 · 빈 시간 6시간 30분'   // 근무일 아님이면 '쉬는 날 · 빈 시간 …'. 근무 시간은 SL.describeWorkHours 대신 그날 창(SL.workWindow)의 HH:MM–HH:MM.
+                                                    // 빈 시간 = 07:00–23:00(SL.DAY_WINDOW) 안에서 바쁜 시간(SL.collectBusy)을 뺀 분 합 — 맥락과 무관
   button.btn.btn-sm '이 날 자동 배치'               // §6
   button.icon-btn[aria-label=닫기]
 (taskId 가 있을 때) div.cd-task
@@ -258,7 +260,7 @@ div.cd-head
 - 몸통: 하루 시간표(지금 주·일 보기와 같은 `HOUR_PX=48`, 0–24시, 15분 칸). `div.cd-col[data-drop=slot][data-day=ymd][data-autoscroll]` 안에 블록·Google 항목(`M.calendarItems`, 차선 계산은 지역 객체), 종일 줄, 지금 선(오늘이면). 처음 스크롤: 추천 1순위 시작 −1시간, 없으면 07:00.
 - **추천 띠**: `taskId`가 있으면 `PL.suggestSlots(st, taskId, ymd, { now, minutes, limit: 3 })`를 `div.cd-sugg[style top/height]` + `span.cd-rank '1'`로 그린다(`title`= 이유 이어 붙임). 허용 띠 밖은 `div.cd-band.is-off`(옅은 빗금, `--surface-hover` 반복 그라디언트)로 보인다.
 - **유령 블록**(끌기 중 패널 위): `div.cd-ghost` 15분 스냅, 높이 = minutes(없으면 30분 + `소요 시간 미정` 꼬리), 글자 `19:30–20:00`. `SL.conflicts(SL.collectBusy(…))`가 있으면 `.is-conflict` + `· 겹침 N건`. 허용 띠 밖이면 `.is-offband` + `· 추천 시간대 밖`. **자석**: 유령 시작이 추천 시작과 10px 이내면 그 시작으로 붙고 `· 추천 1`.
-- 놓기(패널): 소요 시간이 없으면 §3.2 팝오버(기준: 유령 요소, 팝오버가 닫힐 때까지 유령을 남긴다) → 그 시작 시각으로 `S.mutate('일정에 배치', …)`. 겹치면 그래도 넣고 토스트 끝에 ` 다른 일정과 겹쳐요.`(직접 고른 시간은 사용자의 뜻). 토스트: `‘빨래 돌리기’를 10/12(일) 19:30–20:00에 넣었어요.` + [되돌리기].
+- 놓기(패널): 소요 시간이 없으면 §3.2 팝오버(기준: 유령 요소, 팝오버가 닫힐 때까지 유령을 남긴다) → 그 시작 시각으로 `S.mutate('일정에 배치', …)`. 겹치면 그래도 넣고 토스트 끝에 ` 다른 일정과 겹쳐요.`(직접 고른 시간은 사용자의 뜻). 토스트: `‘빨래 돌리기’를 10/12(월) 19:30–20:00에 넣었어요.` + [되돌리기].
 - 패널 안 블록도 끌어서 옮길 수 있다(`kind:'block'`, 잡은 위치 오프셋 유지) → `'일정 변경'`. Google 항목은 끌 수 없다.
 - 놓은 뒤 패널은 열린 채 새 블록을 잠깐 강조(`.is-new`, 1.2 s 배경)한다.
 - 닫기: Esc(끌기 중이면 끌기 취소가 먼저 — §4.5), 닫기 버튼, 다른 화면으로 이동, 폰에서 시트 밖 탭. `openedBy:'dwell'`로 열린 패널은 **끌기가 취소되거나 대상 밖에 놓이면 함께 닫힌다**. 닫으면 포커스를 그 칸으로 돌려준다(키보드로 열었을 때).
@@ -311,7 +313,7 @@ placeOnDay(state, taskId, ymd, opts) → PlaceOk | PlaceFail
 nearestDay(state, taskId, fromYmd, opts) → { ymd, candidate } | null
 arrangeDay(state, taskIds, ymd, opts) → { placements: [{ taskId, candidate, block }], skipped: [{ taskId, reason }], minutes }
 splitPlan(state, taskId, ymd, opts) → null | { first: Candidate, chunkMinutes, restMinutes }
-fmtDay(date, now) → '오늘' | '내일' | '10/12(일)';  fmtRange(start, end) → '19:30–20:00'
+fmtDay(date, now) → '오늘' | '내일' | '10/12(월)';  fmtRange(start, end) → '19:30–20:00'
 ```
 공통 `opts`:
 ```js
@@ -386,6 +388,11 @@ PlaceFail = { ok: false, reason: 'missing'|'done'|'no_estimate'|'past'|'after_du
 | `home` `errand` `personal` `family` `study` `u_…` | down | hide | down | **up** | normal | normal | **up** |
 | null (모름) | normal | normal | normal | normal | normal | normal | normal |
 
+   - 켜져 있을 때의 세부 규칙(오늘 화면 `ST.levelOf`와 다른 점을 일부러 정한다):
+     - 열 키: `ctx`가 그 행에 있으면 `ctx`, 아니면 `'_none'`(지운 사용자 맥락 포함).
+     - **짐작 완화를 하지 않는다.** `levelOf`는 시간표로 짐작한 상태(`guessed`)에서 up→normal, hide→down으로 누그러뜨리지만, 플래너는 앞날의 **계획**이므로 사용자가 정한 정책표를 그대로 쓴다(그래서 시험 #30의 토요일 업무는 `no_window`).
+     - 예외: 맥락 출처가 `'hint'`(메일에서 온 업무 짐작)이면 `hide`를 `down`으로(약한 힌트는 숨기지 못한다 — `levelOf`와 같음).
+     - `presence.current`·덧씌움 상태(식사·쉼 등)는 보지 않는다. 오늘이라도 띠의 상태 id는 시간표에서 온다(시험 #33).
 3. 걸어 둔 상태(`atMode`)가 있으면: 맞는 띠는 **`up`**(숨김이어도 — 사용자가 말한 때가 정책을 이긴다, STATUS §7.4 5단계와 같은 뜻), 맞지 않는 띠는 `hide`는 그대로, 나머지는 `down`.
 
 | atMode | 맞는 띠 |
@@ -438,7 +445,7 @@ for each window W:
 | `fragCrumb` | 0 < a < 30 → −4, 0 < b < 30 → −4 | | – |
 | `shortSmall` | len ≤ 30 이고 G ≤ 60 | +4 | `짧은 일이라 작은 빈틈에 넣었어요.` |
 | `project` | 할 일에 projectId가 있고, s에 끝나거나 e에 시작하는(±15분) 작업 블록의 할 일이 같은 프로젝트 | +5 | `같은 프로젝트 ‘온보딩 개선’ 일과 이어져요.` |
-| `history` | 최근 `historyDays`(28)일, now 이전에 끝난 작업 블록 중 할 일 맥락(`ST.contextOf().value`, 없으면 null끼리)이 같은 것: 2시간 단위 시작 구간별로 세어, 후보 시작 구간의 수 ≥ 3 이고 전체의 ≥ 40% | +4 | `평소 이 시간대에 하던 일이에요.` |
+| `history` | `state.prefs.learning !== false`일 때만. 최근 `historyDays`(28)일, now 이전에 끝난 작업 블록 중 할 일 맥락(`ST.contextOf().value`, 없으면 null끼리)이 같은 것: 2시간 단위 시작 구간별로 세어, 후보 시작 구간의 수 ≥ 3 이고 전체의 ≥ 40% | +4 | `평소 이 시간대에 하던 일이에요.` |
 | `today` | ymd가 오늘 | `2 × earliness` | – |
 
 - `score` = 합(소수 그대로; 비교는 `1e-9` 허용, 같으면 시작이 이른 쪽). 보이는 값은 소수 첫째 자리 반올림.
@@ -466,7 +473,7 @@ for each window W:
 | `after_due` | dueDate < ymd && !allowAfterDue | `마감(10/11(일))보다 늦은 날이에요.` | null |
 | `no_window` | 허용 창이 없음 | 오늘이고 띠가 모두 지났으면 `오늘은 이 일을 할 시간대가 이미 지났어요.` / ctx work & 근무일 아님: 상태 켜짐 `‘업무’ 일은 ‘쉬는 날’에는 넣지 않아요.` · 꺼짐 `근무 시간에 할 일이라 쉬는 날에는 넣지 않았어요.` / 그 밖 `이 날에는 이 일을 할 시간대가 없어요.` | null |
 | `too_long` | len > 가장 긴 허용 창 길이 | `‘보고서 작성’(5시간)은 이 날 넣을 수 있는 가장 긴 시간(4시간 30분)보다 길어요.` | null |
-| `no_slot` | 후보 없음 | `10/12(일)에는 30분 빈 시간이 없어요.` | 가장 넓은(up 우선) 창: `퇴근 후(18:30–22:30)가 일정으로 차 있어요.` (마감 때문이면 `마감(18:00) 전에는 빈 시간이 없어요.`) |
+| `no_slot` | 후보 없음 | `10/12(월)에는 30분 빈 시간이 없어요.` | 가장 넓은(up 우선) 창: `퇴근 후(18:30–22:30)가 일정으로 차 있어요.` (마감 때문이면 `마감(18:00) 전에는 빈 시간이 없어요.`) |
 
 - 실패에는 `alternatives = [nearestDay(…)]`(찾으면 1개), `split = (too_long||no_slot) ? splitPlan(…) : null`.
 - 성공: 1순위 후보로 `block = { taskId, kind:'work', start: startIso, end: endIso }`, `alternatives` = 다양성 적용 2·3순위.
@@ -499,13 +506,13 @@ for each window W:
 - 대상 = 왼쪽 목록의 할 일(맥락 거르기가 있으면 그 결과) 중 `PL.remainingMinutes`/`estimateMinutes`가 있는 것.
 - `r = PL.arrangeDay(st, ids, ymd, { now, workHours })` → 미리보기 팝오버(기준: 버튼, `className:'pl-arrange'`):
 ```
-div.pl-arr-title '10/12(일)에 4개를 이렇게 넣을까요?'
+div.pl-arr-title '10/12(월)에 4개를 이렇게 넣을까요?'
 ul  li > label.check-row  input[type=checkbox][checked]  '09:00–10:30 분기 보고서 초안' + div.meta(이유 첫 문장)
 div.meta '소요 시간이 없어 뺀 일 2개 · 빈 시간이 없어 뺀 일 1개'      // skipped 요약 (있을 때만)
 button.btn.btn-sm '취소'  button.btn.btn-sm.btn-primary '넣기 (4개)'
 ```
 - 체크를 끄면 그 항목만 뺀다(다른 항목의 시간은 다시 계산하지 않는다 — 이미 겹치지 않으므로).
-- [넣기] → 저장 직전에 같은 입력으로 `arrangeDay`를 다시 불러 결과가 같으면 그대로, 다르면 새 결과로 미리보기를 다시 그린다(그 사이 바뀐 일정에 넣지 않게). 같으면 `S.mutate('자동 배치', 고른 블록 모두 addBlock, { source: 'calendar' })` + undoToast `10/12(일)에 4개를 넣었어요.`
+- [넣기] → 저장 직전에 같은 입력으로 `arrangeDay`를 다시 불러 결과가 같으면 그대로, 다르면 새 결과로 미리보기를 다시 그린다(그 사이 바뀐 일정에 넣지 않게). 같으면 `S.mutate('자동 배치', 고른 블록 모두 addBlock, { source: 'calendar' })` + undoToast `10/12(월)에 4개를 넣었어요.`
 - 아무것도 둘 수 없으면 버튼 대신 `넣을 수 있는 일이 없어요.` + skipped 요약.
 
 ---
@@ -545,6 +552,7 @@ div.detail-row  label '배치 힌트'
 ### 7.4 `ui.toast` 여러 버튼 (W2-status, `renderer/ui.js`)
 - `toast(msg, { actions: [{ label, fn }], duration })` 지원 추가. `action`(하나)도 그대로. 버튼 순서 = 배열 순서, 그 뒤 '닫기'. 버튼을 누르면 닫고 `fn()`.
 - 기능 표시: `DN.ui.TOAST_ACTIONS = true`. calendar 쪽은 `ui.TOAST_ACTIONS ? toast(msg, {actions:[…], duration:9000}) : undoToast(msg)`.
+- `popover(anchor, content, opts)`에 `opts.keepOnResize: true` 추가: `resize` 때 닫지 않고 위치만 다시 잡는다(기준 요소가 문서에서 사라졌으면 닫는다). 기능 표시 `DN.ui.POPOVER_KEEP_ON_RESIZE = true`. 기본 동작(크기 바뀌면 닫기)은 그대로.
 
 ---
 
@@ -637,7 +645,7 @@ Session = { payload, pointerType, x, y, target /* closest('[data-drop]') */, sta
 - 대상 찾기: 매 `pointermove`(rAF로 묶음)에서 `document.elementFromPoint(x, y)`의 `closest('[data-drop]')`. 바뀌면 `onOver`.
 - 자동 스크롤: 대상의 `closest('[data-autoscroll]')`(또는 `.cal-scroll`, `.cd-body`) 가장자리 40px 안이면 rAF마다 12px.
 - 끝: `pointerup` → `onDrop(target)`; `pointercancel`·Esc(capture keydown, `stopPropagation`)·`window blur` → `onCancel`. 둘 다 끝에 `onEnd`, 유령 제거, 클래스 제거. 놓은 뒤 400 ms 안의 `click`은 한 번 삼킨다(놓기가 칸 클릭 = 하루 열기로 번지지 않게).
-- 스크린리더: `div.sr-only#dp-live[aria-live=assertive]`에 `‘빨래 돌리기’ 옮기는 중이에요.` → 대상 바뀔 때 `10월 12일 일요일 위` / `19:30 위` → `넣었어요.` / `취소했어요.`
+- 스크린리더: `div.sr-only#dp-live[aria-live=assertive]`에 `‘빨래 돌리기’ 옮기는 중이에요.` → 대상 바뀔 때 `10월 12일 월요일 위` / `19:30 위` → `넣었어요.` / `취소했어요.`
 - 한 번에 하나만. `active()` 동안 다른 `arm`의 pointerdown은 무시한다.
 
 ### 10.1 캘린더 다시 그리기 규칙 (끌기·팝오버 보호)
@@ -715,7 +723,7 @@ Session = { payload, pointerType, x, y, target /* closest('[data-drop]') */, sta
 38. `ruleHints` 데이터 표: '분기 보고서 작성'→deep · '고객사에 메일 보내기'→light · '보고서 메일로 보내기'→light · '아침 운동'→energy high + prefer morning · '틈틈이 영어 공부'→deep + splittable true · '한 번에 몰아서 정리'→splittable false + light · '정리본 작성 후 메일'→light(뒤에 나온 쪽) · '코드리뷰하기'→focus null(토큰이 '리뷰'로 시작하지 않음) · ''→모두 null.
 39. `hintsOf`: user 출처의 null은 규칙으로 채우지 않음; ai 출처의 null 필드는 규칙 값(`src:'rule'`); 없음 → 규칙.
 40. prefer morning, 맥락 없음, 수 → 09:00(+15); prefer evening → 18:30 이후 1순위.
-41. deep 60분, 맥락 없음, 수 10:00–11:00 블록 → 1순위 11:30 (10+8 = 18; 11:15는 앞 빈틈 15분 → crumb −4 = 14; 09:00·11:00은 맞닿아 −10 → 11), 앞뒤 15분 안에 바쁨 없음, 이유에 `집중이 필요한 일이라 이른 시간에 두었어요.`
+41. deep 60분(사용자 힌트 `{focus:'deep', source:'user'}`, 맥락 없음 제목), 수 10:00–11:00 블록 → 1순위 11:30 (normal 10 + deepEarly 8 = 18; 11:45도 18이지만 이른 쪽; 11:15는 앞 빈틈 15분 → crumb −4 = 14; 11:00은 10+8+3−10 = 11; 09:00은 10+8 + align 3 + fragTight 6 − buffer 10 = 17), 앞뒤 15분 안에 바쁨 없음, 이유에 `집중이 필요한 일이라 이른 시간에 두었어요.`
 42. light 30분, 수 10:00–11:00 · 11:30–12:30 블록 → 11:00(빈틈 채움), 이유에 `빈 시간에 딱 맞아요.`
 43. energy high, 맥락 없음, 저녁만 비어 있음(09–18 바쁨) → 21:00 이후 후보가 1순위가 아님; energy low → 19:00 이후 선호.
 
@@ -729,7 +737,7 @@ Session = { payload, pointerType, x, y, target /* closest('[data-drop]') */, sta
 **빈틈·인접·기록·다양성**
 49. 짧은 일(15분) + 30분 빈틈 → 그 빈틈(shortSmall + fragTight).
 50. 같은 프로젝트 블록이 19:00–20:00 → 그 프로젝트 집안일 1순위 이유에 `같은 프로젝트 ‘…’ 일과 이어져요.`
-51. 기록: 지난 28일 안 20:00대 집안일 블록 3개(now 이전) → 집안일 1순위 20:00, 이유 `평소 이 시간대에 하던 일이에요.`; 2개면 18:30.
+51. 기록: 지난 28일 안 20:00대 집안일 블록 3개(now 이전) → 집안일 1순위 20:00, 이유 `평소 이 시간대에 하던 일이에요.`; 2개면 18:30; 3개여도 `prefs.learning = false`면 18:30이고 `terms.history` 없음.
 52. 다양성: 빈 하루에서 `limit:3`의 시작이 서로 60분 이상 떨어짐; 1순위 = 다양성 없이 정렬한 1순위.
 53. 같은 점수 → 이른 시작.
 
@@ -744,7 +752,7 @@ Session = { payload, pointerType, x, y, target /* closest('[data-drop]') */, sta
 61. now=SAT 01:25, 집안일 토요일 → 09:00.
 62. 점심: 업무 할 일, 수 09:00–12:00 바쁨 → 13:00(12:00 아님).
 63. 늦은 밤: 집안일, 수 18:30–22:30 바쁨 → 22:30, `band:'late'`.
-64. `fmtDay`: 오늘/내일/`10/12(일)`; `fmtRange` `19:30–20:00`.
+64. `fmtDay`: 오늘/내일/`10/12(월)`; `fmtRange` `19:30–20:00`.
 
 ### 12.2 model (W1.5-planner, `test/model.test.js` 추가)
 65. `normalizeTask({})`에 `schedHints === null`; `{schedHints: undefined}`도 null.
@@ -762,7 +770,7 @@ Session = { payload, pointerType, x, y, target /* closest('[data-drop]') */, sta
 
 ### 12.4 화면 확인 (Playwright + `scripts/serve.js 5191`, `?fakeai`, `timezoneId:'Asia/Seoul'`, `__daynoteNow='2026-10-10T10:00:00'`, 샘플 데이터)
 1. 캘린더 첫 진입이 **월간**(`.cm[role=grid]`), 6주 42칸, 10/10에 `.is-today`. 주간으로 바꾸고 다른 화면 갔다 오면 주간(prefs 기억). 새로 고침 뒤에도 주간.
-2. 마우스 끌기: '빨래 돌리기'(15분) 카드를 `page.mouse.down/move(단계 10)/up`으로 10/12 칸에 놓기 → 블록 생김, 토스트 `‘빨래 돌리기’를 10/12(일) 09:00–09:15에 넣었어요.` + [다른 시간][되돌리기]; [되돌리기] → 블록 없음.
+2. 마우스 끌기: '빨래 돌리기'(15분, 집안일) 카드를 `page.mouse.down/move(단계 10)/up`으로 10/12(월, 근무일) 칸에 놓기 → 블록 생김, 시작 ≥ 18:30(퇴근 후 — 근무 시간에 넣지 않음), 토스트가 `/^‘빨래 돌리기’를 10\/12\(월\) (1[89]|2[0-2]):[0-5]\d–\d\d:\d\d에 넣었어요/` + [다른 시간][되돌리기]; [되돌리기] → 블록 없음. 같은 카드를 10/11(일) 칸에 놓기 → 토스트가 `내일 09:00–09:15`(쉬는 날 낮). 업무 할 일 '세미나 발표자 섭외 메일 보내기'를 10/11(일)에 놓기 → 실패 팝오버(`근무 시간에 할 일이라 쉬는 날에는 넣지 않았어요.` 또는 현재 상태가 켜져 있으면 `‘업무’ 일은 …`) + [가장 가까운 날로 · 10/12(월) …].
 3. 소요 시간 없는 할 일 놓기 → `.dur-pop` 바로 뜸, `1시간` 칩 → 블록 60분, 할 일 estimate 60(`'user'`). 직접 입력 `abc` → 오류 문구, `1:30` → 90. Esc → 아무것도 안 바뀜.
 4. 머무르기: 끌어서 10/13 칸 위에 1.1초 → `.is-ding` 붙음(동작 줄이기 끔) → `.cd-sheet` 열림, 추천 띠 `.cd-sugg` 1–3개 + `.cd-rank`; 패널 20:00 위치에 놓기 → 20:00 블록. 0.8초만 머무르고 떠나면 안 열림.
 5. 머무르기로 연 뒤 Esc → 패널 닫힘, 바뀐 것 없음. 대상 밖(왼쪽 패널)에 놓기 → 닫힘, 바뀐 것 없음.

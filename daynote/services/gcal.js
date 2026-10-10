@@ -291,7 +291,8 @@ function create(opts = {}) {
 
   function listCalendars() { return listCalendarEntries({}); }
 
-  async function listEvents(req = {}) {
+  async function listEvents(req) {
+    req = req && typeof req === 'object' ? req : {};
     const calendarId = typeof req.calendarId === 'string' ? req.calendarId : '';
     if (!calendarId) return { ok: false, error: apiError('bad_request') };
     const syncToken = typeof req.syncToken === 'string' && req.syncToken ? req.syncToken : null;
@@ -308,7 +309,8 @@ function create(opts = {}) {
     return { ok: true, items, nextSyncToken: r.last.nextSyncToken || null, full: !syncToken, pages: r.pages, timeZone };
   }
 
-  async function listInstances(req = {}) {
+  async function listInstances(req) {
+    req = req && typeof req === 'object' ? req : {};
     const calendarId = typeof req.calendarId === 'string' ? req.calendarId : '';
     const eventId = typeof req.eventId === 'string' ? req.eventId : '';
     if (!calendarId || !ANY_EVENT_ID_RE.test(eventId)) return { ok: false, error: apiError('bad_request') };
@@ -325,20 +327,22 @@ function create(opts = {}) {
   }
 
   // ‘Daynote’ 캘린더 확보 (§7.3.6): preferId 확인 → 표식으로 다시 찾기 → 새로 만들기 → auth 에 기록
-  async function ensureExportCalendar(req = {}) {
+  async function ensureExportCalendar(req) {
+    req = req && typeof req === 'object' ? req : {};
     const tz = typeof req.tz === 'string' && TZ_RE.test(req.tz) ? req.tz : 'Asia/Seoul';
     const preferId = typeof req.preferId === 'string' && req.preferId ? req.preferId : null;
     let found = null;
     let created = false;
     if (preferId) {
       const r = await send('GET', base + '/users/me/calendarList/' + enc(preferId), { context: 'calendar' });
-      if (r.ok) { if (r.json && r.json.accessRole === 'owner') found = r.json; }
+      // 기본(primary) 캘린더는 내보내기 대상이 될 수 없다 — 쓰기 화이트리스트가 사용자 캘린더로 넓어지지 않게
+      if (r.ok) { if (r.json && r.json.accessRole === 'owner' && !r.json.primary) found = r.json; }
       else if (r.error.type !== 'calendar_missing' && r.error.type !== 'not_found' && r.error.type !== 'forbidden') return { ok: false, error: r.error };
     }
     if (!found) {
       const l = await listCalendarEntries({ showHidden: 'true' });
       if (!l.ok) return { ok: false, error: l.error };
-      found = l.items.find((c) => c && c.accessRole === 'owner' && typeof c.description === 'string' && c.description.indexOf(MARKER) >= 0) || null;
+      found = l.items.find((c) => c && c.accessRole === 'owner' && !c.primary && typeof c.description === 'string' && c.description.indexOf(MARKER) >= 0) || null;
     }
     if (!found) {
       const r = await send('POST', base + '/calendars', { body: { summary: EXPORT_CALENDAR.summary, description: EXPORT_CALENDAR.description, timeZone: tz }, context: 'create' });

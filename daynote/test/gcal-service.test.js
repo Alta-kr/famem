@@ -564,3 +564,29 @@ test('classifyHttpError: 상태 코드·reason·context 별 분류', () => {
   assert.equal(c(400, 'x', 'insert').retryable, false);
   assert.equal(c(500, null, 'list').retryable, true);
 });
+
+// ---------------------------------------------------------------- 2차 검증에서 더한 것
+test('ensureExportCalendar: preferId 가 기본(primary) 캘린더면 쓰지 않고 표식 캘린더를 찾는다 (쓰기 화이트리스트 보호)', async () => {
+  const t = setup((req) => {
+    if (req.url.pathname === '/calendar/v3/users/me/calendarList/' + encodeURIComponent('me@gmail.com')) {
+      return { status: 200, json: { id: 'me@gmail.com', accessRole: 'owner', primary: true, description: '[daynote-export:v1]' } };
+    }
+    if (req.url.pathname === '/calendar/v3/users/me/calendarList') {
+      return { status: 200, json: { items: [
+        { id: 'me@gmail.com', accessRole: 'owner', primary: true, description: '[daynote-export:v1]' },
+        { id: 'dn@group.calendar.google.com', summary: 'Daynote', accessRole: 'owner', description: '[daynote-export:v1]' }] } };
+    }
+    return { status: 500 };
+  }, { auth: fakeAuth({ exportId: null }) });
+  const r = await t.svc.ensureExportCalendar({ tz: 'Asia/Seoul', preferId: 'me@gmail.com' });
+  assert.equal(r.ok, true);
+  assert.equal(r.calendar.id, 'dn@group.calendar.google.com');
+  assert.deepEqual(t.auth.set, ['dn@group.calendar.google.com']);
+});
+
+test('null 인자도 예외 없이 bad_request·기본값으로 처리한다', async () => {
+  const t = setup(() => ({ status: 200, json: { items: [] } }));
+  assert.equal((await t.svc.listEvents(null)).error.type, 'bad_request');
+  assert.equal((await t.svc.listInstances(null)).error.type, 'bad_request');
+  assert.equal(t.fetch.calls.length, 0);
+});
