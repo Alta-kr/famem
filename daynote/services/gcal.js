@@ -199,8 +199,11 @@ function create(opts = {}) {
   }
   const backoff = (attempt) => Math.round(1000 * Math.pow(2, attempt - 1) + random() * 500);
 
-  // 요청 1건: 토큰 → fetch(20초 제한) → 401 이면 한 번 갱신 → 429·403 rate·5xx·네트워크면 최대 retries 번 다시
+  // 요청 1건: 토큰 → fetch(20초 제한, 본문 읽기까지) → 401 이면 한 번 갱신 → 429·403 rate·5xx·네트워크면 최대 retries 번 다시
+  //   POST /calendars(context 'create')는 멱등이 아니다 — 네트워크 오류·5xx 뒤에 다시 보내면 ‘Daynote’ 캘린더가 둘 생길 수 있어
+  //   서비스 안에서는 다시 보내지 않는다 (다음 회차의 ensureExportCalendar 가 표식으로 먼저 찾는다). 429·rate 403 은 처리 전 거절이라 다시 보낸다.
   async function send(method, u, { body, context } = {}) {
+    const unsafe = context === 'create';
     let attempt = 0;
     let forced = false;
     let force = false;
@@ -220,8 +223,15 @@ function create(opts = {}) {
       const ac = typeof AbortController === 'function' ? new AbortController() : null;
       const timer = ac ? setTimeout(() => ac.abort(), requestTimeoutMs) : null;
       let res;
+      let json = null;
+      let badJson = false;
       try {
         res = await fetchFn(u, { method, headers, body: body === undefined ? undefined : JSON.stringify(body), signal: ac ? ac.signal : undefined });
+        // 본문 읽기도 20초 제한 안에서 한다 (헤더만 오고 본문이 멈추면 영원히 기다리지 않게)
+        if (res.status !== 204) {
+          try { json = await res.json(); }
+          catch (e) { if (ac && ac.signal.aborted) throw e; json = null; badJson = true; }
+        }
       } catch (e) {
         if (timer) clearTimeout(timer);
         if (ac && ac.signal.aborted) {
@@ -229,17 +239,21 @@ function create(opts = {}) {
           return { ok: false, error: apiError('timeout') };
         }
         say('gcal ' + method + ' ' + context + ': network ' + ((e && e.message) || e));
-        if (attempt < retries) { attempt++; await sleep(backoff(attempt)); continue; }
+        if (!unsafe && attempt < retries) { attempt++; await sleep(backoff(attempt)); continue; }
         return { ok: false, error: apiError('network') };
       }
       if (timer) clearTimeout(timer);
-      let json = null;
-      if (res.status !== 204) { try { json = await res.json(); } catch (e) { json = null; } }
-      if (res.ok) return { ok: true, status: res.status, json };
-      if (res.status === 401 && !forced) { forced = true; force = true; continue; }
-      const err = classifyHttpError({ status: res.status, body: json, headers: res.headers, context, now: nowMs() });
+      let err;
+      if (res.ok) {
+        // 읽기(GET)는 JSON 객체가 와야 쓸 수 있다. 빈·깨진 본문을 "일정 0개"로 받으면 전체 동기화가 그 캘린더 일정을 모두 지운다.
+        if (method !== 'GET' || (json && typeof json === 'object' && !Array.isArray(json))) return { ok: true, status: res.status, json };
+        err = apiError('server', { status: res.status, reason: badJson ? 'invalid_json' : 'empty_body' });
+      } else {
+        if (res.status === 401 && !forced) { forced = true; force = true; continue; }
+        err = classifyHttpError({ status: res.status, body: json, headers: res.headers, context, now: nowMs() });
+      }
       say('gcal ' + method + ' ' + context + ': ' + res.status + ' ' + err.type + (err.reason ? ' ' + err.reason : ''));
-      if ((err.type === 'rate_limit' || err.type === 'server') && attempt < retries) {
+      if ((err.type === 'rate_limit' || (err.type === 'server' && !unsafe)) && attempt < retries) {
         const hinted = retryAfterOf(res.headers, nowMs());
         if (hinted == null || hinted <= MAX_INLINE_WAIT_MS) {
           attempt++;
@@ -359,9 +373,13 @@ function create(opts = {}) {
     }
     const body = sanitizeBody(op.body);
     if (!body) return errResult(op, apiError('bad_request'));
+    // PATCH 는 보낸 필드만 바꾼다. 코어 본문은 장소가 없으면(제목 올리기 끔·장소 지움·작업 블록) location 키를 빼므로
+    // 그대로 보내면 Google 에 예전 장소가 남는다 → 빈 문자열로 명시해 지운다. (remoteHash 는 '' 와 없음을 같게 본다)
+    const patchBody = Object.assign({}, body);
+    if (typeof patchBody.location !== 'string') patchBody.location = '';
 
     if (op.op === 'patch') {
-      const r = await send('PATCH', url(one, { sendUpdates: 'none' }), { body, context: 'patch' });
+      const r = await send('PATCH', url(one, { sendUpdates: 'none' }), { body: patchBody, context: 'patch' });
       if (r.ok) return okResult(op, r.json);
       return errResult(op, missing(r.error));
     }
@@ -379,8 +397,10 @@ function create(opts = {}) {
       const priv = (ev.extendedProperties && ev.extendedProperties.private) || {};
       if (ev.status === 'cancelled' || !op.daynoteId || priv.daynoteId !== op.daynoteId) return errResult(op, apiError('id_taken', { status: 409 }));
       // 응답을 못 받은 첫 insert 뒤에 블록이 또 바뀌었을 수 있다 → 지금 본문으로 맞춰 둔다 (링크 해시 = 보낸 본문)
-      const p = await send('PATCH', url(one, { sendUpdates: 'none' }), { body, context: 'patch' });
+      const p = await send('PATCH', url(one, { sendUpdates: 'none' }), { body: patchBody, context: 'patch' });
       if (p.ok) return okResult(op, p.json, { adopted: true });
+      // GET 과 PATCH 사이에 지워졌다 → 그 id 는 다시 못 쓴다. (insert op 의 'gone' 은 코어가 캘린더 없음으로 읽으므로 id_taken 으로 바꾼다)
+      if (p.error && (p.error.type === 'gone' || p.error.type === 'not_found')) return errResult(op, apiError('id_taken', { status: 409 }));
       return errResult(op, missing(p.error));
     }
     return errResult(op, apiError('bad_request'));

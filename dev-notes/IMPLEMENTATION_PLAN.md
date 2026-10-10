@@ -757,3 +757,110 @@ function card(name, fallback) { var c = DN.settingsCards && DN.settingsCards[nam
 
 `*` = new file (wave-2 `*` files exist as orchestrator placeholders and are overwritten by their owner).
 Not touched by anyone: `renderer/styles.css`, `renderer/aiflow.js`, `renderer/editor.*`, `renderer/rules.js`, `renderer/views/{archive,review,inbox,weekly,tasks}.js`, `quick-preload.js`, `services/ai.js`, `scripts/{build-web,serve,fix-electron,make-icons}.js`, `src/core/{suggest,weekly,split}.js`, `src/core/ai/organizeNote.js`, `test/{ai-provider,suggest,weekly,split}.test.js`.
+
+---
+
+## 8. Calendar addendum (month view, drag placement, planner)
+
+Source: `/home/user/famem/DAYNOTE_CALENDAR_DESIGN.md` (= **CAL**). This section amends §2–§7; where CAL and this section disagree, this section wins. All §0 ground rules apply. Ownership stays disjoint: every file below has exactly one owner per wave.
+
+### 8.1 Decisions (binding)
+| # | Topic | Decision |
+|---|---|---|
+| K1 | Default calendar view | Month (`mem.mode` from `prefs.calendarMode`, `'month'` when absent/invalid); seg order `월간 · 주간 · 일간`; mode writes are `S.mutate(null, s => s.prefs.calendarMode = m, {silent:true})`. CAL §1. |
+| K2 | Drag | Pointer-event engine `renderer/dragplace.js` (`DN.dragPlace`); **all** HTML5 `draggable`/`dragstart`/`drop` code in `calendar.js` is removed (week/day views migrate too). CAL §10. |
+| K3 | Drop on a month cell | Auto placement via `PL.placeOnDay`; duration popover first when no estimate; commit `S.mutate('일정에 배치', …, {source:'calendar'})`; toast with `[다른 시간] [되돌리기]`. CAL §3. |
+| K4 | Dwell | 1000 ms on the same cell → `.is-ding` 300 ms (+`navigator.vibrate(20)` for touch/pen) → day panel `DN.views.calDay.open(ymd, {dragging:true, openedBy:'dwell', taskId})`; Esc/outside drop cancels and closes a dwell-opened panel. **No sound, no sound pref.** CAL §4. |
+| K5 | Planner | New pure core module `src/core/planner.js` (`DN.planner`, `PL`), deps `dates, model, slots` + optional `status` (Node `try require`, browser `window.Daynote.statusCore || null`). No `adapt` dependency in v1. CAL §5. |
+| K6 | AI params | Capture task items gain `sched {focus, energy, prefer, splittable, minutes}` (rule **N** inside the single `capture.v7`, after K·L·M — C5 still holds). Stored as `task.schedHints = null | {focus, energy, prefer, splittable, source:'ai'|'user', at}`; user wins; rule-derived hints are **never stored** (computed by `PL.hintsOf`). `minutes` → `estimateMinutes` (`estimateSource:'ai'`) only when the estimate is null and the duration is literally in the quote. CAL §8. |
+| K7 | Split | v1 proposes a split and places only the first chunk on explicit click. CAL §5.11, D9. |
+| K8 | State | `normalizeTask` default `schedHints: null` (added to `TASK_NULLABLE`); `updateTask` clears `schedHints` when the title changes and `schedHints.source === 'ai'` and the patch has no `schedHints`. No schema bump (stays 4). New prefs key `calendarMode`. Blocks: no new fields. |
+| K9 | Labels / sources | New undo labels `'자동 배치'` (arrangeDay commit), `'배치 힌트 바꾸기'` (detail). Reused: `'일정에 배치'`, `'일정 변경'`. New mutate source `'calendar'` (not in the settings skip list). §2.13 is amended accordingly. |
+| K10 | Calendar re-render | `calendar.js` `onChange` returns `true` (and sets `mem.dirty`) while `DN.dragPlace.active()` or a calendar popover is open; `onTick` repaints only the now line / today mark (full refresh only on date change when idle); after drag end with `mem.dirty` → `A.refresh()`. CAL §10.1. |
+| K11 | Multi-action toast | `ui.toast(msg, {actions:[{label, fn}], duration})` + flag `DN.ui.TOAST_ACTIONS = true` (W2-status). Callers guard: `ui.TOAST_ACTIONS ? toast(…actions…) : undoToast(msg)`. CAL §7.4. |
+
+### 8.2 New package **W1.5-planner** (runs after the wave-1 verification, before wave 2)
+**Owns:** `src/core/planner.js` (new), `test/planner.test.js` (new), and — limited to the K8 change only — `src/core/model.js`, `test/model.test.js`. It must not touch any other model behaviour (other engineers may be verifying wave-1 files concurrently; rebase on the latest tree before editing `model.js`).
+
+**API (exports are binding; semantics CAL §5):**
+```js
+STEP_MIN = 15; MIN_CHUNK = 30; COMMUTE_MIN = 30; EVENING_END = '22:30'; DAY_OFF_CORE = ['09:00', '21:00'];
+WEIGHTS                                              // frozen; CAL §5.7 values
+ruleHints(title) → { focus, energy, prefer, splittable }
+hintsOf(task) → { focus, energy, prefer, splittable, src: { focus, energy, prefer, splittable } }   // src ∈ 'user'|'ai'|'rule'|null
+remainingMinutes(state, task, now) → int | null
+taskMode(state, task, opts) → { ctx, ctxSource, atMode, statusActive, profile }
+dayBands(state, ymd, opts) → Band[]                 // { band, start:Date, end:Date, statusId, label }
+windowsFor(state, task, ymd, opts) → Window[]       // { start, end, parts:[{ band, start, end, level, statusId, label }] }
+suggestSlots(state, taskId, ymd, opts) → Candidate[] // { start, end, startIso, endIso, minutes, score, fit, level, band, statusId, label, reasons[1..3], terms }
+placeOnDay(state, taskId, ymd, opts) → { ok:true, candidate, block:{taskId, kind:'work', start, end}, reasons, alternatives }
+                                     | { ok:false, reason:'missing'|'done'|'no_estimate'|'past'|'after_due'|'no_window'|'too_long'|'no_slot', message, detail, alternatives:[{ymd, candidate}], split }
+nearestDay(state, taskId, fromYmd, opts) → { ymd, candidate } | null
+arrangeDay(state, taskIds, ymd, opts) → { placements:[{ taskId, candidate, block }], skipped:[{ taskId, reason }], minutes }
+splitPlan(state, taskId, ymd, opts) → null | { first, chunkMinutes, restMinutes }
+fmtDay(date, now) → '오늘'|'내일'|'10/12(일)';  fmtRange(start, end) → '19:30–20:00'
+// opts: { now (required), minutes?, workHours?, profile?, statusActive?, noStatus?, external?, ignoreBlockId?, extraBusy?, allowAfterDue?, limit?, historyDays?, days?, maxTasks?, maxMinutes?, includePoor? }
+```
+**Do:** CAL §5 literally (bands §5.4, levels §5.5 incl. the fallback table and the atMode table, candidate generation §5.6 incl. diversity, scoring §5.7, reasons §5.8, failures §5.9, nearestDay §5.10, splitPlan §5.11, arrangeDay §5.12, purity §5.13). Busy time only via `SL.collectBusy` (+`opts.extraBusy`), so Google busy events are included (C2). Never read the clock. UMD header per CAL §5.1. Header comment in Korean.
+**model.js:** K8 only (+ comment line on `schedHints` in `normalizeTask`).
+**Tests:** CAL §12.1 #1–64 → `test/planner.test.js` (one data table for #16 and #38); CAL §12.2 #65–66 appended to `test/model.test.js`. Both TZs green; `npm test` 0 fail / 0 skipped.
+
+### 8.3 Wave-2 package amendments
+**W2-ai** (adds to §4.3 W2-ai; new owned file `test/sched-capture.test.js`):
+- `capture.js`: `SCHEMA.properties.tasks.items.properties.sched` (CAL §8.1) before the `required` recomputation; SYSTEM rule **N** (CAL §8.2) after M. Version stays `'capture.v7'`.
+- `validate.js`: per task item `item.sched` per CAL §8.3 (enum/boolean checks, `prefer` null when the item has `do_at`, `minutes` accepted only when the quote contains an equal duration phrase via `relativeMinutes`/`D.parseDuration`; all-null ⇒ `null`).
+- `proposals.js`: `mergeOrganizeRun` → `payload.sched`; `applySelections` (and the late-result path) per CAL §8.4 with user-wins; `TASK_KEEP` += `'schedHints'`.
+- `fake.js`: emits `sched` (all null except literal `minutes`) for `purpose==='capture'` only (CAL §8.5).
+- `forced.js`: `refineForced` copies `sched` like §8.4 only when `task.schedHints == null` / `estimateMinutes == null`; `rulesItem` unchanged.
+- Tests: CAL §12.3 #67–74 in `test/sched-capture.test.js`; the schema walker in `assist.test.js` must pass unchanged.
+
+**W2-schedule** (replaces the `calendar.js` part of §4.3 W2-schedule where they conflict; C27/GOOGLE §9.2 items still apply inside the week/day timeline, the month cells and the day panel). New owned files (orchestrator pre-creates placeholders): `renderer/dragplace.js`, `renderer/views/calplace.js`, `renderer/views/calmonth.js`, `renderer/views/calday.js`.
+- `dragplace.js` → `DN.dragPlace` (CAL §10): `arm(el, opts) → {destroy}`, `active()`, `cancel()`, `session()`.
+- `calmonth.js` → `DN.views.calMonth.render(host, ctx) → { el, destroy, cellFor, focusDay, setPicking, paintNow }` (CAL §1.2–1.4).
+- `calday.js` → `DN.views.calDay = { open(ymd, opts), close(reason), isOpen(), ymd(), repaint() }` (CAL §4.3–4.5).
+- `calplace.js` → `DN.views.calPlace = { dropOnDay(taskId, ymd, anchorEl, opts), dropAtTime(taskId, startDate, anchorEl, opts), askDuration(anchorEl, task) → Promise, alternativesPopover(blockId, ymd), arrange(ymd, anchorEl, taskIds) }` (CAL §3, §6).
+- `calendar.js`: shell (CAL §1.1), left panel "배치할 일" (CAL §2 incl. groups, ctx filter when `DN.status.isActive()`, cards, picking mode, phone strip), week/day timeline migrated to `DN.dragPlace` (CAL §10.1), K10 re-render rules, `params.anchor`/`params.mode` read once, `DN.views.calendar = { title:'캘린더', render, _mem }` unchanged names.
+- `schedule.js`: CAL §7.1 suggestion chips (guarded on `DN.planner`) in addition to §4.3 W2-schedule (FEATURES §3, GOOGLE §9.3).
+- `css/schedule.css`: all classes of CAL §11 (no new tokens; reduced-motion fallbacks for `.is-ding` and `.cm-dwell`).
+- Copy in all touched calendar strings moves to `-어요` (CAL §10.1 examples).
+
+**W2-status** (adds to §4.3 W2-status):
+- `detail.js`: '배치 힌트' rows (CAL §7.2), always rendered when `DN.planner` exists (not gated on status activation); label `'배치 힌트 바꾸기'`; no change to the onChange regex.
+- `ui.js`: K11 multi-action toast (`opts.actions`, `TOAST_ACTIONS` flag); existing `action`/`undoToast` behaviour unchanged.
+
+**W2-main** (adds to §4.3 W2-main):
+- `README.md`: features list gains "캘린더 월간 보기 · 끌어서 자동 배치 · 날짜 위에서 1초 기다리면 그날 열기 · 배치 힌트(AI가 함께 짐작)"; test file list gains `planner.test.js`, `sched-capture.test.js`.
+- `main.js`: smoke `out.core` additionally requires `D.planner`.
+- `scripts/shots.js`: step `18-캘린더-월간` (load sample, `go('calendar')`, screenshot).
+
+### 8.4 Orchestrator: `renderer/index.html` additions (exact tags, inserted once at the wave-2 gate)
+Core block — immediately after `<script src="../src/core/recommend.js"></script>` (after `slots`, `status` and `recommend` deps), before `suggest.js`:
+```html
+  <script src="../src/core/planner.js"></script>
+```
+Renderer block — after `<script src="statusui.js"></script>`:
+```html
+  <script src="dragplace.js"></script>
+```
+Renderer block — immediately before `<script src="views/calendar.js"></script>`:
+```html
+  <script src="views/calplace.js"></script>
+  <script src="views/calmonth.js"></script>
+  <script src="views/calday.js"></script>
+```
+No new `<link>` tags (all CSS lives in the already-linked `css/schedule.css`). Placeholders: `renderer/dragplace.js`, `renderer/views/calplace.js`, `renderer/views/calmonth.js`, `renderer/views/calday.js` with `'use strict';\n// placeholder — owned by W2-schedule\n`. §2.11 load order becomes `dates, model, slots, adapt, statusWords, status, recommend, planner, suggest, …`.
+
+### 8.5 Verification amendments
+- W1.5-planner: `npm test` green in both TZs, 0 skipped; `planner.test.js` + model additions.
+- W2-ai: `sched-capture.test.js` + full suite.
+- W2-schedule: CAL §12.4 #1–11, #13–14 (Playwright; touch via `hasTouch` + CDP touch events; reduced-motion emulation) in addition to §6.1 W2-schedule.
+- W2-status: CAL §12.4 #12.
+- Global (§6.2) additions: calendar opens in month view on a fresh profile; `document.documentElement.scrollWidth === 390` with the day sheet open; no `draggable="true"` attribute anywhere under `.cal-layout`; `JSON.stringify(S.state)` contains no `__lane`.
+
+### 8.6 Ownership table additions (§7)
+| Wave | Package | Owned files |
+|---|---|---|
+| 1.5 | **W1.5-planner** | `src/core/planner.js`*, `test/planner.test.js`*, `src/core/model.js` (K8 only), `test/model.test.js` (K8 tests only) |
+| 2 | **W2-ai** | + `test/sched-capture.test.js`* |
+| 2 | **W2-schedule** | + `renderer/dragplace.js`*, `renderer/views/calplace.js`*, `renderer/views/calmonth.js`*, `renderer/views/calday.js`* |
+| gate | **orchestrator** | `renderer/index.html` tags of §8.4; the four placeholders |

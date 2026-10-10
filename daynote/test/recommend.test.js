@@ -624,3 +624,80 @@ test('128. context.status 는 sv 요약 { id, label, guessed, category, overlay 
   assert.deepEqual(r2.hiddenIds, []);
   assert.equal(r2.excluded.hidden, 0);
 });
+
+// ================================================================== 검증에서 더한 경계 (statusView)
+
+test('덧씌움 남은 시간이 0분이면 source status 로 고르지 않고 캘린더 규칙으로 간다', () => {
+  const s = setup();
+  event(s, 10, 30, 11, 0);
+  const a = task(s, { title: '메일 확인', estimateMinutes: 10, createdAt: OLD });
+  const v = sv({ id: 'work', label: '업무 중', category: 'work', offHours: false, rec: 'short', remainMinutes: 0,
+    overlay: { id: 'break', label: '휴식', until: new Date(2026, 9, 5, 10, 0, 30).toISOString(), rec: 'short' } });
+  const r = R.recommend(s, { now: NOW, statusView: v });
+  assert.equal(r.context.source, 'calendar');
+  assert.equal(r.context.availableMinutes, 30);
+  assert.notEqual(r.empty, 'time_short');
+  assert.equal(r.primary.taskId, a.id);
+  assert.ok(!r.primary.reasons.some((x) => /남은 시간\(/.test(x)));
+  // 숫자가 아닌 값도 무시한다
+  assert.equal(R.recommend(s, { now: NOW, statusView: sv({ id: 'work', category: 'work', offHours: false, remainMinutes: '12' }) }).context.source, 'calendar');
+});
+
+test('남은 시간 문장: 짐작 상태면 (시간표 기준), 소요 시간 미정·너무 긴 일에는 붙이지 않는다', () => {
+  const s = setup();
+  const fit = task(s, { title: '메일 확인', estimateMinutes: 10, createdAt: OLD });
+  const unknown = task(s, { title: '정리', createdAt: OLD });
+  const long = task(s, { title: '보고서', estimateMinutes: 30, createdAt: OLD });
+  const v = sv({ id: 'work', label: '업무 중', category: 'work', guessed: true, offHours: false, rec: 'short', remainMinutes: 12,
+    overlay: { id: 'meal', label: '점심', until: at(10, 12), rec: 'short' } });
+  const r = R.recommend(s, { now: NOW, statusView: v });
+  const by = (t) => r.ranked.concat(r.tooLong).find((i) => i.taskId === t.id);
+  assert.equal(by(fit).reasons[0], '‘점심’ 남은 시간(12분) 안에 끝나는 일을 골랐어요. (시간표 기준)');
+  assert.equal(by(unknown).fit, 'unknown');
+  assert.ok(!by(unknown).reasons.some((x) => /남은 시간\(/.test(x)));
+  assert.equal(by(long).fit, 'too_long');
+  assert.ok(!by(long).reasons.some((x) => /남은 시간\(/.test(x)));
+  assert.deepEqual(ids(r.ranked), [fit.id, unknown.id]);
+});
+
+test('statusView 에 levels 가 없거나 모르는 수준이면 모두 보통(1)으로 보고 숨기지 않는다', () => {
+  const s = setup();
+  const a = task(s, { title: 'a', createdAt: OLD });
+  const b = task(s, { title: 'b', createdAt: OLD });
+  const v = sv({ levels: undefined });
+  const r = R.recommend(s, { now: NOW, statusView: v });
+  assert.deepEqual(r.ranked.map((i) => [i.level, i.levelRank]), [['normal', 1], ['normal', 1]]);
+  assert.equal(r.excluded.hidden, 0);
+  assert.deepEqual(r.hiddenIds, []);
+  const r2 = R.recommend(s, { now: NOW, statusView: sv({ levels: { [a.id]: lv('extra'), [b.id]: lv('up') } }) });
+  assert.deepEqual(ids(r2.ranked), [b.id, a.id]);
+  assert.equal(r2.ranked[1].level, 'normal');
+});
+
+test('쉬는 상태(quiet)에서도 숨김은 그대로 빠지고, 할 일이 없어도 empty 는 quiet 이다', () => {
+  const s = setup();
+  const w = task(s, { title: '견적서', createdAt: OLD });
+  const h = task(s, { title: '빨래', createdAt: OLD });
+  const v = sv({ id: 'meeting', label: '회의 중', rec: 'none', offHours: false, levels: { [w.id]: lv('hide', 'work') } });
+  const r = R.recommend(s, { now: NOW, statusView: v });
+  assert.equal(r.empty, 'quiet');
+  assert.deepEqual(ids(r.ranked), [h.id]);
+  assert.deepEqual(r.hiddenIds, [w.id]);
+  assert.equal(R.recommend(setup(), { now: NOW, statusView: v }).empty, 'quiet');
+});
+
+test('Google 일정이 자정을 넘겨도 다음 일정은 오늘 시작한 것만, 끝난 Google 일정은 무시한다', { skip: !V4 && 'W1-model 병합 전' }, () => {
+  const s = setup();
+  s.gcal.events.push(
+    gev('past', at(8, 0), at(9, 0)),
+    gev('late', new Date(2026, 9, 5, 23, 30).toISOString(), new Date(2026, 9, 6, 1, 0).toISOString())
+  );
+  task(s, { title: 'x', estimateMinutes: 10, createdAt: OLD });
+  const cal = R.calendarContext(s, NOW);
+  assert.equal(cal.current.length, 0);
+  assert.equal(cal.next.id, 'g:cal1|late');
+  // 근무 시간 안이면 근무 끝(18:00)에서 자른다
+  const r = R.recommend(s, { now: NOW });
+  assert.equal(r.context.until, 'work_end');
+  assert.equal(r.context.availableMinutes, 480);
+});

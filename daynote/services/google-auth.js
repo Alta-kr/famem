@@ -520,6 +520,9 @@ function create(opts = {}) {
         }
         const code = u.searchParams.get('code');
         if (!code) return send(res, 400, PAGE_FAIL);
+        // 맞는 state 의 code 가 왔다 → 5분 제한은 여기까지. 교환(최대 15초)·사진(5초)은 각자 제한이 있다.
+        // (5분 직전에 온 code 의 교환 도중 timeout 으로 끝나면 Google 이 이미 내준 토큰을 버리게 된다)
+        if (flow.timer) { clearTimer(flow.timer); flow.timer = null; }
         // 같은 code 로 두 번 들어와도(새로고침 등) 교환은 한 번만 하고 같은 결과를 보여 준다
         if (!flow.exchange) flow.exchange = exchangeCode(flow, code).catch((e) => ({ ok: false, error: authError('unknown', redact((e && e.message) || e)) }));
         const r = await flow.exchange;
@@ -576,11 +579,13 @@ function create(opts = {}) {
     if (!o.forceRefresh && access && access.expiresAt - REFRESH_MARGIN_MS > nowMs()) {
       return Promise.resolve({ ok: true, accessToken: access.token, expiresAt: access.expiresAt });
     }
-    if (refreshing) return refreshing;
+    // 같은 로그인(gen)에서 진행 중인 갱신만 함께 쓴다 — 로그아웃·재로그인 전에 시작한 갱신은 not_signed_in 으로 끝나므로 새로 보낸다
+    if (refreshing && refreshing.gen === gen) return refreshing.p;
     const myGen = gen;
     const p = refresh(client, t, myGen).catch((e) => ({ ok: false, error: authError('unknown', redact((e && e.message) || e)) }));
-    refreshing = p;
-    p.then(() => { if (refreshing === p) refreshing = null; });
+    const entry = { gen: myGen, p };
+    refreshing = entry;
+    p.then(() => { if (refreshing === entry) refreshing = null; });
     return p;
   }
 

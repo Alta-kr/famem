@@ -377,6 +377,23 @@ test('8. 시간 제한(timeoutMs 50)이 지나면 timeout, 서버가 닫혀 그 
   await assert.rejects(hit(portOf(t.authUrls[0])), { code: 'ECONNREFUSED' });
 });
 
+test('8b. 제한 시간 직전에 온 code: 교환이 제한 시간을 넘겨도 끝까지 기다려 Google 이 내준 토큰을 버리지 않는다', async () => {
+  let t = null;
+  t = setup({ create: { timeoutMs: 40 }, exchange: async () => {
+    await new Promise((r) => setTimeout(r, 120));                // 교환이 5분(여기서는 40ms) 제한을 넘긴다
+    return { status: 200, json: { access_token: ACCESS, expires_in: 3600, refresh_token: REFRESH, scope: A.SCOPES.join(' '), token_type: 'Bearer',
+      id_token: idToken({ iss: 'https://accounts.google.com', aud: CLIENT_ID, exp: Math.floor(t.clock.t / 1000) + 3600,
+        nonce: t.authUrls[0].searchParams.get('nonce'), sub: SUB, email: 'me@example.com', name: '김데이' }) } };
+  } });
+  const r = await t.auth.signIn();
+  assert.equal(r.ok, true, JSON.stringify(r));
+  assert.equal(r.status.state, 'signed_in');
+  assert.equal(r.status.error, null);
+  assert.ok(fs.existsSync(t.tokenFile));
+  assert.ok(await waitFor(() => t.browser.responses.length === 1));
+  assert.ok(t.browser.responses[0].body.includes('Daynote에 연결했어요'));
+});
+
 test('9. cancelSignIn() 이면 canceled (화면 오류 없음), 새 signIn 도 진행 중인 것을 취소한다', async () => {
   const t = setup({ browser: async () => { setImmediate(() => t.auth.cancelSignIn()); } });
   const r = await t.auth.signIn();

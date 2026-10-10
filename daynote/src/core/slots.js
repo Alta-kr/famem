@@ -222,13 +222,15 @@
     });
 
     // 2) 외부 일정 — Google(state.gcal.events 투영) + opts.external
+    //    같은 id 가 두 번 들어오면 한 번만 센다. id 가 없는 일정은 서로 다른 일정으로 본다(하나로 합치지 않는다).
     var seen = {};
     var pushExt = function (id, s, e, title, provider) {
+      var hasId = id != null && id !== '';
       if (ignoreId != null && id === ignoreId) return;
-      if (Object.prototype.hasOwnProperty.call(seen, id)) return;
+      if (hasId && Object.prototype.hasOwnProperty.call(seen, 'k' + id)) return;
       if (!inRange(s, e)) return;
-      seen[id] = true;
-      out.push({ id: id, start: s, end: e, title: title || '', source: 'external', kind: 'external', taskId: null, done: false, provider: provider });
+      if (hasId) seen['k' + id] = true;
+      out.push({ id: hasId ? id : null, start: s, end: e, title: title || '', source: 'external', kind: 'external', taskId: null, done: false, provider: provider });
     };
     if (state && typeof M.externalItems === 'function') {
       var fromIso = isFinite(lo) ? new Date(lo).toISOString() : undefined;

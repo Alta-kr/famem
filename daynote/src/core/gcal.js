@@ -23,6 +23,8 @@
 // ── 되읽기 (‘Daynote’ 캘린더 → Daynote, 양방향) ─────────────────────────
 //   planOwnPull → applyOwnPull(조용히) + applyRemoteDeletes(라벨 있는 mutate 안에서 — 되돌릴 수 있다).
 //   충돌은 링크에 저장한 기준값(본문 해시·etag)과 비교하는 3방향 규칙: 양쪽 다 바뀌면 Daynote 가 이긴다.
+//   Google 의 취소가 Daynote 가 보낸 delete 의 메아리일 수 있으면(올릴 대상이 아닌 블록 · delete 대기 중) 블록은 절대 지우지 않는다.
+//   409 adopted 로 맺은 링크는 Google 내용을 모르므로 해시를 비워 두어 다음 reconcile 이 한 번 patch 로 맞춘다.
 //
 // ctx = { now: Date|ISO, deviceId: string, tz: string, selfEmail?: string, random?: () => number }
 // OutboxEntry = { id:'op:'+blockId | 'op:orphan:'+eventId, op, blockId, eventId, calendarId, attempts, nextAt, lastError, createdAt, drain? }
@@ -193,6 +195,11 @@
     return null;
   }
   function removeEntry(g, id) { g.outbox = g.outbox.filter(function (e) { return !(e && e.id === id); }); }
+  // Daynote 가 이 블록의 Google 일정을 지우려고 보낼 delete 가 남아 있나
+  function pendingDelete(g, blockId) {
+    var e = findEntry(g, 'op:' + blockId);
+    return !!(e && e.op === 'delete');
+  }
   function newEntry(id, op, blockId, eventId, calendarId, nowIso) {
     return { id: id, op: op, blockId: blockId || null, eventId: eventId || null, calendarId: calendarId || null,
              attempts: 0, nextAt: null, lastError: null, createdAt: nowIso };
@@ -292,10 +299,16 @@
 
   // 올리기 끄기. opts.removeFuture: true → 앞으로의 링크는 delete(drain) 로 Google 에서도 지우고 지난 것은 링크만 푼다,
   //                                false → 링크를 모두 풀고 보낼 목록을 비운다 (Google 일정은 그대로 남는다). → { deletes, unlinked }
+  //   끄면 엔진이 ‘Daynote’ 캘린더를 더는 되읽지 않으므로 그 캘린더의 거울(다른 기기 일정 등)을 지우고 커서를 비운다.
+  //   다시 켜면 전체 되읽기부터 하므로 남아 있던 내 일정은 remoteHash 로 링크를 다시 맺는다(409 adopt 보다 정확).
   function disableExport(state, opts, now) {
     var g = ensure(state);
     var t = needNow(now), nowIso = iso(t);
     g.settings.exportEnabled = false;
+    g.calendars.forEach(function (c) {
+      if (c && (c.isExport || (g.exportCalendarId && c.id === g.exportCalendarId))) { resetCursor(c); removeEventsOf(g, c.id); }
+    });
+    if (g.exportCalendarId) removeEventsOf(g, g.exportCalendarId);
     var deletes = 0, unlinked = 0;
     if (opts && opts.removeFuture) {
       var keep = [], kept = {};
@@ -871,9 +884,11 @@
 
       if (r.ok || (op.op === 'delete' && (GONE[type] || type === 'calendar_missing'))) {
         if (op.op === 'insert' && blockId) {
+          // 보낸 본문의 해시. 단 409 adopted 는 Google 에 이미 있던 일정을 그대로 받은 것이라(응답을 못 받은 뒤 블록이 또 바뀌었을 수 있다)
+          // 내용이 같다고 확신할 수 없다 — 해시를 비워 다음 reconcile 이 한 번 patch 해서 맞추게 한다.
           g.links[blockId] = {
             eventId: r.eventId || op.eventId, calendarId: op.calendarId, gen: Number(op.gen) || 0,
-            etag: r.etag || null, remoteUpdated: r.updated || null, hash: op.hash,   // 보낸 본문의 해시
+            etag: r.etag || null, remoteUpdated: r.updated || null, hash: r.adopted ? null : op.hash,
             end: b ? b.end : null, pushedAt: nowIso
           };
           if ((Number(g.gens[blockId]) || 0) < (Number(op.gen) || 0)) g.gens[blockId] = Number(op.gen);
@@ -1011,7 +1026,10 @@
         handled[linked] = true;
         var lb = blocks[linked];
         if (!lb) plan.dropLinks.push(linked);                                   // 블록도 없음 — 링크만 정리
-        else if (bodyIn(state, g, lb, ctx).hash !== links[linked].hash) plan.reinserts.push(linked);   // Daynote 가 이긴다
+        // Daynote 도 Google 에서 빼려던 블록(시각 미정·작업 올리기 끔·올리기 끔) — 내가 보낸 delete 의 메아리일 수 있다. 블록은 두고 링크만 정리
+        else if (!linkable(state, g, lb)) plan.dropLinks.push(linked);
+        // 내가 보낸 delete 의 메아리(그 뒤 다시 올릴 블록이 됨) · Daynote 에서 바뀜 — Daynote 가 이긴다: 새 세대로 다시 올린다
+        else if (pendingDelete(g, linked) || bodyIn(state, g, lb, ctx).hash !== links[linked].hash) plan.reinserts.push(linked);
         else plan.remoteDeletes.push({ blockId: linked });                     // Google 에서 지움 → Daynote 도 지운다
         return;
       }
@@ -1092,6 +1110,7 @@
   }
 
   // 되읽기 반영 (조용한 mutate). 지운 것 반영은 applyRemoteDeletes 가 따로 한다. → { changed, edited, relinked, orphans, mirrored }
+  //   changed 는 블록·일정·링크·보낼 목록의 변화 수다 (엔진이 silent 를 정할 때 — 동기화 한 줄·설정 카드도 다시 그려야 한다)
   function applyOwnPull(state, plan, ctx) {
     var g = ensure(state);
     var t = nowOf(ctx), nowIso = iso(t);
@@ -1105,6 +1124,7 @@
       g.links[a.blockId] = Object.assign({}, a.link);
       g.gens[a.blockId] = Math.max(Number(g.gens[a.blockId]) || 0, Number(a.link.gen) || 0);
       out.relinked++;
+      out.changed++;
     });
     arr(plan.remoteEdits).forEach(function (x) {
       var b = x && blocks[x.blockId], L = x && g.links[x.blockId];
@@ -1117,15 +1137,24 @@
     });
     arr(plan.reinserts).forEach(function (id) {
       var L = g.links[id];
-      g.gens[id] = nextGen(g, id, L && L.gen);
+      if (!L) return;                                                           // 이미 정리됨 — 세대를 또 올리지 않는다
+      g.gens[id] = nextGen(g, id, L.gen);
       delete g.links[id];
+      out.changed++;
     });
-    arr(plan.dropLinks).forEach(function (id) { delete g.links[id]; });
+    arr(plan.dropLinks).forEach(function (id) {
+      var L = g.links[id];
+      if (!L) return;
+      if (blocks[id]) g.gens[id] = nextGen(g, id, L.gen);                       // 블록이 남아 있으면 지워진 id 는 다시 못 쓴다
+      delete g.links[id];
+      out.changed++;
+    });
     arr(plan.orphans).forEach(function (o) {
       var id = ORPHAN + o.eventId;
       if (findEntry(g, id)) return;
       g.outbox.push(newEntry(id, 'delete', null, o.eventId, plan.calendarId, nowIso));
       out.orphans++;
+      out.changed++;
     });
     out.changed += removeKeysFrom(g, plan.calendarId, plan.removeKeys, []);
     out.mirrored = upsertEvents(g, plan.mirrors);
@@ -1147,6 +1176,8 @@
       g.gens[id] = nextGen(g, id, L.gen);
       delete g.links[id];
       if (!b) return;
+      // 그 사이 Daynote 가 Google 에서 빼려던 블록이 됨(내가 보낸 delete 의 메아리일 수 있다) — 블록은 지우지 않는다
+      if (!linkable(state, g, b) || pendingDelete(g, id)) return;
       if (bodyIn(state, g, b, ctx).hash !== L.hash) return;                     // 그 사이 Daynote 에서 바뀜 — 다시 올린다
       M.deleteBlock(state, id);
       out.deleted++;

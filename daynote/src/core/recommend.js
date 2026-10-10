@@ -11,7 +11,7 @@
 // ── 쓸 수 있는 시간 T ─────────────────────────────────────────────
 //   1) 사용자가 고른 시간(15분·30분·1시간·직접 입력)이 있으면 그것을 쓴다.
 //   2) (현재 상태) 회의·수업·잘 시간처럼 추천을 쉬는 상태면 T 를 모르고 결과는 'quiet' 다.
-//   3) (현재 상태) 휴식·식사 덧씌움이면 그 남은 시간을 쓴다 (source 'status').
+//   3) (현재 상태) 휴식·식사 덧씌움이면 그 남은 시간을 쓴다 (source 'status'). 남은 시간이 0분이면 쓰지 않는다.
 //   4) 없으면 캘린더의 "다음 일정까지 남은 시간" 을 후보로 쓴다 (실제 여유를 보장하지 않음을 화면에 표시).
 //      캘린더에는 Daynote 블록과 Google 의 바쁜(종일 아닌) 일정이 함께 들어간다. 근무 시간 끝에서 자른다.
 //   5) 지금 일정 중이거나, 근무 시간 밖이거나, 오늘 남은 일정이 없으면 T 를 모른다고 본다.
@@ -213,7 +213,8 @@
     var ctx;
     if (userT != null && userT > 0) ctx = { availableMinutes: userT, source: 'user' };
     else if (quiet) ctx = { availableMinutes: null, source: 'none' };
-    else if (sv && sv.remainMinutes != null) ctx = { availableMinutes: sv.remainMinutes, source: 'status', until: 'status_end' };
+    // 덧씌움이 1분도 안 남았으면(remainMinutes 0) 남은 시간으로 고르지 않는다 — "0분 안에" 같은 결과가 나오지 않게 캘린더 규칙으로 간다
+    else if (sv && typeof sv.remainMinutes === 'number' && sv.remainMinutes > 0) ctx = { availableMinutes: sv.remainMinutes, source: 'status', until: 'status_end' };
     else if (!cal.busyWith && !offHours && cal.minutesToNext != null) {
       var toEnd = capEnd && capEnd.getTime() > now.getTime() ? D.minutesBetween(now, capEnd) : null;
       ctx = toEnd != null && cal.minutesToNext > toEnd

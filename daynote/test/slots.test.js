@@ -456,6 +456,72 @@ test('36. workTime 참/거짓, 지운 할 일의 블록은 무시', () => {
   assert.equal(SL.freeNow(s, L(10, 10, 0), { workHours: { start: '09:00', end: '18:00', days: [6] } }).workTime, true);
 });
 
+// ------------------------------------------------------------------ 검증에서 더한 경계
+test('외부 일정: id 가 없는 일정끼리는 하나로 합치지 않고, 같은 id 는 한 번만 센다', () => {
+  const s = M.emptyState();
+  const external = [
+    { start: iso(5, 10, 0), end: iso(5, 11, 0), title: '이름 없는 회의 1' },
+    { start: iso(5, 13, 0), end: iso(5, 14, 0), title: '이름 없는 회의 2' },
+    { id: '', start: iso(5, 15, 0), end: iso(5, 15, 30), title: '빈 id' },
+    ev('dup', iso(5, 16, 0), iso(5, 16, 30)),
+    ev('dup', iso(5, 16, 0), iso(5, 16, 30))
+  ];
+  const busy = SL.collectBusy(s, L(5, 0, 0), L(6, 0, 0), { external });
+  assert.deepEqual(busy.map((b) => b.title), ['이름 없는 회의 1', '이름 없는 회의 2', '빈 id', 'dup']);
+  assert.equal(busy[0].id, null);
+  // 둘 다 빈 시간 찾기에서 자리를 막는다
+  const r = SL.findSlot(busy, { from: L(5, 13, 0), now: L(5, 13, 0), minutes: 30 });
+  assert.equal(r.start.getTime(), ms(5, 14, 0));
+  assert.equal(SL.freeNow(s, L(5, 13, 10), { external }).reason, 'in_progress');
+});
+
+test('할 일이 아예 없어진 작업 블록(고아)은 바쁜 시간에서 빠진다 — 추천의 캘린더 맥락과 같은 기준 (FEATURES §2.3 규칙 1)', () => {
+  const R = require('../src/core/recommend');
+  const s = M.emptyState();
+  const t = task(s, { title: '샘플 일', sample: true });
+  const orphan = block(s, { taskId: t.id, title: '샘플 일', start: iso(5, 10, 30), end: iso(5, 11, 0) });
+  s.tasks = s.tasks.filter((x) => x.id !== t.id);       // clearSample 처럼 할 일만 사라진 경우
+  assert.ok(M.byId(s.blocks, orphan.id));
+  assert.deepEqual(SL.collectBusy(s, L(5, 0, 0), L(6, 0, 0)), []);
+  const free = SL.freeNow(s, L(5, 10, 40), {});
+  assert.equal(free.free, true);
+  assert.equal(R.calendarContext(s, L(5, 10, 40)).current.length, 0);
+  assert.equal(R.calendarContext(s, NOW).next, null);
+});
+
+test('collectBusy 는 state 가 없거나 옛 모양(gcal 없음)이어도 동작한다', () => {
+  assert.deepEqual(SL.collectBusy(null, L(5, 0, 0), L(6, 0, 0)), []);
+  assert.deepEqual(ids(SL.collectBusy(undefined, L(5, 0, 0), L(6, 0, 0), { external: [ev('x', iso(5, 9, 0), iso(5, 10, 0))] })), ['x']);
+  const s = M.emptyState();
+  delete s.gcal;
+  const b = block(s, { title: '회의', start: iso(5, 9, 0), end: iso(5, 10, 0) });
+  assert.deepEqual(ids(SL.collectBusy(s, L(5, 0, 0), L(6, 0, 0))), [b.id]);
+  assert.equal(SL.freeNow(s, L(5, 9, 30), {}).reason, 'in_progress');
+});
+
+test('freeNow: imminentMinutes 를 늘리면 그만큼 앞(자정 너머 포함)을 본다, 0 이면 곧 시작은 보지 않는다', () => {
+  const s = M.emptyState();
+  block(s, { title: '심야 배포', start: iso(6, 0, 20), end: iso(6, 1, 0) });
+  const late = L(5, 23, 55);
+  assert.equal(SL.freeNow(s, late, {}).free, true);                                  // 25분 뒤 — 기본 15분 밖
+  assert.equal(SL.freeNow(s, late, { imminentMinutes: 30 }).reason, 'imminent');
+  const s2 = M.emptyState();
+  block(s2, { title: '회의', start: iso(5, 10, 5), end: iso(5, 11, 0) });
+  assert.equal(SL.freeNow(s2, NOW, {}).reason, 'imminent');
+  const r = SL.freeNow(s2, NOW, { imminentMinutes: 0 });
+  assert.equal(r.free, true);
+  assert.equal(r.freeMinutes, 5);
+});
+
+test('findSlot·freeNow 는 now 를 ISO·ms 로 받아도 같고, 블록 경계가 근무 끝과 맞닿으면 다음 날로 간다', () => {
+  const busy = busyOf([[L(5, 17, 0), L(5, 18, 0)]]);
+  const a = SL.findSlot(busy, { from: L(5, 16, 45), now: L(5, 16, 45), minutes: 30 });
+  assert.equal(a.start.getTime(), ms(6, 9, 0));                                       // 16:45–17:15 는 겹치고 17:00 뒤엔 18:00 끝
+  const b = SL.findSlot(busy, { from: iso(5, 16, 45), now: ms(5, 16, 45), minutes: 15 });
+  assert.equal(b.start.getTime(), ms(5, 16, 45));
+  assert.deepEqual(SL.freeNow(M.emptyState(), iso(5, 10, 0), {}), SL.freeNow(M.emptyState(), NOW, {}));
+});
+
 // ------------------------------------------------------------------ Google 일정(state.gcal.events) — W1-model 병합 뒤
 
 test('state.gcal.events 의 바쁜 Google 일정을 읽는다 (종일·한가함 제외, provider google)', { skip: !V4 && 'W1-model 병합 전' }, () => {
@@ -531,6 +597,16 @@ test('slots 는 window 없이 require 만으로 동작하고 내보내기 이름
   assert.equal(SL.SEARCH_DAYS, 14);
   assert.equal(SL.IMMINENT_MIN, 15);
   const src = fs.readFileSync(path.join(__dirname, '..', 'src', 'core', 'slots.js'), 'utf8');
-  assert.ok(!/new Date\(\)/.test(src), '벽시계를 읽지 않는다');
-  assert.ok(!/=>|\bconst\b|\blet\b|`/.test(src.replace(/\/\/.*$/gm, '')), 'ES5 문법');
+  assert.ok(!/new Date\(\)|Date\.now/.test(src), '벽시계를 읽지 않는다');
+  assert.ok(!/=>|\bconst\b|\blet\b|`|\bclass\b|\.\.\.|\?\.|\basync\b|\bawait\b/.test(src.replace(/\/\/.*$/gm, '')), 'ES5 문법');
+  // 브라우저처럼 window 만 있는 환경에서도 DN.slots 로 올라온다 (recommend 가 그 뒤에 읽는다)
+  const vm = require('vm');
+  const ctx = { window: {} };
+  vm.createContext(ctx);
+  ['dates.js', 'model.js', 'slots.js', 'recommend.js'].forEach((f) => {
+    vm.runInContext(fs.readFileSync(path.join(__dirname, '..', 'src', 'core', f), 'utf8'), ctx, { filename: f });
+  });
+  assert.equal(typeof ctx.window.Daynote.slots.findSlot, 'function');
+  assert.equal(typeof ctx.window.Daynote.recommend.recommend, 'function');
+  assert.equal(ctx.window.Daynote.slots.describeWorkHours(), '월–금 09:00–18:00');
 });

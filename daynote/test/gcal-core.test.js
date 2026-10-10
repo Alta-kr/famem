@@ -4,6 +4,9 @@
 // #15–18(M.conflictsFor·M.calendarItems·recommend)은 model·recommend 테스트가 맡는다.
 const test = require('node:test');
 const assert = require('node:assert/strict');
+const fs = require('fs');
+const path = require('path');
+const vm = require('vm');
 const D = require('../src/core/dates');
 const M = require('../src/core/model');
 const G = require('../src/core/gcal');
@@ -1174,4 +1177,140 @@ test('summary: 가져온 일정·올릴 일정·실패·마지막 동기화', ()
   assert.deepEqual(G.summary(M.emptyState(), NOW), {
     calendars: 0, selected: 0, events: 0, pending: 0, failed: 0, lastSyncAt: null, lastError: null, exportError: null, draining: 0
   });
+});
+
+// ------------------------------------------------------------------ 검증에서 더한 회귀 테스트
+test('Google 취소가 Daynote 가 보낸 delete 의 메아리면 블록을 지우지 않는다 (시각 미정 · 작업 올리기 끔)', () => {
+  // 시각 미정이 된 일정: delete 를 보냈지만 응답을 못 받음 → 되읽기에서 취소로 돌아옴
+  const { s, b } = linkedEvent();
+  const L = s.gcal.links[b.id];
+  M.updateBlock(s, b.id, { timeUncertain: true });
+  assert.deepEqual(G.reconcile(s, CTX).deletes, [b.id]);
+  const ops = G.dueOps(s, CTX);
+  G.applyPushResults(s, ops, [{ opId: ops[0].opId, ok: false, error: { type: 'network', retryable: true } }], CTX);
+  const { plan } = ownPull(s, [{ id: L.eventId, status: 'cancelled' }]);
+  assert.deepEqual(plan.remoteDeletes, []);
+  assert.deepEqual(plan.dropLinks, [b.id]);
+  assert.deepEqual(G.applyRemoteDeletes(s, plan, CTX), { deleted: 0 });
+  assert.ok(M.byId(s.blocks, b.id), '사용자 블록은 남는다');
+  assert.equal(s.gcal.links[b.id], undefined);
+  assert.equal(s.gcal.gens[b.id], 1);                          // 지워진 id 는 다시 못 쓴다
+  G.reconcile(s, CTX);
+  assert.deepEqual(s.gcal.outbox, []);                         // 남은 delete 도 정리된다
+  // 시각을 확인하면 새 세대로 올린다
+  M.updateBlock(s, b.id, { timeUncertain: false });
+  assert.deepEqual(G.reconcile(s, CTX).inserts, [b.id]);
+  assert.equal(G.dueOps(s, CTX)[0].eventId, G.eventIdFor(b.id, 1));
+
+  // 작업 올리기를 끈 뒤의 작업 블록
+  const w = exportState();
+  const t = M.addTask(w, { title: '견적서 작성' }, NOW);
+  const wb = M.addBlock(w, { taskId: t.id, start: at(7, 10), end: at(7, 11) });
+  G.reconcile(w, CTX); pushOk(w);
+  const WL = w.gcal.links[wb.id];
+  w.gcal.settings.exportWork = false;
+  G.reconcile(w, CTX);
+  const wp = ownPull(w, [{ id: WL.eventId, status: 'cancelled' }]).plan;
+  assert.deepEqual([wp.remoteDeletes, wp.dropLinks], [[], [wb.id]]);
+  assert.deepEqual(G.applyRemoteDeletes(w, wp, CTX), { deleted: 0 });
+  assert.equal(w.blocks.length, 1);
+});
+
+test('내가 보낸 delete 가 남아 있는데 블록이 다시 올릴 대상이 되면, 취소 메아리는 새 세대로 다시 올린다', () => {
+  const { s, b } = linkedEvent();
+  const L = s.gcal.links[b.id];
+  M.updateBlock(s, b.id, { timeUncertain: true });
+  G.reconcile(s, CTX);                                         // delete 대기
+  M.updateBlock(s, b.id, { timeUncertain: false });            // 그 사이 다시 확정 (Google 은 이미 지웠다)
+  const { plan } = ownPull(s, [{ id: L.eventId, status: 'cancelled' }]);
+  assert.deepEqual([plan.remoteDeletes, plan.reinserts], [[], [b.id]]);
+  assert.ok(M.byId(s.blocks, b.id));
+  assert.equal(s.gcal.gens[b.id], 1);
+  assert.deepEqual(G.reconcile(s, CTX).inserts, [b.id]);
+  assert.deepEqual(s.gcal.outbox.map((e) => e.op), ['insert']);
+});
+
+test('applyRemoteDeletes 는 반영하는 순간에 다시 확인한다 — 그 사이 시각 미정이 된 블록은 지우지 않는다', () => {
+  const { s, b } = linkedEvent();
+  const L = s.gcal.links[b.id];
+  const { plan } = ownPull(s, [{ id: L.eventId, status: 'cancelled' }]);
+  assert.deepEqual(plan.remoteDeletes, [{ blockId: b.id }]);
+  M.updateBlock(s, b.id, { timeUncertain: true });
+  assert.deepEqual(G.applyRemoteDeletes(s, plan, CTX), { deleted: 0 });
+  assert.ok(M.byId(s.blocks, b.id));
+  assert.equal(s.gcal.links[b.id], undefined);
+  assert.equal(s.gcal.gens[b.id], 1);
+});
+
+test('409 adopted 는 Google 내용을 확신할 수 없으므로 다음 reconcile 이 한 번 patch 해서 맞춘다', () => {
+  const s = exportState();
+  const b = M.addBlock(s, { title: 'A', start: at(7, 10), end: at(7, 11) });
+  G.reconcile(s, CTX);
+  let ops = G.dueOps(s, CTX);
+  G.applyPushResults(s, ops, [{ opId: ops[0].opId, ok: false, error: { type: 'network', retryable: true } }], CTX);   // Google 에는 A 로 생겼다
+  M.updateBlock(s, b.id, { title: 'B' });
+  const later = ctxAt(plus(HOUR));
+  G.reconcile(s, later);
+  ops = G.dueOps(s, later);
+  assert.equal(ops[0].body.summary, 'B');
+  G.applyPushResults(s, ops, [{ opId: ops[0].opId, ok: true, eventId: ops[0].eventId, etag: '"a1"', updated: plus(HOUR).toISOString(), adopted: true }], later);
+  assert.equal(s.gcal.links[b.id].eventId, G.eventIdFor(b.id, 0));
+  assert.deepEqual(G.reconcile(s, later).patches, [b.id]);      // A 로 남은 Google 일정을 B 로 맞춘다
+  const patch = G.dueOps(s, later);
+  assert.equal(patch[0].body.summary, 'B');
+  G.applyPushResults(s, patch, [{ opId: patch[0].opId, ok: true, eventId: patch[0].eventId, etag: '"a2"' }], later);
+  assert.deepEqual(G.reconcile(s, later).patches, []);
+});
+
+test('disableExport 는 ‘Daynote’ 캘린더의 거울을 지우고 커서를 비운다 — 다시 켜면 전체 되읽기로 링크를 다시 맺는다', () => {
+  const { s, b } = linkedEvent();
+  const mine = googleCopy(s, b);
+  const other = rawEv('dnother2', at(8, 10), at(8, 11), {
+    extendedProperties: { private: { daynoteId: 'blk_other', daynoteKind: 'event', daynoteDevice: 'dev-B', daynoteV: '1' } } });
+  ownPull(s, [mine, other], true);
+  assert.deepEqual(s.gcal.events.map((e) => e.eventId), ['dnother2']);
+  assert.ok(cal(s, DN).syncToken);
+  G.disableExport(s, { removeFuture: false }, NOW);
+  assert.deepEqual(s.gcal.events, []);                          // 더는 되읽지 않으므로 낡은 거울을 남기지 않는다
+  assert.equal(cal(s, DN).syncToken, null);
+  assert.deepEqual(G.pullRequest(cal(s, DN), NOW), { calendarId: DN, timeMin: G.windowFor(NOW).start, timeMax: G.windowFor(NOW).end });
+  // 꺼져 있는 동안 Google 에서 제목을 바꿈 → 다시 켜고 전체 되읽기 → remoteHash 로 링크 → reconcile 이 Daynote 값으로 patch
+  s.gcal.settings.exportEnabled = true;
+  const edited = Object.assign({}, mine, { etag: '"x9"', summary: '꺼진 동안 바꾼 제목' });
+  const { plan } = ownPull(s, [edited, other], true);
+  assert.deepEqual(plan.adoptLinks.map((a) => a.blockId), [b.id]);
+  assert.equal(s.gcal.links[b.id].hash, G.remoteHash(edited));
+  assert.deepEqual(G.reconcile(s, CTX).patches, [b.id]);
+  assert.deepEqual(s.gcal.events.map((e) => e.eventId), ['dnother2']);
+});
+
+test('applyOwnPull 의 changed 는 링크·보낼 목록 변화도 센다 (엔진이 조용히 저장하고 화면을 안 그리는 일이 없게)', () => {
+  const { s, b } = linkedEvent();
+  const raw = googleCopy(s, b);
+  delete s.gcal.links[b.id];
+  assert.equal(ownPull(s, [raw]).r.changed, 1);                 // 링크 다시 맺기
+  M.deleteBlock(s, b.id);
+  delete s.gcal.links[b.id];
+  assert.equal(ownPull(s, [raw]).r.changed, 1);                 // 고아 delete 넣기
+  const { s: s2, b: b2 } = linkedEvent();
+  const L2 = s2.gcal.links[b2.id];
+  M.updateBlock(s2, b2.id, { title: '바꿈' });
+  assert.equal(ownPull(s2, [{ id: L2.eventId, status: 'cancelled' }]).r.changed, 1);   // 새 세대로 다시 올리기
+});
+
+test('브라우저(window)에서도 불리고, ES5 문법이며, 벽시계를 읽지 않는다', () => {
+  const ctx = { window: {} };
+  vm.createContext(ctx);
+  ['dates', 'model', 'gcal'].forEach((f) => {
+    vm.runInContext(fs.readFileSync(path.join(__dirname, '..', 'src', 'core', f + '.js'), 'utf8'), ctx, { filename: f + '.js' });
+  });
+  const BG = ctx.window.Daynote.gcal;
+  assert.equal(typeof BG.reconcile, 'function');
+  assert.equal(BG.eventKey('c', 'e'), 'g:c|e');
+  assert.equal(BG.eventIdFor('blk_a', 1), G.eventIdFor('blk_a', 1));
+  const src = fs.readFileSync(path.join(__dirname, '..', 'src', 'core', 'gcal.js'), 'utf8');
+  const code = src.replace(/\/\/.*$/gm, '');
+  assert.ok(!/new Date\(\)|Date\.now/.test(code), '벽시계를 읽지 않는다');
+  assert.ok(!/=>|\bconst\b|\blet\b|`|\bclass\b|\basync\b|\?\.|\.\.\./.test(code), 'ES5 문법');
+  assert.ok(src.startsWith("'use strict';"));
 });

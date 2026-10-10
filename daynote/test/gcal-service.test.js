@@ -440,6 +440,110 @@ test('push: 레이트 리밋·네트워크 오류가 나면 같은 회차의 나
   assert.ok(!JSON.stringify([r, rn, rp]).includes('ya29.'));
 });
 
+// ---------------------------------------------------------------- 검증에서 더한 것
+const abortError = () => Object.assign(new Error('This operation was aborted'), { name: 'AbortError' });
+
+test('본문 읽기가 멈춰도 20초 제한 안이다: 헤더 뒤에 본문이 안 오면 timeout (영원히 기다리지 않는다)', async () => {
+  const stall = (url, init) => Promise.resolve({ ok: true, status: 200, headers: { get: () => null },
+    json: () => new Promise((resolve, reject) => { init.signal.addEventListener('abort', () => reject(abortError())); }) });
+  const svc = S.create({ auth: fakeAuth(), fetch: stall, sleep: async () => {}, requestTimeoutMs: 20 });
+  const r = await svc.listEvents({ calendarId: 'primary', syncToken: 's' });
+  assert.equal(r.ok, false);
+  assert.equal(r.error.type, 'timeout');
+  // push 도 같은 규칙 (본문이 멈춘 PATCH 응답)
+  const p = await svc.push([{ opId: 'op:blk_3', op: 'patch', calendarId: EXPORT, eventId: 'dn626c6b5f33', body: body() }]);
+  assert.equal(p.results[0].error.type, 'timeout');
+});
+
+test('읽기(GET) 2xx 인데 본문이 JSON 객체가 아니면 server 오류로 다시 시도 — "일정 0개"로 받아 전체 동기화가 지우지 않게', async () => {
+  // 첫 응답은 빈 본문, 다시 시도하면 정상
+  const t = setup((req, n) => (n === 1 ? { status: 200 } : { status: 200, json: { items: [{ id: 'a' }], nextSyncToken: 's2' } }));
+  const r = await t.svc.listEvents({ calendarId: 'primary', timeMin: TIME_MIN, timeMax: TIME_MAX });
+  assert.equal(r.ok, true);
+  assert.deepEqual(r.items, [{ id: 'a' }]);
+  assert.equal(r.nextSyncToken, 's2');
+  assert.deepEqual(t.slept, [1000]);
+  // 계속 깨진 본문(JSON 파싱 실패)이면 실패로 돌려준다 — 빈 성공이 아니다
+  const broken = async () => ({ ok: true, status: 200, headers: { get: () => null }, json: async () => { throw new SyntaxError('Unexpected token <'); } });
+  const slept = [];
+  const svc = S.create({ auth: fakeAuth(), fetch: broken, sleep: async (ms) => { slept.push(ms); }, random: () => 0 });
+  const rb = await svc.listEvents({ calendarId: 'primary', timeMin: TIME_MIN, timeMax: TIME_MAX });
+  assert.equal(rb.ok, false);
+  assert.equal(rb.error.type, 'server');
+  assert.equal(rb.error.reason, 'invalid_json');
+  assert.equal(rb.error.retryable, true);
+  assert.deepEqual(slept, [1000, 2000, 4000]);
+  const arr = setup(() => ({ status: 200, json: [] }));
+  assert.equal((await arr.svc.listCalendars()).error.type, 'server');
+  // 쓰기는 본문이 비어도 성공 (DELETE 200 · PATCH 200 빈 본문)
+  const del = setup(() => ({ status: 200 }));
+  const rd = await del.svc.push([{ opId: 'op:blk_2', op: 'delete', calendarId: EXPORT, eventId: 'dn626c6b5f32' },
+    { opId: 'op:blk_3', op: 'patch', calendarId: EXPORT, eventId: 'dn626c6b5f33', body: body() }]);
+  assert.deepEqual(rd.results.map((x) => x.ok), [true, true]);
+  assert.deepEqual(del.slept, []);
+});
+
+test('patch 는 장소가 없으면 location:"" 로 보내 Google 에 남은 예전 장소를 지운다 (insert 는 키 없음)', async () => {
+  const t = setup(() => ({ status: 200, json: { id: 'dn626c6b5f33', etag: '"p"' } }));
+  const patch = (b) => ({ opId: 'op:blk_3', op: 'patch', calendarId: EXPORT, eventId: 'dn626c6b5f33', body: b });
+  await t.svc.push([patch(body({ summary: '바쁨', description: 'Daynote 일정' }))]);      // 제목 올리기를 끈 일정 블록
+  assert.equal(JSON.parse(t.fetch.calls[0].body).location, '');
+  assert.equal(JSON.parse(t.fetch.calls[0].body).summary, '바쁨');
+  await t.svc.push([patch(body({ location: '본사 3층' }))]);
+  assert.equal(JSON.parse(t.fetch.calls[1].body).location, '본사 3층');
+  await t.svc.push([insertOp()]);
+  assert.equal('location' in JSON.parse(t.fetch.calls[2].body), false);
+  assert.equal('location' in S.sanitizeBody(body()), false);           // sanitizeBody 자체는 허용 키만 남긴다
+});
+
+test('POST /calendars 는 네트워크 오류·5xx 뒤에 다시 보내지 않는다 (‘Daynote’ 캘린더가 둘 생기지 않게), 429 는 다시 보낸다', async () => {
+  const listed = { status: 200, json: { items: [{ id: 'me@gmail.com', accessRole: 'owner', primary: true }] } };
+  const net = setup((req) => { if (req.method === 'POST') throw new TypeError('fetch failed'); return listed; }, { auth: fakeAuth({ exportId: null }) });
+  const rn = await net.svc.ensureExportCalendar({ tz: 'Asia/Seoul' });
+  assert.equal(rn.ok, false);
+  assert.equal(rn.error.type, 'network');
+  assert.equal(net.fetch.calls.filter((c) => c.method === 'POST').length, 1);
+  assert.deepEqual(net.slept, []);
+  assert.deepEqual(net.auth.set, []);
+  const s5 = setup((req) => (req.method === 'POST' ? { status: 503, json: gErr(503, 'backendError') } : listed), { auth: fakeAuth({ exportId: null }) });
+  assert.equal((await s5.svc.ensureExportCalendar({ tz: 'Asia/Seoul' })).error.type, 'server');
+  assert.equal(s5.fetch.calls.filter((c) => c.method === 'POST').length, 1);
+  let posts = 0;
+  const rl = setup((req) => {
+    if (req.method !== 'POST') return listed;
+    posts++;
+    return posts === 1 ? { status: 429, json: gErr(429, 'rateLimitExceeded') } : { status: 200, json: { id: 'new@group.calendar.google.com', summary: 'Daynote' } };
+  }, { auth: fakeAuth({ exportId: null }) });
+  const rr = await rl.svc.ensureExportCalendar({ tz: 'Asia/Seoul' });
+  assert.equal(rr.ok, true);
+  assert.equal(rr.created, true);
+  assert.equal(posts, 2);
+  // 일정 insert 는 id 를 정해 보내므로(409 → 확인) 네트워크 오류 뒤에도 다시 보낸다
+  const ins = setup((req, n) => { if (n === 1) throw new TypeError('fetch failed'); return { status: 200, json: { id: 'dn626c6b5f31', etag: '"e"' } }; });
+  assert.equal((await ins.svc.push([insertOp()])).results[0].ok, true);
+  assert.equal(ins.fetch.calls.length, 2);
+});
+
+test('409 이어받기: GET 과 PATCH 사이에 지워졌으면 id_taken (gone 이면 코어가 캘린더 없음으로 읽는다), PATCH 도 장소를 비운다', async () => {
+  const raced = setup((req) => {
+    if (req.method === 'POST') return { status: 409, json: gErr(409, 'duplicate') };
+    if (req.method === 'GET') return { status: 200, json: { id: 'dn626c6b5f31', status: 'confirmed', etag: '"e0"', extendedProperties: { private: { daynoteId: 'blk_1' } } } };
+    return { status: 404, json: gErr(404, 'notFound') };
+  });
+  const r = await raced.svc.push([insertOp()]);
+  assert.equal(r.results[0].ok, false);
+  assert.equal(r.results[0].error.type, 'id_taken');
+  assert.deepEqual(raced.fetch.calls.map((c) => c.method), ['POST', 'GET', 'PATCH']);
+  assert.equal(JSON.parse(raced.fetch.calls[2].body).location, '');
+  // 다른 오류(레이트 리밋)는 그대로 전해 다음 회차에 다시 한다
+  const rl = setup((req) => {
+    if (req.method === 'POST') return { status: 409 };
+    if (req.method === 'GET') return { status: 200, json: { id: 'dn626c6b5f31', status: 'confirmed', extendedProperties: { private: { daynoteId: 'blk_1' } } } };
+    return { status: 429, headers: { 'Retry-After': '120' } };
+  });
+  assert.equal((await rl.svc.push([insertOp()])).results[0].error.type, 'rate_limit');
+});
+
 test('classifyHttpError: 상태 코드·reason·context 별 분류', () => {
   const c = (status, reason, context, headers) => S.classifyHttpError({ status, body: reason ? gErr(status, reason) : null, headers, context });
   const types = [
