@@ -5,15 +5,21 @@
 // 실제 AI 처럼 "그럴듯하지만 틀린" 값도 섞어서 검증기가 걸러내는지 볼 수 있게 했다:
 //   - 메모에 '[가짜:지어내기]' 가 있으면 원문에 없는 할 일 하나를 덧붙인다
 //   - 메모에 '[가짜:실패]' 가 있으면 일시적 오류를 낸다
+// 빠른 입력(capture.v7)에서는 데모가 실제 AI 처럼 보이게:
+//   - 사용자가 고친 방식 힌트(input.learned)의 종류·프로젝트를 따른다 (ADAPT §7.6.3)
+//   - 상태 보고 줄(input.statusLine)은 빼고 판단한다. 맨 앞 '퇴근하고·가는 길에' 는 걸어 둔 상태(do_in)로 뗀다 (STATUS §14)
+//   - 맥락은 늘 null(읽을 때 규칙이 정한다), presence 는 늘 none, 배치 힌트는 원문에 적힌 걸리는 시간만 (CAL §8.5)
 
 (function (factory) {
-  var deps = (typeof module !== 'undefined' && module.exports)
-    ? { dates: require('../dates'), suggest: require('../suggest'), validate: require('./validate') }
-    : { dates: window.Daynote.dates, suggest: window.Daynote.suggest, validate: window.Daynote.aiValidate };
-  var api = factory(deps.dates, deps.suggest, deps.validate);
-  if (typeof module !== 'undefined' && module.exports) module.exports = api;
+  var node = typeof module !== 'undefined' && module.exports;
+  function optional(name) { try { return require(name); } catch (e) { return null; } }
+  var deps = node
+    ? { dates: require('../dates'), suggest: require('../suggest'), validate: require('./validate'), status: optional('../status') }
+    : { dates: window.Daynote.dates, suggest: window.Daynote.suggest, validate: window.Daynote.aiValidate, status: window.Daynote.statusCore || null };
+  var api = factory(deps.dates, deps.suggest, deps.validate, deps.status);
+  if (node) module.exports = api;
   if (typeof window !== 'undefined') { window.Daynote = window.Daynote || {}; window.Daynote.aiFake = api; }
-})(function (D, SG, V) {
+})(function (D, SG, V, ST) {
   var EVENT_RE = /(회의|미팅|면담|발표|리뷰|세미나|워크숍|약속|점심|저녁|통화|콜)/;
 
   // 데모용: 요청 문장 → 짧은 행동형 제목 (실제 AI 는 프롬프트 v2 규칙을 따른다)
@@ -57,6 +63,10 @@
     }
     if (input.lines.join('\n').indexOf('[가짜:실패]') !== -1) {
       return { ok: false, error: { type: 'server', message: '가짜 AI: 일시적 서버 오류(시험용)', retryable: true } };
+    }
+    // 앱이 이미 처리한 상태 보고 줄은 빼고 본다 (줄 번호는 그대로 — 남은 부분은 원문 줄 안에 있다)
+    if (input.purpose === 'capture' && input.statusLine) {
+      input = Object.assign({}, input, { lines: input.lines.map(function (l) { return withoutStatus(l, input.statusLine); }) });
     }
     var ref = new Date(input.referenceTime);
     var note = { id: input.noteId, title: input.title, body: input.lines.join('\n'), updatedAt: input.referenceTime };
@@ -105,10 +115,24 @@
         }) }],
         tasks: tasks, events: events,
         open_questions: tasks.filter(function (t) { return !t.due.text; }).slice(0, 2).map(function (t) { return { text: '‘' + t.title + '’은(는) 언제까지인가요?', line: t.evidence.line }; }),
-        entry_type: extra.entry_type, note_title: extra.note_title, note_project_hint: extra.note_project_hint, note_kind: extra.note_kind, done_tasks: extra.done_tasks, updated_tasks: extra.updated_tasks
+        entry_type: extra.entry_type, note_title: extra.note_title, note_project_hint: extra.note_project_hint, note_kind: extra.note_kind, done_tasks: extra.done_tasks, updated_tasks: extra.updated_tasks,
+        presence: extra.presence
       },
       usage: null
     };
+  }
+
+  function withoutStatus(line, statusLine) {
+    var sl = String(statusLine || '').trim();
+    if (!sl) return line;
+    var i = line.indexOf(sl);
+    if (i === -1) {
+      var bare = sl.replace(/[.!?~…]+$/, '');
+      i = bare.length >= 2 ? line.indexOf(bare) : -1;
+      if (i === -1) return line;
+      sl = line.slice(i).match(new RegExp('^' + bare.replace(/[.*+?^${}()|[\]\\]/g, '\\$&') + '[.!?~…]*'))[0];
+    }
+    return (line.slice(0, i) + ' ' + line.slice(i + sl.length)).replace(/\s+/g, ' ').trim();
   }
 
   // 데모용 자동 분류 — 실제 AI 는 capture.js 지침으로 판단한다
@@ -124,7 +148,12 @@
     });
   }
 
+  var MEMO_KINDS = { memo: 1, idea: 1, link: 1 };
   function classifyCapture(input, body, tasks, events, ref) {
+    // 사용자가 전에 고친 방식 (데모가 '한 번 고치면 다음엔 그쪽으로' 를 보이게)
+    var learned = input.learned || [];
+    var kh = learned.filter(function (x) { return x.type === 'kind'; })[0] || null;
+    var pj = learned.filter(function (x) { return x.type === 'project'; })[0] || null;
     // 날짜 바꾸기: "견적서는 내일 보낼게", "보고서 월요일로 미룸" — 날짜 표현 + 미루기·약속 말 + 열린 할 일과 겹침
     var UPDATE_RE = /(할게|할께|보낼게|낼게|하기로|미룸|미뤘|미루|미뤄|옮김|옮겼|연기|변경)/;
     var updated = [];
@@ -143,15 +172,30 @@
     if (!tasks.length && !events.length && body.length === 1 && !used[body[0]]) {
       var t = body[0].replace(BULLET_RE, '').trim();
       var hint = SG.parseDueHint(t, ref);
-      if (hint || TASK_END_RE.test(t.replace(/[.!]+$/, ''))) {
-        tasks.push({ title: actionTitle(t), evidence: { quote: t, line: input.lines.indexOf(body[0]) + 1 },
-          due: { text: hint ? hint.phrase : null, date: hint ? hint.dueDate : null, time: null }, project_hint: null, basis: 'explicit' });
+      var am = ST ? ST.extractAtMode(t) : null;      // '퇴근하고 우유 사기' — 맨 앞의 걸어 둔 상태는 할 일이다
+      // 단, 기록·생각처럼 보이는 글('점심 때 들은 아이디어: …')은 아니다
+      if (am && (am.title.length > 40 || /[:：]|https?:\/\/|(어떨까|해 보면|하면 좋|아이디어|들은|했다|였다|좋았)/.test(am.title))) am = null;
+      var make = hint || TASK_END_RE.test(t.replace(/[.!]+$/, '')) || !!am;
+      if (kh && kh.to === 'task') make = true;
+      if (kh && MEMO_KINDS[kh.to]) make = false;
+      if (make) {
+        tasks.push({ title: actionTitle(am ? am.title : t), evidence: { quote: t, line: input.lines.indexOf(body[0]) + 1 },
+          due: { text: hint ? hint.phrase : null, date: hint ? hint.dueDate : null, time: null }, project_hint: null, basis: 'explicit',
+          do_in: am ? am.mode : undefined });
       }
     }
     var full = input.lines.join(' ');
     var ph = (input.projects || []).filter(function (name) {
       return name.split(/\s+/).some(function (w) { return w.length >= 2 && !GENERIC[w] && full.indexOf(w) !== -1; });
     })[0] || null;
+    if (pj) {
+      if (pj.to === 'none') ph = null;
+      else {
+        var nm = String(pj.says || '').match(/‘([^’]+)’/);
+        var named = nm ? (input.projects || []).filter(function (n) { return n === nm[1]; })[0] : null;
+        if (named) ph = named;
+      }
+    }
     // "30분 후 샤워하기" 처럼 할 시각을 정한 할 일 (시각 계산은 앱 검증기가 한다)
     var REL = /(\d+\s*분|(?:\d+|한|두|세)\s*시간(?:\s*반)?)\s*(?:후|뒤|있다가)/;
     tasks.forEach(function (t) {
@@ -166,6 +210,15 @@
       var large = LARGE_RE.test(t.title);
       t.size = large ? 'large' : 'small';
       t.breakdown = large ? genericSteps(t.title) : [];
+      // 걸어 둔 상태: 제목 맨 앞의 표현을 뗀다 (근거 문장에 그대로 있으므로 검증을 통과한다)
+      if (!t.do_in) {
+        var ex = ST ? ST.extractAtMode(t.title) : null;
+        if (ex) t.title = ex.title;
+        t.do_in = ex ? ex.mode : 'none';
+      }
+      t.context = null;
+      var dm = V.durationMentions ? V.durationMentions(t.evidence && t.evidence.quote || '') : [];
+      t.sched = { focus: null, energy: null, prefer: null, splittable: null, minutes: dm.length ? dm[0].minutes : null };
     });
     // 완료 보고: "샤워 완료", "견적서 보냈음" — 열린 할 일 제목과 핵심 낱말(2자 이상)이 겹치면 그 일
     var DONE_RE = /(완료|끝냈|끝났|끝남|다 했|다했|했음|마쳤|보냈음|보냈다|제출함)/;
@@ -185,7 +238,9 @@
         : !items ? (done.length || updated.length ? 'mixed' : 'memo') : body.length <= items ? 'task' : 'mixed',
       note_title: first.length > 20 ? first.slice(0, 19) + '…' : first,
       note_project_hint: ph,
-      note_kind: /https?:\/\//.test(full) ? 'link' : /(어떨까|해 보면|하면 좋|아이디어)/.test(full) ? 'idea' : 'memo'
+      note_kind: kh && (kh.to === 'idea' || kh.to === 'link') ? kh.to
+        : /https?:\/\//.test(full) ? 'link' : /(어떨까|해 보면|하면 좋|아이디어)/.test(full) ? 'idea' : 'memo',
+      presence: { role: 'none', quote: null }
     };
   }
 

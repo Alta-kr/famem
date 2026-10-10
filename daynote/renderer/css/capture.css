@@ -1,1 +1,59 @@
-/* placeholder — owned by W2-capture */
+/* 적어 두기 흐름 — 명령어 칩 · 도움말 카드 · 명령어 잠금 칩 · 입력창 안내 · 추천 상태 줄 · 배운 대로 [왜?] (W2-capture)
+   기존 토큰만 쓴다. 새 색 없음. */
+
+/* 내 말풍선 안 명령어 토큰 (/할일) */
+.msg-user .msg-cmd {
+  height: 20px; padding: 0 7px; vertical-align: 1px;
+  background: var(--surface); color: var(--primary-ink); border-color: transparent; font-weight: 600;
+}
+
+/* /도움말 카드 */
+.msg-help .msg-body { max-width: 92%; }
+.help-card { display: flex; flex-direction: column; gap: 8px; }
+.help-card-title { font-size: 14px; font-weight: 600; letter-spacing: -0.01em; }
+.help-card ul { list-style: none; margin: 0; padding: 0; display: flex; flex-direction: column; gap: 6px; }
+.help-card li {
+  display: grid; grid-template-columns: auto 1fr; column-gap: 8px; row-gap: 1px; align-items: baseline;
+  padding: 4px 0; border-top: 1px solid var(--border-deco);
+}
+.help-card li:first-child { border-top: 0; }
+.help-card li > div { grid-column: 2; min-width: 0; overflow-wrap: anywhere; }
+.help-card li > .meta:not(div) { grid-column: 2; grid-row: 1; }
+.help-cmd { grid-row: 1 / span 3; cursor: pointer; font-weight: 600; color: var(--primary-ink); background: var(--primary-soft); align-self: start; }
+.help-cmd:hover, .help-cmd:focus-visible { border-color: var(--primary-line); }
+.help-card > .meta { line-height: 1.5; }
+
+/* 명령어로 정한 종류 — 잠금 표시 */
+.cap-kind.is-forced { border-color: var(--kind, var(--border-strong)); }
+.cap-lock { width: 11px; height: 11px; opacity: .75; }
+.chip .cap-lock { width: 11px; height: 11px; }
+
+/* 결과 카드 바닥 — 링크 버튼·스피너 줄 맞춤 */
+.cap-foot .link-btn { font-size: inherit; }
+.cap-foot .spinner { display: inline-block; vertical-align: -1px; }
+
+/* 상태 제안 줄 (DN.status.hintChip) 자리 */
+.cap-hint { padding: 0 14px 6px; }
+.cap-hint:empty { display: none; }
+
+/* 입력창 아래 안내 ('/할일' 만 적었을 때) */
+.chat-input-note { margin-top: 6px; font-size: 12px; color: var(--warning-ink); }
+
+/* 다음 할 일 카드 — 지금 상태 */
+.next-status { margin-bottom: 2px; color: var(--text-secondary); }
+
+/* 배운 대로 고친 까닭 팝오버 */
+.learn-why { max-width: 360px; padding: 8px 10px; }
+.learn-why-list { list-style: none; margin: 0 0 8px; padding: 0; display: flex; flex-direction: column; gap: 8px; }
+.learn-why-row { display: flex; flex-direction: column; align-items: flex-start; gap: 4px; font-size: 13px; line-height: 1.5; color: var(--text-primary); }
+.learn-why .btn { width: auto; display: inline-flex; padding: 0 8px; font-size: 12px; }
+.learn-why > div > .meta { font-size: 12px; line-height: 1.5; }
+
+@media (max-width: 640px) {
+  .learn-why { max-width: calc(100vw - 32px); }
+  .help-card li { grid-template-columns: 1fr; }
+  .help-card li > div, .help-card li > .meta:not(div) { grid-column: 1; grid-row: auto; }
+  .help-cmd { grid-row: auto; justify-self: start; min-height: 32px; }
+  .cap-kind.is-forced, .cap-why { min-height: 32px; }
+  .chat-input-note { font-size: 13px; }
+}

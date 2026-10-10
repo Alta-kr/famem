@@ -227,7 +227,7 @@
       function deleteNote() {
         flushPending();
         var linked = M.tasksForNote(S.state, n.id).length;
-        S.mutate('메모 삭제', function (s) { M.deleteNote(s, n.id, A.now()); DN.aiProposals.staleForDeletedNote(s, n.id); });
+        S.mutate('메모 삭제', function (s) { M.deleteNote(s, n.id, A.now()); DN.aiProposals.staleForDeletedNote(s, n.id); if (DN.adapt) DN.adapt.forgetRef(s, n.id); });
         ui.undoToast('메모를 삭제했습니다.' + (linked ? ' 연결된 할 일 ' + linked + '개는 남고, 출처는 ‘삭제됨’으로 보입니다.' : ''));
       }
 

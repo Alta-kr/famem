@@ -556,7 +556,9 @@
   }
 
   // "메모로 바꾸기" — AI 가 만든 할 일·일정을 지우고 메모로만 둔다
-  function captureToMemo(state, noteId, now) {
+  //   opts.by === 'learned' (배운 대로 바꿈) 이면 사용자 결정 표시(changedByUser)를 세우지 않는다
+  function captureToMemo(state, noteId, now, opts) {
+    var byL = !!(opts && opts.by === 'learned');
     var note = M.byId(state.notes, noteId);
     if (!note || !note.capture) return null;
     (note.capture.created || []).forEach(function (c) {
@@ -566,12 +568,14 @@
       if (p.source && p.source.id === noteId && (p.status === 'accepted' || p.status === 'pending')) { p.status = 'dismissed'; p.reviewedAt = iso(now); }
     });
     note.captureRole = 'memo';
-    note.capture = Object.assign({}, note.capture, { entryType: 'memo', created: [], skipped: [], changedByUser: true });
+    note.capture = Object.assign({}, note.capture, { entryType: 'memo', created: [], skipped: [] });
+    if (!byL) note.capture.changedByUser = true;
     return note;
   }
 
   // "할 일로 바꾸기" — 적은 글 전체를 할 일 하나로 (원문 연결)
-  function captureToTask(state, noteId, now) {
+  function captureToTask(state, noteId, now, opts) {
+    var byL = !!(opts && opts.by === 'learned');
     var note = M.byId(state.notes, noteId);
     if (!note) return null;
     var text = (note.body || note.title || '').split('\n').map(function (l) { return l.trim(); }).filter(Boolean);
@@ -585,22 +589,166 @@
     note.captureRole = text.length <= 1 ? 'task_source' : 'memo';
     note.capture = Object.assign({}, note.capture || {}, {
       status: (note.capture && note.capture.status) || 'done', entryType: text.length <= 1 ? 'task' : 'mixed',
-      created: ((note.capture && note.capture.created) || []).concat({ kind: 'task', id: task.id }), changedByUser: true
+      created: ((note.capture && note.capture.created) || []).concat({ kind: 'task', id: task.id })
     });
+    if (!byL) note.capture.changedByUser = true;
     return task;
   }
 
-  // 프로젝트 바꾸기 — 메모와 거기서 만든 할 일·일정을 함께
-  function captureSetProject(state, noteId, projectId) {
+  // 프로젝트 바꾸기 — 메모와 거기서 만든 할 일·일정을 함께. 사용자가 고친 것이면 배운다(now 가 있을 때만)
+  function captureSetProject(state, noteId, projectId, now, opts) {
+    var byL = !!(opts && opts.by === 'learned');
     var note = M.byId(state.notes, noteId);
     if (!note) return null;
+    var from = note.projectId || 'none';
     note.projectId = projectId || null;
     (note.capture && note.capture.created || []).forEach(function (c) {
       var item = M.byId(c.kind === 'task' ? state.tasks : state.blocks, c.id);
       if (item) item.projectId = projectId || null;
     });
+    if (byL) return note;
     if (note.capture) note.capture.projectByAi = false;
+    learnFrom(state, note, { type: 'project', from: from, to: projectId || 'none', text: note.body }, now);
     return note;
+  }
+
+  // ---------------------------------------------------------------- 적응 (ADAPT §7.5)
+  // 줄 하나짜리 카드의 지금 종류 — 만든 항목이 하나면 그 종류, 없으면 메모 종류, 여럿이면 null
+  function rowKind(state, note) {
+    var c = M.liveCreated(state, note);
+    return c.length === 1 ? (c[0].kind === 'task' ? 'task' : 'event') : c.length ? null : (note.kind || 'memo');
+  }
+  function excerptOf(item) { var s = item && item.sources && item.sources[0]; return (s && s.excerpt) || (item && item.title) || ''; }
+  function adaptOn(state) { return !!(AD && AD.enabled(state)); }
+
+  // 사용자의 교정에서 배운다. 같은 유형을 규칙이 바꾼 적이 있으면 그 규칙에 벌점을 준다.
+  function learnFrom(state, note, ev, now) {
+    if (now == null || !adaptOn(state) || !note) return;            // A17
+    var cap = note.capture || {};
+    var mine = (cap.learned || []).filter(function (x) { return x.type === ev.type && (!ev.refId || !x.refId || x.refId === ev.refId); });
+    if (mine.length) {
+      AD.penalize(state, [].concat.apply([], mine.map(function (x) { return x.ruleIds || []; })), now, 1);
+      AD.count(state, 'reverted', mine.length);
+      cap.learned = cap.learned.filter(function (x) { return mine.indexOf(x) === -1; });
+    }
+    var r = AD.learn(state, { type: ev.type, text: ev.text, from: ev.from, to: ev.to, refTime: ev.refTime,
+      ref: note.id, sample: !!note.sample, source: 'correction' }, now);
+    if (r && note.capture) note.capture.taught = true;
+  }
+
+  // 결과 카드의 날짜 칩 — 할 일은 마감일(지우면 시각도), 일정은 길이를 지키며 옮긴다(시각을 고르면 '확인 필요' 해제).
+  // 앱이 계산할 수 없는 날짜 표현의 할 일을 고치면 날짜 어휘를 배운다 (일정은 1단계에서 배우지 않는다)
+  function captureSetDate(state, noteId, ref, ymd, time, now) {
+    var note = M.byId(state.notes, noteId);
+    if (!ref) return null;
+    if (ref.kind === 'task') {
+      var t = M.byId(state.tasks, ref.id);
+      if (!t) return null;
+      var prev = t.dueDate || null;
+      M.updateTask(state, t.id, ymd ? { dueDate: ymd } : { dueDate: null, dueTime: null }, now);
+      if (note && ymd && ymd !== prev) {
+        var text = excerptOf(t);
+        if (!SG.parseDueHint(text, note.updatedAt)) {
+          learnFrom(state, note, { type: 'date', from: prev, to: { date: ymd }, text: text, refTime: note.updatedAt, refId: t.id }, now);
+        }
+      }
+      return t;
+    }
+    var b = M.byId(state.blocks, ref.id);
+    if (!b || !ymd) return b || null;
+    var start = new Date(b.start), end = new Date(b.end);
+    var len = Math.max(15, Math.round((end - start) / 60000)) || 60;
+    var ns = D.parseYmd(ymd, time || D.hm(start));
+    var patch = { start: ns.toISOString(), end: D.addMinutes(ns, len).toISOString() };
+    if (time) patch.timeUncertain = false;
+    M.updateBlock(state, b.id, patch);
+    return b;
+  }
+
+  // 배운 대로 적용할 계획 (순수 — 바꾸지 않는다)
+  //   opts.hinted: 이번 실행에 AI 힌트로 보낸 규칙 id (AI 를 부르지 않았으면 [])
+  function learnedBase(state, noteId) {
+    if (!adaptOn(state)) return null;
+    var note = M.byId(state.notes, noteId);
+    if (!note || note.deletedAt) return null;
+    var c = note.capture;
+    if (!c || (c.status !== 'done' && c.status !== 'no_ai')) return null;
+    if (c.changedByUser || c.command || (c.learned && c.learned.length)) return null;
+    return note;
+  }
+  function hintedOk(s, opts) {
+    var hinted = (opts && opts.hinted) || [];
+    var seen = (s.ruleIds || []).some(function (id) { return hinted.indexOf(id) !== -1; });
+    return !seen || s.confidence >= 0.8;
+  }
+  var LEARN_KINDS = { task: 1, event: 1, memo: 1, idea: 1, link: 1 };
+  function planKind(state, note, now, opts) {
+    var body = String(note.body || '');
+    if (body.indexOf('\n') !== -1 || body.trim().length > 80 || note.kindByUser) return null;
+    var items = captureItems(state, note);
+    if (items.length !== 1) return null;
+    var cur = items[0].kind;
+    if (!LEARN_KINDS[cur]) return null;
+    var s = AD.suggest(state, 'kind', body, now);
+    if (!s || s.level !== 'strong' || s.to === cur || !hintedOk(s, opts)) return null;
+    if (s.to === 'event' && !(cur === 'task' && items[0].item && items[0].item.dueDate)) return null;
+    if (cur === 'event' && NOTE_KIND[s.to]) return null;
+    return { type: 'kind', to: s.to, from: cur, ruleIds: s.ruleIds || [], phrase: s.phrase };
+  }
+  function planProject(state, note, now, opts) {
+    var c = note.capture || {};
+    if (note.projectId && c.projectByAi !== true) return null;
+    var allowed = M.liveProjects(state).map(function (p) { return p.id; }).concat('none');
+    var s = AD.suggest(state, 'project', note.body || '', now, { allowed: allowed });
+    var cur = note.projectId || 'none';
+    if (!s || s.level !== 'strong' || s.to === cur || !hintedOk(s, opts)) return null;
+    return { type: 'project', to: s.to, from: cur, ruleIds: s.ruleIds || [], phrase: s.phrase };
+  }
+  function planDates(state, note, now) {
+    var out = [];
+    M.liveCreated(state, note).forEach(function (c) {
+      if (c.kind !== 'task') return;
+      var t = M.byId(state.tasks, c.id);
+      if (!t || t.dueDate != null) return;
+      var prop = t.proposalId ? M.byId(state.proposals || [], t.proposalId) : null;
+      if (prop && !(prop.payload && prop.payload.fields && prop.payload.fields.dueDate && prop.payload.fields.dueDate.status === 'confirm')) return;
+      var text = excerptOf(t);
+      if (SG.parseDueHint(text, note.updatedAt)) return;
+      var s = AD.suggest(state, 'date', text, now, { refTime: note.updatedAt });
+      if (!s || s.level !== 'strong' || !s.value || !s.value.date || s.value.date < D.ymd(new Date(now))) return;
+      out.push({ type: 'date', refId: t.id, to: s.value.date, from: null, ruleIds: s.ruleIds || [], phrase: s.phrase });
+    });
+    return out;
+  }
+  function planLearned(state, noteId, now, opts) {
+    var empty = { kind: null, project: null, dates: [] };
+    var note = learnedBase(state, noteId);
+    if (!note || now == null) return empty;
+    return { kind: planKind(state, note, now, opts), project: planProject(state, note, now, opts), dates: planDates(state, note, now) };
+  }
+  // 배운 대로 바꾼다 — 종류 → (다시 계산) 프로젝트 → (다시 계산) 날짜. capture.learned 에 적는다. 배우지는 않는다
+  function applyLearned(state, noteId, now, opts) {
+    var note = learnedBase(state, noteId);
+    if (!note || now == null) return [];
+    var entries = [];
+    var k = planKind(state, note, now, opts);
+    if (k) { captureSetKind(state, noteId, k.to, now, { by: 'learned' }); entries.push(k); }
+    var pj = planProject(state, note, now, opts);
+    if (pj) { captureSetProject(state, noteId, pj.to === 'none' ? null : pj.to, now, { by: 'learned' }); entries.push(pj); }
+    planDates(state, note, now).forEach(function (d) {
+      M.updateTask(state, d.refId, { dueDate: d.to }, now);
+      entries.push(d);
+    });
+    if (!entries.length) return [];
+    var at = iso(now);
+    entries = entries.map(function (e) {
+      var x = { type: e.type, to: e.to, from: e.from, ruleIds: e.ruleIds, phrase: e.phrase, at: at };
+      if (e.refId) x.refId = e.refId;
+      return x;
+    });
+    note.capture = Object.assign({}, note.capture, { learned: entries });
+    AD.count(state, 'applied', entries.length);
+    return entries;
   }
 
   // ---------------------------------------------------------------- 결과 카드에서 고치기
@@ -688,9 +836,11 @@
     return t;
   }
 
-  function captureSetKind(state, noteId, kind, now) {
+  function captureSetKind(state, noteId, kind, now, opts) {
     var note = M.byId(state.notes, noteId);
     if (!note || !KINDS[kind]) return null;
+    var byL = !!(opts && opts.by === 'learned');
+    var fromKind = rowKind(state, note);
     var live = M.liveCreated(state, note).map(function (c) {
       return { kind: c.kind, item: M.byId(c.kind === 'task' ? state.tasks : state.blocks, c.id) };
     });
@@ -698,16 +848,21 @@
     var done = function (created) {
       // 사용자가 정했으니 '다시 시도' 로 AI 결과가 덮이지 않게 끝난 상태로 둔다
       note.capture = Object.assign({}, note.capture || {}, {
-        status: 'done', error: null, created: created, changedByUser: true,
+        status: 'done', error: null, created: created,
         entryType: !created.length ? 'memo' : note.captureRole === 'task_source' ? 'task' : 'mixed'
       });
+      if (!byL) note.capture.changedByUser = true;
+    };
+    var learn = function () {
+      if (!byL && fromKind && fromKind !== kind) learnFrom(state, note, { type: 'kind', from: fromKind, to: kind, text: note.body }, now);
     };
 
     if (NOTE_KIND[kind]) {
-      captureToMemo(state, noteId, now);
+      captureToMemo(state, noteId, now, opts);
       note.kind = kind;
-      note.kindByUser = true;
+      if (!byL) note.kindByUser = true;
       done([]);
+      learn();
       return note;
     }
     var next = [];
@@ -715,7 +870,7 @@
     state.__holdReveal = true;
     try {
       if (!live.length) {
-        var t0 = captureToTask(state, noteId, now);
+        var t0 = captureToTask(state, noteId, now, opts);
         role = note.captureRole;
         live = [{ kind: 'task', item: t0 }];
       }
@@ -734,6 +889,7 @@
     note.captureRole = role;
     if (note.kindByUser) { note.kindByUser = false; }
     done(next);
+    learn();
     M.revealSources(state);
     return note;
   }
@@ -744,6 +900,9 @@
   function captureSetItemKind(state, noteId, ref, kind, now) {
     var note = M.byId(state.notes, noteId);
     if (!note || !ref || !KINDS[kind]) return null;
+    var fromKind = ref.kind === 'note' ? note.kind || 'memo' : ref.kind === 'task' ? 'task' : 'event';
+    var curItem = ref.kind === 'note' ? null : M.byId(ref.kind === 'task' ? state.tasks : state.blocks, ref.id);
+    var text = ref.kind === 'note' ? note.body : excerptOf(curItem);
     function swap(oldId, nref) {
       var c = note.capture || {};
       note.capture = Object.assign({}, c, { created: (c.created || []).map(function (x) { return x.id === oldId ? nref : x; }) });
@@ -761,19 +920,21 @@
         var cur = M.byId(ref.kind === 'task' ? state.tasks : state.blocks, ref.id);
         if (!cur) return note;
         if (NOTE_KIND[kind]) {
-          captureRemoveItem(state, noteId, ref, now);
+          captureRemoveItem(state, noteId, ref, now, { internal: true });
           note.captureRole = 'memo'; note.kind = kind; note.kindByUser = true;
         } else if (kind === 'event' && ref.kind === 'task') swap(cur.id, { kind: 'block', id: taskToBlock(state, cur, now, 0).id });
         else if (kind === 'task' && ref.kind === 'block') swap(cur.id, { kind: 'task', id: blockToTask(state, cur, now).id });
       }
     } finally { delete state.__holdReveal; }
     note.capture = Object.assign({}, note.capture || {}, { status: 'done', error: null, changedByUser: true });
+    if (fromKind !== kind) learnFrom(state, note, { type: 'kind', from: fromKind, to: kind, text: text, refId: ref.id }, now);
     M.revealSources(state);
     return note;
   }
 
   // 결과 카드에서 한 줄 빼기 (×) — 만든 할 일·일정만 지운다. 원문은 남는다.
-  function captureRemoveItem(state, noteId, ref, now) {
+  //   opts.internal: 종류 바꾸기 안에서 부른 것 (배우기는 부른 쪽이 한다)
+  function captureRemoveItem(state, noteId, ref, now, opts) {
     var note = M.byId(state.notes, noteId);
     if (!note || !note.capture || !ref) return null;
     // 완료 보고 줄을 빼면 "완료" 를 취소한다 (AI 가 잘못 짚은 것 — 완료 기록도 남기지 않는다)
@@ -797,6 +958,17 @@
       note.capture = Object.assign({}, note.capture, { completed: rest, changedByUser: true });
       if (!M.captureHasResults(state, note)) { note.captureRole = 'memo'; note.capture.entryType = 'memo'; }
       return note;
+    }
+    // × 로 뺀 할 일·일정: 그 근거 문장을 그 종류로 본 규칙을 약하게 하고, 배운 대로 바꾼 종류였으면 벌점을 준다
+    if (!(opts && opts.internal) && now != null && adaptOn(state)) {
+      var gone = M.byId(ref.kind === 'task' ? state.tasks : state.blocks, ref.id);
+      if (gone) AD.weaken(state, 'kind', excerptOf(gone), ref.kind === 'task' ? 'task' : 'event', now, 0.5);
+      var lk = (note.capture.learned || []).filter(function (x) { return x.type === 'kind'; });
+      if (lk.length) {
+        AD.penalize(state, [].concat.apply([], lk.map(function (x) { return x.ruleIds || []; })), now, 1);
+        AD.count(state, 'reverted', lk.length);
+        note.capture.learned = note.capture.learned.filter(function (x) { return x.type !== 'kind'; });
+      }
     }
     if (ref.kind === 'task') M.deleteTask(state, ref.id, now); else M.deleteBlock(state, ref.id);
     state.proposals.forEach(function (p) {
@@ -843,6 +1015,8 @@
     takeAiUpdate: takeAiUpdate, dismiss: dismiss, restore: restore, checkSelection: checkSelection,
     applySelections: applySelections, readiness: readiness, partition: partition, FIELD_LABEL: FIELD_LABEL, forNote: forNote,
     applyCapture: applyCapture, captureToMemo: captureToMemo, captureToTask: captureToTask, captureSetProject: captureSetProject, digestFor: digestFor, eventRange: eventRange,
-    captureSetKind: captureSetKind, captureSetItemKind: captureSetItemKind, captureRemoveItem: captureRemoveItem, captureItems: captureItems
+    captureSetKind: captureSetKind, captureSetItemKind: captureSetItemKind, captureRemoveItem: captureRemoveItem, captureItems: captureItems,
+    captureSetDate: captureSetDate, planLearned: planLearned, applyLearned: applyLearned, guessStart: guessStart, matchProject: matchProject,
+    TASK_KEEP: TASK_KEEP
   };
 });

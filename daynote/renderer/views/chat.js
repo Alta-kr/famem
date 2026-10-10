@@ -444,11 +444,17 @@
         }, ui.icon('x')));
     }
 
-    var kindBtn = h('button.chip.chip-kind.cap-kind.kind-' + it.kind, {
+    // 명령어로 만든 줄은 잠금 표시 (사용자가 바꾸면 사라진다). 배운 대로 정한 종류는 title 만 다르다
+    var c = n.capture || {};
+    var forced = !!(c.command && !c.changedByUser) && (NOTE_KIND[c.command.kind] ? isNote : !isNote);
+    var byLearned = !forced && (c.learned || []).some(function (x) { return x.type === 'kind'; });
+    var kindBtn = h('button.chip.chip-kind.cap-kind.kind-' + it.kind + (forced ? '.is-forced' : ''), {
       type: 'button', 'aria-haspopup': 'menu', 'data-focus-key': fk + ':kind',
-      'aria-label': '종류: ' + ui.KIND_LABEL[it.kind] + ' — 바꾸기', title: '종류 바꾸기',
-      onclick: function (e) { kindMenu(e.currentTarget, n, it, items); }
-    }, ui.icon(ui.KIND_ICON[it.kind]), ui.KIND_LABEL[it.kind], ui.icon('chevronDown', 'cap-caret'));
+      'aria-label': '종류: ' + ui.KIND_LABEL[it.kind] + (forced ? ', 명령어로 지정' : '') + ' — 바꾸기',
+      title: forced ? '‘' + c.command.token + '’ 명령어로 정한 종류예요. 눌러서 바꿀 수 있어요.'
+        : byLearned ? '배운 대로 정한 종류예요. 눌러서 바꿀 수 있어요.' : '종류 바꾸기',
+      onclick: function (e) { kindMenu(e.currentTarget, n, it, items, forced); }
+    }, ui.icon(ui.KIND_ICON[it.kind]), ui.KIND_LABEL[it.kind], forced ? ui.icon('lock', 'cap-lock') : null, ui.icon('chevronDown', 'cap-caret'));
 
     var titleBtn = h('button.cap-title', {
       type: 'button', title: isNote ? '메모 열기' : it.kind === 'task' ? '할 일 열기' : '일정 열기',
@@ -465,12 +471,12 @@
       dateBtn = h('button.chip.cap-date' + (d.cls ? '.' + d.cls : ''), {
         type: 'button', 'aria-haspopup': 'menu', 'data-focus-key': fk + ':date',
         'aria-label': (it.kind === 'task' ? '마감: ' : '날짜: ') + d.label + ' — 바꾸기', title: '날짜 바꾸기',
-        onclick: function (e) { dateMenu(e.currentTarget, it, now); }
+        onclick: function (e) { dateMenu(e.currentTarget, n, it, now); }
       }, ui.icon(it.kind === 'task' ? 'flag' : 'clock'), d.label);
       if (it.kind === 'event' && item.timeUncertain) {
         uncertain = h('button.chip.chip-guess.cap-uncertain', {
           type: 'button', 'data-focus-key': fk + ':time', title: 'AI가 시각을 확실히 알 수 없었어요. 눌러서 정해 주세요.',
-          onclick: function (e) { var pop = ui.popover(e.currentTarget, h('div'), { label: '날짜와 시각 정하기' }); pickForm(pop, it, now); }
+          onclick: function (e) { var pop = ui.popover(e.currentTarget, h('div'), { label: '날짜와 시각 정하기' }); pickForm(pop, n, it, now); }
         }, '시각 확인 필요');
       }
     }
@@ -480,10 +486,14 @@
     if (proj && proj.deletedAt) proj = null;
     var projBtn = h('button.chip.cap-proj' + (proj ? '.chip-project' : '.is-empty'), {
       type: 'button', 'aria-haspopup': 'menu', 'data-focus-key': fk + ':proj',
-      style: proj ? { '--pc': proj.color } : null,
       'aria-label': '프로젝트: ' + (proj ? proj.name : '없음') + ' — 바꾸기', title: '프로젝트 바꾸기 (이 글 전체)',
       onclick: function (e) { projectMenu(e.currentTarget, n, pid); }
     }, proj ? proj.name : '+ 프로젝트');
+    if (proj) projBtn.style.setProperty('--pc', proj.color);   // 사용자 지정 속성은 setProperty 로만 들어간다
+
+    // 할 일 맥락 칩 (현재 상태 기능을 켰을 때만 그려진다)
+    var ctxChip = it.kind === 'task' && item && DN.status && DN.status.contextChip
+      ? DN.status.contextChip(item, { focusKey: fk + ':ctx', where: 'cap' }) : null;
 
     var removeBtn = isNote ? null : h('button.icon-btn.cap-x', {
       type: 'button', title: '이 줄 빼기', 'aria-label': '‘' + title + '’ 빼기',
@@ -493,7 +503,7 @@
       }
     }, ui.icon('x'));
 
-    return h('div.cap-row', { role: 'listitem', 'data-kind': it.kind }, kindBtn, titleBtn, dateBtn, uncertain, projBtn, removeBtn);
+    return h('div.cap-row', { role: 'listitem', 'data-kind': it.kind }, kindBtn, titleBtn, dateBtn, uncertain, projBtn, ctxChip, removeBtn);
   }
 
   // 날짜 칩 문구 — "오늘" · "내일(토)" · "10월 9일 (금)" (+ 일정·마감 시각)
@@ -528,8 +538,9 @@
   }
 
   // ------------------------------------------------------------------ 종류 바꾸기
-  function kindMenu(anchor, n, it, items) {
-    ui.menu(anchor, [{ label: items.length > 1 ? '이 줄을 무엇으로 둘까요?' : '무엇으로 둘까요?' }].concat(KINDS.map(function (k) {
+  function kindMenu(anchor, n, it, items, forced) {
+    var q = forced ? '명령어로 정한 종류예요. 무엇으로 바꿀까요?' : items.length > 1 ? '이 줄을 무엇으로 둘까요?' : '무엇으로 둘까요?';
+    ui.menu(anchor, [{ label: q }].concat(KINDS.map(function (k) {
       return { label: ui.KIND_LABEL[k], icon: ui.KIND_ICON[k], kind: k, checked: it.kind === k, onClick: function () { changeKind(n, it, k, items); } };
     })), { label: '종류 바꾸기', className: 'cap-menu' });
   }
@@ -544,7 +555,7 @@
   }
 
   // ------------------------------------------------------------------ 날짜 바꾸기
-  function dateMenu(anchor, it, now) {
+  function dateMenu(anchor, n, it, now) {
     var today = D.startOfDay(now);
     var mon = D.startOfWeek(now);
     var opts = [['오늘', today], ['내일', D.addDays(today, 1)]];
@@ -554,16 +565,16 @@
     var curYmd = it.kind === 'task' ? it.item.dueDate : D.ymd(it.item.start);
     var items = [{ label: it.kind === 'task' ? '언제까지 할까요?' : '언제로 옮길까요?' }].concat(opts.map(function (o) {
       var ymd = D.ymd(o[1]);
-      return { label: o[0], sub: D.shortDay(o[1]), checked: curYmd === ymd, onClick: function () { setDate(it, ymd, null); } };
+      return { label: o[0], sub: D.shortDay(o[1]), checked: curYmd === ymd, onClick: function () { setDate(n, it, ymd, null); } };
     }));
     items.push({ sep: true });
-    items.push({ label: it.kind === 'task' ? '날짜 고르기…' : '날짜·시각 고르기…', icon: 'calendar', keepOpen: true, onClick: function (pop) { pickForm(pop, it, now); } });
-    if (it.kind === 'task') items.push({ label: '날짜 없음', checked: !curYmd, onClick: function () { setDate(it, null, null); } });
+    items.push({ label: it.kind === 'task' ? '날짜 고르기…' : '날짜·시각 고르기…', icon: 'calendar', keepOpen: true, onClick: function (pop) { pickForm(pop, n, it, now); } });
+    if (it.kind === 'task') items.push({ label: '날짜 없음', checked: !curYmd, onClick: function () { setDate(n, it, null, null); } });
     ui.menu(anchor, items, { label: '날짜 바꾸기', className: 'cap-menu' });
   }
 
   // 날짜(일정은 + 시각) 직접 고르기 — 메뉴 자리에 작은 입력 칸을 띄운다
-  function pickForm(pop, it, now) {
+  function pickForm(pop, n, it, now) {
     var x = it.item, isEvent = it.kind === 'event';
     var curYmd = isEvent ? D.ymd(x.start) : (x.dueDate || D.ymd(now));
     var dateIn = h('input.input', { type: 'date', value: curYmd, 'aria-label': '날짜' });
@@ -571,7 +582,7 @@
     function apply() {
       if (!dateIn.value) { dateIn.focus(); return; }
       pop.close(true);
-      setDate(it, dateIn.value, timeIn && timeIn.value ? timeIn.value : null);
+      setDate(n, it, dateIn.value, timeIn && timeIn.value ? timeIn.value : null);
     }
     var form = h('form.cap-pick', { onsubmit: function (e) { e.preventDefault(); apply(); } },
       h('div.cap-pick-title', isEvent ? '날짜와 시각' : '마감일'),
@@ -584,24 +595,9 @@
   }
 
   // ymd: 'YYYY-MM-DD' 또는 null(날짜 없음, 할 일만). time: 'HH:MM' (일정에서 고른 경우)
-  function setDate(it, ymd, time) {
-    var now = DN.app.now();
-    if (it.kind === 'task') {
-      S.mutate(ymd ? '마감일 바꾸기' : '마감일 지우기', function (s) {
-        M.updateTask(s, it.item.id, ymd ? { dueDate: ymd } : { dueDate: null, dueTime: null }, now);
-      }, { source: 'capture' });
-      return;
-    }
-    S.mutate('일정 옮기기', function (s) {
-      var b = M.byId(s.blocks, it.item.id);
-      if (!b) return;
-      var start = new Date(b.start), end = new Date(b.end);
-      var len = Math.max(15, Math.round((end - start) / 60000)) || 60;
-      var ns = D.parseYmd(ymd, time || D.hm(start));
-      var patch = { start: ns.toISOString(), end: D.addMinutes(ns, len).toISOString() };
-      if (time) patch.timeUncertain = false;
-      M.updateBlock(s, b.id, patch);
-    }, { source: 'capture' });
+  // 고친 날짜는 capture 를 거쳐 저장한다 — 날짜 교정도 배우기에 쓰인다 (proposals.captureSetDate)
+  function setDate(n, it, ymd, time) {
+    DN.capture.setDate(n.id, it.ref, ymd, time);
   }
 
   // ------------------------------------------------------------------ 프로젝트 바꾸기 (적은 글 전체)
@@ -665,6 +661,7 @@
     var done = t.status === 'done' || t.deletedAt;
     var hasDraft = t.breakdown && (t.breakdown.status === 'pending' || t.breakdown.status === 'later');
     return bubble('assistant', h('div',
+      m.statusLabel ? h('div.meta.next-status', '지금: ' + m.statusLabel) : null,
       h('div.meta', '지금 하기 좋은 일'),
       h('div.next-title' + (done ? '.is-done' : ''), t.title),
       m.step ? h('div.meta', '먼저 이 단계부터: ' + m.step) : null,

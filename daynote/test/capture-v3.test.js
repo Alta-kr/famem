@@ -35,7 +35,7 @@ function submit(st, text, patch) {
 const live = (list) => list.filter((x) => !x.deletedAt);
 
 test('스키마 v3: note_kind 가 있고 모든 속성이 required', () => {
-  assert.strictEqual(C.PROMPT_VERSION, 'capture.v6');
+  assert.strictEqual(C.PROMPT_VERSION, 'capture.v7');
   assert.deepStrictEqual(C.SCHEMA.properties.note_kind.enum, ['memo', 'idea', 'link']);
   assert.deepStrictEqual(C.SCHEMA.required.slice().sort(), Object.keys(C.SCHEMA.properties).sort());
   assert.match(C.SYSTEM, /note_kind/);
