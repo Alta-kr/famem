@@ -73,7 +73,20 @@
     archive: '<rect x="3" y="4" width="18" height="5" rx="1.5"/><path d="M5 9v9a2 2 0 0 0 2 2h10a2 2 0 0 0 2-2V9M10 13h4"/>',
     chevronDown: '<path d="M6 9l6 6 6-6"/>',
     command: '<path d="M9 6a3 3 0 1 0-3 3h12a3 3 0 1 0-3-3v12a3 3 0 1 0 3-3H6a3 3 0 1 0 3 3z"/>',
-    theme: '<circle cx="12" cy="12" r="9"/><path d="M12 3v18a9 9 0 0 0 0-18z" fill="currentColor" stroke="none"/>'
+    theme: '<circle cx="12" cy="12" r="9"/><path d="M12 3v18a9 9 0 0 0 0-18z" fill="currentColor" stroke="none"/>',
+    // 명령어 칩 자물쇠 (FEATURES §6.8) · 현재 상태와 맥락 (STATUS §10.8)
+    lock: '<rect x="5" y="11" width="14" height="9" rx="2"/><path d="M8 11V8a4 4 0 0 1 8 0v3"/>',
+    briefcase: '<rect x="3" y="7" width="18" height="13" rx="2"/><path d="M9 7V5a2 2 0 0 1 2-2h2a2 2 0 0 1 2 2v2M3 13h18"/>',
+    home: '<path d="M4 11l8-7 8 7"/><path d="M6 9.5V20h12V9.5M10 20v-5h4v5"/>',
+    bag: '<path d="M5 8h14l-1 12H6z"/><path d="M9 10V7a3 3 0 0 1 6 0v3"/>',
+    user: '<circle cx="12" cy="8" r="4"/><path d="M4 21a8 8 0 0 1 16 0"/>',
+    heart: '<path d="M12 20s-7-4.4-9-9a4.8 4.8 0 0 1 9-3 4.8 4.8 0 0 1 9 3c-2 4.6-9 9-9 9z"/>',
+    book: '<path d="M4 5a2 2 0 0 1 2-2h13v15H6a2 2 0 0 0-2 2z"/><path d="M4 20a2 2 0 0 0 2 2h13v-4M8 7h7"/>',
+    coffee: '<path d="M4 9h12v5a5 5 0 0 1-5 5H9a5 5 0 0 1-5-5z"/><path d="M16 10h1.5a2.5 2.5 0 0 1 0 5H16M8 3v3M12 3v3"/>',
+    moon: '<path d="M20 14.5A8 8 0 1 1 9.5 4a6.5 6.5 0 0 0 10.5 10.5z"/>',
+    walk: '<circle cx="13" cy="4.5" r="1.8"/><path d="M10 21l2.5-6 2.5 2v4M9 11l3-3 3 3 3 1M12.5 15L11 9"/>',
+    train: '<rect x="5" y="3" width="14" height="14" rx="3"/><path d="M5 11h14M9 21l1.5-4M15 21l-1.5-4M9 14h.01M15 14h.01"/>',
+    leaf: '<path d="M5 19c0-8 5-14 15-15-1 10-7 15-15 15z"/><path d="M5 19l7-7"/>'
   };
   function icon(name, cls) {
     var span = document.createElement('span');
@@ -83,20 +96,24 @@
 
   // ------------------------------------------------------------------ 알림
   var toastWrap = null;
+  // opts: { action:{label, fn} | actions:[{label, fn}], duration, error } — 버튼은 배열 순서대로, 그 뒤에 '닫기'.
+  //   버튼을 누르면 알림을 닫고 fn() 을 부른다.
   function toast(msg, opts) {
     opts = opts || {};
     if (!toastWrap) { toastWrap = h('div.toast-wrap', { role: 'status', 'aria-live': 'polite' }); document.body.appendChild(toastWrap); }
     var el = h('div.toast' + (opts.error ? '.is-error' : ''), h('span', msg));
     var timer;
     function close() { clearTimeout(timer); el.remove(); }
-    if (opts.action) {
-      el.appendChild(h('button', { type: 'button', onclick: function () { close(); opts.action.fn(); } }, opts.action.label));
-    }
+    var acts = (Array.isArray(opts.actions) ? opts.actions : []).concat(opts.action ? [opts.action] : [])
+      .filter(function (a) { return a && a.label && typeof a.fn === 'function'; });
+    acts.forEach(function (a) {
+      el.appendChild(h('button', { type: 'button', onclick: function () { close(); a.fn(); } }, a.label));
+    });
     el.appendChild(h('button', { type: 'button', 'aria-label': '알림 닫기', onclick: close }, '닫기'));
     // 같은 종류 알림은 새 것으로 바꾼다 (쌓이지 않게)
     while (toastWrap.children.length >= 2) toastWrap.firstChild.remove();
     toastWrap.appendChild(el);
-    timer = setTimeout(close, opts.duration || (opts.action ? 7000 : 3500));
+    timer = setTimeout(close, opts.duration || (acts.length ? 7000 : 3500));
     return close;
   }
 
@@ -178,7 +195,8 @@
     if (target && target.focus) try { target.focus(); } catch (e) {}
   }
 
-  // content: 요소. opts: { role, label, className, onClose }
+  // content: 요소. opts: { role, label, className, onClose, keepOnResize }
+  //   keepOnResize: 창 크기가 바뀌어도(폰 화상 키보드) 닫지 않고 위치만 다시 잡는다. 기준 요소가 문서에서 사라졌으면 닫는다.
   function popover(anchor, content, opts) {
     opts = opts || {};
     closeMenu(false);
@@ -195,7 +213,10 @@
     }
     function onDown(e) { if (!el.contains(e.target) && !(anchor && anchor.contains(e.target))) close(false); }
     function onAnchorDown(e) { if (anchor && anchor.contains(e.target)) { e.preventDefault(); close(false); } }   // 연 버튼을 다시 누르면 닫기만 한다
-    function onResize() { close(false); }
+    function onResize() {
+      if (opts.keepOnResize && anchor && anchor.isConnected) { place(); return; }
+      close(false);
+    }
     function close(restore) {
       if (closed) return;
       closed = true;
@@ -449,6 +470,7 @@
   }
 
   window.Daynote.ui = {
+    TOAST_ACTIONS: true, POPOVER_KEEP_ON_RESIZE: true,
     h: h, icon: icon, toast: toast, undoToast: undoToast, modal: modal, confirm: confirmDialog, menu: menu, closeMenu: closeMenu, popover: popover,
     kindChip: kindChip, KIND_LABEL: KIND_LABEL, KIND_ICON: KIND_ICON, josa: josa,
     projectChip: projectChip, dueChip: dueChip, scheduleChip: scheduleChip, estimateChip: estimateChip,

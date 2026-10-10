@@ -67,6 +67,9 @@
           h('button.link-btn', { type: 'button', onclick: function () { save({ estimateMinutes: t.estimateMinutes, estimateSource: 'user' }, '소요 시간 확인'); } }, '이 값으로 확정'))
         : '분 단위 · 남은 시간 기준';
 
+    var ctxRows = contextRows(st, t, now);
+    var hintRows = schedHintRows(t, save);
+
     var proj = h('select.select', { 'aria-label': '프로젝트' }, ui.projectOptions(st, t.projectId));
     proj.addEventListener('change', function () { save({ projectId: proj.value || null }, '프로젝트 변경'); });
 
@@ -160,7 +163,9 @@
         h('div.detail-section', h('h4', '작업 시간'), blocks.length ? blocks : h('div.help', '아직 배치하지 않았습니다.'),
           done ? null : h('div', h('button.btn.btn-sm', { type: 'button', onclick: function () { A.scheduleTask(taskId); } }, ui.icon('plus'), '작업 시간 추가'))),
         field('남은 예상 소요 시간 (분)', est, estHelp),
+        hintRows,
         field('프로젝트', proj),
+        ctxRows,
         h('div.detail-section', h('h4', '선행 업무'), blockerList, addBlocker,
           blockers.some(function (b) { return b.status !== 'done' && !b.deletedAt; }) ? h('div.help', '선행 업무가 끝나기 전에는 ‘지금 할 일 추천’에 나오지 않습니다.') : null),
         h('div.detail-section', h('h4', '단계'), steps, h('div.step-row', stepTitle, stepEst, h('button.btn.btn-sm', { type: 'button', onclick: addStep }, '추가'))),
@@ -184,10 +189,101 @@
       // 단, 상태나 버튼 구성이 바뀌는 변경은 다시 그린다.
       onChange: function (info) {
         if (info.source !== 'detail') return false;
-        return !/상태|단계|선행|미루기|소요 시간 확인|마감일/.test(info.label || '');
+        return !/상태|단계|선행|미루기|소요 시간 확인|마감일|맥락|언제 할지/.test(info.label || '');
       }
     };
     return handle;
+  }
+
+  // ------------------------------------------------------------------ 맥락 · 언제 할까요 (STATUS §10.6) — 현재 상태를 켠 뒤에만
+  var LEVEL_WORD = { up: '맨 위', normal: '보통', down: '뒤로', hide: '숨김' };
+  function contextRows(st, t, now) {
+    var SU = DN.status, ST = DN.statusCore, SW = DN.statusWords;
+    if (!SU || !ST || !SU.isActive || !SU.isActive() || !SU.profile) return null;
+    var pf = SU.profile();
+    var r = ST.contextOf(st, t, pf, now);
+    var ctxSel = h('select.select', { 'aria-label': '맥락' },
+      pf.contextIds.map(function (id) { return h('option', { value: id, selected: r.value === id }, pf.contexts[id].label); }),
+      h('option', { value: '', selected: !r.value }, '정하지 않음'));
+    ctxSel.addEventListener('change', function () {
+      if (SU.setTaskContext) SU.setTaskContext(t.id, ctxSel.value || null, { source: 'detail' });
+    });
+    var lab = r.value ? ST.contextLabel(pf, r.value) : '정하지 않음';
+    var why = r.source === 'user' ? (r.value ? '직접 정함' : '직접 ‘정하지 않음’으로 정함')
+      : r.source === 'project' ? '프로젝트 ‘' + (r.evidence || '') + '’' + ui.josa(r.evidence || '', '를/을').slice((r.evidence || '').length) + ' 따라 ' + lab
+      : r.source === 'learned' ? '전에 고친 대로 ' + lab
+      : r.source === 'ai' ? 'AI가 정했어요 · 직접 바꾸면 그대로 둬요'
+      : r.source === 'rule' ? '‘' + r.evidence + '’' + ui.josa(r.evidence || '', '라는/이라는').slice((r.evidence || '').length) + ' 말로 ' + ui.josa(lab, '로/으로') + ' 봤어요 · 직접 바꾸면 그대로 둬요'
+      : r.source === 'hint' ? '메일에서 온 할 일이라 ' + ui.josa(lab, '로/으로') + ' 봤어요 · 숨기지는 않아요'
+      : '어느 쪽 일인지 몰라서 어느 상태에서나 보통으로 보여요';
+    var effect = null;
+    var v = SU.view ? SU.view(now) : null;
+    var lv = v && v.levels && v.levels[t.id];
+    if (lv && t.status !== 'done') {
+      var bt = lv.breakthrough;
+      var tail = '';
+      if (bt && t.dueDate) {
+        var when = D.relDay(t.dueDate, now) + (t.dueTime ? ' ' + t.dueTime : '');
+        tail = bt.soon ? ' · ' + when + ' 마감이 가까워서' : ' · ' + when + ' 마감이라 뒤로 보여요';
+      } else if (lv.reason === 'when') tail = ' · 하기로 한 때라서';
+      else if (lv.reason === 'phone') tail = ' · 이동 중에 폰으로 할 수 있어서';
+      else if (lv.reason === 'shown') tail = ' · 펼쳐 봐서 이번만 보여요';
+      else if (lv.reason === 'started') tail = ' · 이 상태에서 시작한 일이라서';
+      else if (lv.reason === 'block') tail = ' · 작업 시간이 잡혀 있어서';
+      var label = v.label + (v.guessed ? ' · 시간표 기준' : '');
+      var word = bt && !bt.soon ? '숨김' : LEVEL_WORD[lv.level] || '보통';
+      effect = '지금(' + label + ')은 ' + word + tail;
+    }
+    var at = h('select.select', { 'aria-label': '언제 할까요' },
+      h('option', { value: '', selected: !t.atMode }, '상관없음'),
+      ((SW && SW.ATMODES) || ['work', 'off', 'out', 'pause', 'rest']).map(function (m) {
+        return h('option', { value: m, selected: t.atMode === m }, (SW && SW.ATMODE_LABEL && SW.ATMODE_LABEL[m]) || m);
+      }));
+    at.addEventListener('change', function () { if (SU.setTaskAtMode) SU.setTaskAtMode(t.id, at.value || null, { source: 'detail' }); });
+    var atWhy = !t.atMode ? null : t.atModeSource === 'ai' ? 'AI가 정했어요' : t.atModeSource === 'rule' ? '제목 앞의 말로 알아봤어요' : null;
+    return h('div.detail-section.st-detail',
+      h('div.field', h('label', '맥락'), ctxSel,
+        h('div.help.st-detail-why', why),
+        effect ? h('div.meta.st-detail-effect', effect) : null),
+      h('div.field', h('label', '언제 할까요'), at, atWhy ? h('div.help', atWhy) : null));
+  }
+
+  // ------------------------------------------------------------------ 배치 힌트 (CAL §7.2) — 플래너가 있으면 늘 보인다
+  function schedHintRows(t, save) {
+    var PL = DN.planner;
+    if (!PL || typeof PL.hintsOf !== 'function') return null;
+    var hs = PL.hintsOf(t);
+    var cur = { focus: hs.focus == null ? null : hs.focus, energy: hs.energy == null ? null : hs.energy,
+      prefer: hs.prefer == null ? null : hs.prefer, splittable: hs.splittable == null ? null : hs.splittable };
+    var src = hs.src || {};
+    var anyAi = ['focus', 'prefer', 'splittable', 'energy'].some(function (k) { return src[k] === 'ai'; });
+    var anyRule = ['focus', 'prefer', 'splittable', 'energy'].some(function (k) { return src[k] === 'rule'; });
+    var meta = h('div.meta.st-hint-src', anyAi ? 'AI가 짐작했어요' : anyRule ? '제목으로 짐작했어요' : '');
+    if (!anyAi && !anyRule) meta.hidden = true;
+    function commit() {
+      save({ schedHints: { focus: cur.focus, energy: cur.energy, prefer: cur.prefer, splittable: cur.splittable, source: 'user', at: DN.app.now().toISOString() } }, '배치 힌트 바꾸기');
+      meta.textContent = ''; meta.hidden = true;
+    }
+    var seg = h('div.seg', { role: 'group', 'aria-label': '일의 성격' });
+    [[null, '상관없음'], ['deep', '집중 필요'], ['light', '가벼운 일']].forEach(function (o) {
+      seg.appendChild(h('button', { type: 'button', 'aria-pressed': cur.focus === o[0] ? 'true' : 'false', onclick: function (e) {
+        var me = e.currentTarget;
+        cur.focus = o[0];
+        Array.prototype.forEach.call(seg.children, function (b) { b.setAttribute('aria-pressed', b === me ? 'true' : 'false'); });
+        commit();
+      } }, o[1]));
+    });
+    var prefer = h('select.select', { 'aria-label': '하기 좋은 때' },
+      [['', '상관없음'], ['morning', '아침·오전'], ['afternoon', '오후'], ['evening', '저녁']].map(function (o) {
+        return h('option', { value: o[0], selected: (cur.prefer || '') === o[0] }, o[1]);
+      }));
+    prefer.addEventListener('change', function () { cur.prefer = prefer.value || null; commit(); });
+    var split = h('input', { type: 'checkbox', checked: cur.splittable === true });
+    split.addEventListener('change', function () { cur.splittable = split.checked; commit(); });
+    return h('div.field.detail-row.st-sched-hints', h('label', '배치 힌트'),
+      h('div.st-sched-line', seg, prefer),
+      h('label.check-row', split, h('span', '나눠서 해도 돼요')),
+      meta);
   }
 
   DN.views.detail = { render: render };

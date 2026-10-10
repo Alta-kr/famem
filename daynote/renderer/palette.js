@@ -41,6 +41,58 @@
       out.push({ group: '명령', icon: 'theme', label: '테마: ' + t[1], sub: theme === t[0] ? '지금 쓰는 중' : '', checked: theme === t[0], words: '테마 화면 모드 다크 라이트 밝게 어둡게 theme dark light', run: function () { setTheme(t[0]); ui.toast('테마를 ‘' + t[1] + '’로 바꿨어요.'); } });
     });
     out.push({ group: '명령', icon: 'settings', label: '설정 열기', sub: 'AI 연결 · 화면 · 단축키', words: '설정 연결 ai 키 단축키 settings', run: function () { A.go('settings'); } });
+    return out.concat(statusCommands());
+  }
+
+  // ------------------------------------------------------------------ 상태 (STATUS §10.2) — 기능이 꺼져 있으면 없다
+  function statusCtx() {
+    var SU = DN.status, ST = DN.statusCore;
+    if (!SU || !ST || typeof SU.profile !== 'function' || typeof SU.set !== 'function') return null;
+    var pf = SU.profile();
+    if (!pf || !pf.enabled) return null;
+    var active = SU.isActive ? SU.isActive() : false;
+    var cur = active && SU.current ? SU.current(now()) : null;
+    return { SU: SU, ST: ST, pf: pf, active: active, cur: cur };
+  }
+  // 상태마다 알아듣는 말 (사전 + 사용자 말) — 검색어로만 쓴다
+  function statusWords(pf, id) {
+    var SW = DN.statusWords, out = [pf.statuses[id].label, id];
+    (pf.statuses[id].words || []).forEach(function (w) { out.push(w); });
+    if (SW && SW.PHRASES) {
+      SW.PHRASES.forEach(function (g) {
+        var to = g.id || (g.role && pf.roleMap && pf.roleMap[g.role]);
+        if (to !== id) return;
+        ['sure', 'tail', 'maybe'].forEach(function (k) { (g[k] || []).forEach(function (w) { out.push(w); }); });
+      });
+    }
+    return out.join(' ');
+  }
+  function statusCommands() {
+    var c = statusCtx();
+    if (!c) return [];
+    var A = DN.app, out = [];
+    var curId = c.cur && !c.cur.guessed ? c.cur.id : null;
+    c.pf.menu.forEach(function (id) {
+      var d = c.pf.statuses[id];
+      if (!d) return;
+      out.push({ group: '상태', icon: d.icon || 'clock', label: '상태: ' + d.label, sub: curId === id ? '지금' : (d.overlay ? d.minutes + '분' : ''),
+        checked: curId === id, words: '상태 지금 바꾸기 ' + statusWords(c.pf, id), isNow: curId === id,
+        run: function () { c.SU.set({ id: id }, { source: 'palette' }); } });
+    });
+    var guessNow = !!(c.cur && c.cur.guessed);
+    out.push({ group: '상태', icon: 'clock', label: '상태: 시간표대로', sub: guessNow ? '지금은 ‘' + c.cur.label + '’' : '근무 시간으로 짐작', checked: guessNow, isNow: guessNow,
+      words: '상태 시간표 자동 짐작 시간표대로 auto', run: function () { if (c.SU.toGuess) c.SU.toGuess(); } });
+    if (c.active) {
+      out.push({ group: '상태', icon: 'undo', label: '상태: 이전 상태로', sub: '바로 전 상태로 돌아가요', words: '상태 이전 되돌리기 revert',
+        run: function () { if (c.SU.revert) c.SU.revert(); } });
+    }
+    out.push({ group: '상태', icon: 'settings', label: '현재 상태 설정 열기', sub: '설정 › 현재 상태', words: '상태 설정 현재 상태 프리셋 맥락 정책',
+      run: function () { A.go('settings', { section: 'status' }); } });
+    // 메뉴에 없는 지금 상태(예: 회의 중)도 빈 칸에서 보이게
+    if (curId && c.pf.menu.indexOf(curId) === -1 && c.pf.statuses[curId]) {
+      out.unshift({ group: '상태', icon: c.pf.statuses[curId].icon || 'clock', label: '상태: ' + c.cur.label, sub: '지금', checked: true, isNow: true,
+        words: '상태 ' + statusWords(c.pf, curId), run: function () { c.SU.set({ id: curId }, { source: 'palette' }); } });
+    }
     return out;
   }
 
@@ -70,16 +122,22 @@
     var s = new Date(b.start);
     return { group: '일정', icon: 'calendar', kind: 'event', label: b.title || '일정', sub: '일정 · ' + D.relDay(D.ymd(s), n) + ' ' + D.hm(s), at: b.start, run: function () { openEvent(b.id); } };
   }
+  function extOpt(x) {
+    return { group: '일정', icon: 'calendar', kind: 'event', label: x.title || '일정', sub: 'Google · ' + (x.calendarName || '캘린더'), at: x.start,
+      run: function () { DN.app.go('calendar', { anchor: D.ymd(x.start) }); } };
+  }
   function projectOpt(p) {
     return { group: '프로젝트', icon: 'project', label: p.name, sub: '프로젝트', color: p.color, run: function () { DN.app.go('projects', { projectId: p.id }); } };
   }
 
   // 앞에서 맞으면 먼저, 그다음 최근 순
+  // 이름 안에 검색어가 낱말 그대로 있으면 먼저 ('퇴근' → '상태: 퇴근 · 내 시간'이 '상태: 퇴근길'보다 앞)
+  function exactToken(label, q) { return norm(label).split(/[\s·:,()]+/).indexOf(q) !== -1 ? 0 : 1; }
   function rank(list, q, field) {
-    return list.map(function (o) { return { o: o, i: norm(o[field || 'label']).indexOf(q) }; })
+    return list.map(function (o) { var l = o[field || 'label']; return { o: o, i: norm(l).indexOf(q), x: exactToken(l, q) }; })
       .sort(function (a, b) {
         var pa = a.i === 0 ? 0 : a.i > 0 ? 1 : 2, pb = b.i === 0 ? 0 : b.i > 0 ? 1 : 2;
-        return pa - pb || String(b.o.at || '').localeCompare(String(a.o.at || ''));
+        return pa - pb || a.x - b.x || String(b.o.at || '').localeCompare(String(a.o.at || ''));
       }).map(function (x) { return x.o; });
   }
 
@@ -93,7 +151,9 @@
         .sort(function (a, b) { return String(b.at || '').localeCompare(String(a.at || '')); })
         .slice(0, RECENT)
         .map(function (o) { return Object.assign(o, { group: '최근' }); });
-      return cmds.filter(function (c) { return c.group === '명령'; }).concat(recent);
+      // '명령' 바로 뒤에 지금 상태 하나 (기능을 켠 뒤에만)
+      var nowStatus = cmds.filter(function (c) { return c.group === '상태' && c.isNow; }).slice(0, 1);
+      return cmds.filter(function (c) { return c.group === '명령'; }).concat(nowStatus, recent);
     }
     var out = [];
     var hitCmds = cmds.filter(function (c) { return norm(c.label + ' ' + (c.words || '')).indexOf(q) !== -1; });
@@ -103,6 +163,10 @@
     var notes = M.liveNotes(st).filter(function (x) { return x.captureRole !== 'task_source' && norm(x.title + '\n' + x.body).indexOf(q) !== -1; }).map(function (x) { return noteOpt(x, n, q); });
     out = out.concat(rank(notes, q).slice(0, PER_GROUP));
     var events = st.blocks.filter(function (b) { return !b.taskId && norm(b.title).indexOf(q) !== -1; }).map(function (b) { return eventOpt(b, n); });
+    // Google 일정 (GOOGLE §9.3) — 읽기 전용이라 캘린더의 그날로 간다
+    if (typeof M.externalItems === 'function') {
+      events = events.concat(M.externalItems(st).filter(function (x) { return norm(x.title).indexOf(q) !== -1; }).map(function (x) { return extOpt(x); }));
+    }
     out = out.concat(rank(events, q).slice(0, PER_GROUP));
     var projects = M.liveProjects(st).filter(function (p) { return norm(p.name).indexOf(q) !== -1; }).map(projectOpt);
     out = out.concat(rank(projects, q).slice(0, PER_GROUP));

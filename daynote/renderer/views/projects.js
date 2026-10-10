@@ -106,7 +106,26 @@
     return h('div.proj-head',
       h('div.proj-title-row', h('span.proj-color', { style: { background: p.color }, 'aria-hidden': 'true' }), name,
         p.sample ? h('span.chip.chip-sample', '샘플') : null),
+      contextSelect(p),
       desc);
+  }
+
+  // 기본 맥락 (STATUS §6.5) — 소속 할 일이 따로 정하지 않으면 이 맥락으로 본다. 현재 상태를 켠 뒤에만 보인다
+  function contextSelect(p) {
+    var SU = DN.status;
+    if (!SU || !SU.isActive || !SU.isActive() || !SU.profile) return null;
+    var pf = SU.profile(), curCtx = p.context && pf.contexts[p.context] ? p.context : '';
+    var sel = h('select.select.proj-ctx', { id: 'proj-ctx-' + p.id },
+      h('option', { value: '', selected: !curCtx }, '정하지 않음'),
+      pf.contextIds.map(function (id) { return h('option', { value: id, selected: curCtx === id }, pf.contexts[id].label); }));
+    sel.addEventListener('change', function () {
+      var v = sel.value || null, pid = p.id;
+      S.mutate('프로젝트 맥락 바꾸기', function (s) { var x = M.byId(s.projects, pid); if (x) x.context = v; }, { source: 'projects' });
+      var lab = v ? pf.contexts[v].label : null;
+      ui.undoToast(lab ? '‘' + p.name + '’ 할 일은 ' + ui.josa(lab, '로/으로') + ' 볼게요.' : '‘' + p.name + '’의 기본 맥락을 지웠어요.');
+    });
+    return h('div.proj-ctx-row', h('label.field-label', { 'for': 'proj-ctx-' + p.id }, '기본 맥락'), sel,
+      h('span.help', '이 프로젝트의 할 일을 어느 쪽 일로 볼지 정해요. 할 일마다 따로 정한 것이 먼저예요.'));
   }
 
   function renderOverview(st, sel) {

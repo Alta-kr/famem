@@ -1,1 +1,86 @@
-/* placeholder — owned by W2-today */
+/* 오늘 화면 — 할 일 추천(rec-*) · 상태별 묶음 · 좁은 화면 상태 줄 · 오늘 일정의 Google 항목 (W2-today)
+   기존 토큰만 쓴다. 지역 변수는 클래스로만 준다. */
+
+/* ------------------------------------------------------------- 할 일 추천 (FEATURES §5.3–5.4) */
+.rec-host { background: var(--surface); border-top: 1px solid var(--border-deco); }
+.rec-host.is-empty { display: none; }
+.rec-cta { display: flex; align-items: center; gap: 8px; flex-wrap: wrap; padding: 8px 12px; }
+.rec-cta-text { flex: 1 1 200px; min-width: 0; font-size: 13px; color: var(--text-secondary); }
+.rec-cta-actions { display: flex; align-items: center; gap: 4px; margin-left: auto; }
+.rec-cta-btn { white-space: nowrap; }
+
+.rec-panel { display: flex; flex-direction: column; gap: 8px; padding: 10px 12px 12px; max-height: 50vh; overflow: auto; }
+.rec-head { display: flex; align-items: center; gap: 8px; }
+.rec-head h3 { flex: 1; font-size: 14px; font-weight: 600; letter-spacing: -0.01em; }
+.rec-chips { display: flex; flex-wrap: wrap; gap: 6px; }
+.rec-custom { display: flex; gap: 6px; align-items: center; }
+.rec-custom .input { flex: 1; min-width: 0; }
+#rec-custom-msg:empty { display: none; }
+#rec-custom-msg.is-error { color: var(--error); }
+.rec-results { display: flex; flex-direction: column; gap: 8px; }
+.rec-results:empty { display: none; }
+.rec-sum { font-size: 12px; font-weight: 600; color: var(--text-secondary); }
+.rec-item { display: flex; flex-direction: column; gap: 6px; padding: 10px 12px; border: 1px solid var(--border-deco); border-radius: var(--r-control); background: var(--bg-app); }
+.rec-item.is-primary { border-color: var(--primary-line); background: var(--primary-soft); }
+.rec-item-title { font-size: 14px; font-weight: 600; }
+.rec-item-title .link-btn, .rec-alt .link-btn { color: inherit; text-align: left; overflow-wrap: anywhere; }
+.rec-step { font-size: 13px; }
+.rec-reasons { margin: 0; padding-left: 18px; font-size: 13px; color: var(--text-secondary); }
+.rec-chips-row { display: flex; flex-wrap: wrap; gap: 4px; }
+.rec-actions { display: flex; flex-wrap: wrap; gap: 6px; align-items: center; }
+.rec-empty { font-size: 13px; color: var(--text-secondary); }
+.rec-alts-title { font-size: 12px; font-weight: 600; color: var(--text-secondary); margin-bottom: 2px; }
+.rec-alts ul { list-style: none; margin: 0; padding: 0; display: flex; flex-direction: column; gap: 2px; }
+.rec-alt { display: flex; align-items: center; gap: 8px; font-size: 13px; padding: 4px 0; }
+.rec-alt .link-btn { flex: 1; min-width: 0; }
+.rec-alt .meta { white-space: nowrap; }
+
+/* ------------------------------------------------------------- 상태별 묶음 (STATUS §9.3–9.5, §10.8) */
+.today-group-head { display: flex; align-items: center; gap: 6px; margin: 10px 0 4px; padding: 0 8px; font-size: 12px; font-weight: 600; color: var(--text-secondary); flex-wrap: wrap; }
+.today-group-head.is-when { color: var(--text-primary); }
+.today-group-head.is-when span[aria-hidden] { color: var(--warning); }
+.today-group-toggle { display: inline-flex; align-items: center; gap: 4px; padding: 2px 0; border: 0; background: none; font: inherit; color: inherit; cursor: pointer; text-align: left; }
+.today-group-toggle svg { width: 14px; height: 14px; flex: none; }
+.today-group-toggle:hover { color: var(--text-primary); }
+.today-confirm { font-size: 12px; }
+.home-row.is-dim .home-row-title { color: var(--text-secondary); }
+.today-ctx { display: inline-flex; }
+.hidden-line { display: flex; gap: 6px; align-items: center; flex-wrap: wrap; margin-top: 6px; padding: 6px 8px; font-size: 13px; color: var(--text-secondary); border-top: 1px solid var(--border-deco); }
+.today-sleep { display: flex; gap: 8px; align-items: baseline; flex-wrap: wrap; padding: 12px 8px; font-size: 13px; color: var(--text-secondary); }
+.today-done { margin-top: 6px; }
+.status-nudge { display: flex; gap: 8px; align-items: center; font-size: 13px; color: var(--text-secondary); padding: 4px 16px; }
+
+/* 좁은 화면의 맨 위 고정 줄 — 넓은 화면에서는 오늘 머리줄의 칩을 쓴다 */
+.home-status { display: none; }
+.home-status-hidden { white-space: nowrap; }
+
+/* ------------------------------------------------------------- 오늘 일정의 Google 항목 (GOOGLE §9.3) */
+.agenda-item.is-ext::before { background: var(--kind-event); opacity: .55; }
+.agenda-item.is-ext .t::after { content: ' · Google'; color: var(--text-tertiary); font-size: 12px; }
+.agenda-item.is-tentative::before { background: transparent; border: 1px dashed var(--kind-event); width: 1px; }
+.agenda-item.is-tentative .link-btn { font-style: italic; }
+.agenda-allday .time { color: var(--text-tertiary); }
+
+@media (max-width: 860px) {
+  .home.has-status { grid-template-rows: auto 60vh auto; }
+  .home.has-status .home-status { display: flex; align-items: center; gap: 8px; position: sticky; top: 0; z-index: 5; min-height: 44px;
+    background: var(--bg-app); grid-column: 1 / -1; min-width: 0; }
+  .home-status .status-chip { height: 36px; margin-left: 0; }
+  .home-today-head .status-chip { display: none; }
+}
+
+@media (max-width: 640px) {
+  /* 폰: 홈 전체가 한 줄로 쌓이고 .home 이 스크롤한다 (보기 칸은 today.js 가 overflow:hidden 으로 둔다) */
+  .home { height: 100%; grid-template-rows: max-content max-content; }
+  .home.has-status { grid-template-rows: max-content max-content max-content; }
+  .rec-cta-text { flex-basis: 100%; }
+  .rec-cta-actions { width: 100%; margin-left: 0; }
+  .rec-cta-btn { flex: 1; height: 44px; justify-content: center; }
+  .rec-cta-x { width: 44px; height: 44px; }
+  .rec-custom { flex-wrap: wrap; }
+  .rec-custom .input { flex-basis: 100%; }
+  .rec-custom .btn { width: 100%; height: 40px; justify-content: center; }
+  .rec-chips .pill { min-height: 36px; }
+  .today-group-toggle { min-height: 32px; }
+  .hidden-line .link-btn, .today-sleep .link-btn { min-height: 32px; }
+}
