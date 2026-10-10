@@ -11,9 +11,9 @@
 ## 단계
 - [x] 0. 이해·설계 (설계 문서 4개 + 통합 계획)
 - [x] 1. 1차 핵심 모듈 7개 구현 (커밋 3d23272)
-- [ ] 1v. 1차 검증 7개 (W1-model 완료, 나머지 6개 재실행 중)
+- [x] 1v. 1차 검증 7개 완료
 - [x] gate. index.html 태그·자리 파일 (커밋 a3e1f79)
-- [ ] 1.5 캘린더 추가 설계(DAYNOTE_CALENDAR_DESIGN.md, 계획 §8) + planner.js 핵심 모듈 + 검증
+- [x] 1.5 캘린더 설계(DAYNOTE_CALENDAR_DESIGN.md, 계획 §8) + planner.js + 검증 완료 (614 tests)
 - [ ] 2. 2차 UI 연결 9개(+캘린더 확장) 구현 + 검증
 - [ ] 3. 전체 적대적 리뷰 + 수정
 - [ ] 4. 브라우저 확인(390px·1440px), 웹 데모 빌드·재게시 (https://claude.ai/artifact/91gd47VYtXeVJnJjWZnyAv)

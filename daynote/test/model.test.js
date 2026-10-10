@@ -450,3 +450,35 @@ test('normalize: presence·learned·gcal 자리에 객체가 아닌 값이 있�
   assert.deepEqual(inner.learned.metrics, E_LEARNED.metrics);
   assert.deepEqual(inner.gcal.settings, E_GCAL.settings);
 });
+
+// ------------------------------------------------------------------ 배치 힌트 (CAL §12.2, W1.5-planner)
+
+test('65. normalizeTask: schedHints 기본값 null ({schedHints: undefined} 도 null)', () => {
+  assert.equal(M.normalizeTask({}).schedHints, null);
+  assert.equal(M.normalizeTask({ schedHints: undefined }).schedHints, null);
+  const kept = { focus: 'deep', energy: null, prefer: null, splittable: true, source: 'user', at: NOW.toISOString() };
+  assert.deepEqual(M.normalizeTask({ schedHints: kept }).schedHints, kept);
+  const s = M.emptyState();
+  assert.equal(M.addTask(s, { title: 'x' }, NOW).schedHints, null);
+  assert.equal(M.normalize({ tasks: [{ id: 't1', title: 'x' }] }).tasks[0].schedHints, null);
+});
+
+test('66. updateTask: 제목이 바뀌면 AI 배치 힌트만 지우고, 패치에 schedHints 가 있으면 그 값', () => {
+  const s = M.emptyState();
+  const ai = { focus: 'deep', energy: null, prefer: 'morning', splittable: null, source: 'ai', at: NOW.toISOString() };
+  const user = { focus: 'light', energy: null, prefer: null, splittable: false, source: 'user', at: NOW.toISOString() };
+  const a = M.addTask(s, { title: '보고서 쓰기', schedHints: Object.assign({}, ai) }, NOW);
+  const u = M.addTask(s, { title: '메일 보내기', schedHints: Object.assign({}, user) }, NOW);
+  M.updateTask(s, a.id, { title: '보고서 쓰기' }, LATER);                 // 같은 제목 → 그대로
+  assert.deepEqual(a.schedHints, ai);
+  M.updateTask(s, a.id, { memo: '메모' }, LATER);                         // 제목 아닌 변경 → 그대로
+  assert.deepEqual(a.schedHints, ai);
+  M.updateTask(s, a.id, { title: '설거지' }, LATER);
+  assert.equal(a.schedHints, null);
+  M.updateTask(s, u.id, { title: '전화하기' }, LATER);
+  assert.deepEqual(u.schedHints, user);
+  const b = M.addTask(s, { title: '기획서', schedHints: Object.assign({}, ai) }, NOW);
+  const next = { focus: 'light', energy: null, prefer: null, splittable: null, source: 'ai', at: LATER.toISOString() };
+  M.updateTask(s, b.id, { title: '기획서 보내기', schedHints: next }, LATER);
+  assert.deepEqual(b.schedHints, next);
+});

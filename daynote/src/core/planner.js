@@ -112,6 +112,7 @@
     return /[0-9lmnr]$/i.test(String(s || '')) && !/[2459]$/.test(String(s || ''));
   }
   function ira(label) { return hasBatchim(label) ? '이라' : '라'; }
+  function iga(label) { return hasBatchim(label) ? '이' : '가'; }
   function q(s) { return '‘' + s + '’'; }
   function isNum(n) { return typeof n === 'number' && isFinite(n); }
 
@@ -120,6 +121,11 @@
     var diff = D.dayDiff(now, d);
     if (diff === 0) return '오늘';
     if (diff === 1) return '내일';
+    return shortDay(d);
+  }
+  // 문구 안의 날짜는 늘 '10/12(월)' (오늘·내일로 바꾸지 않는다)
+  function shortDay(date) {
+    var d = typeof date === 'string' && /^\d{4}-\d{2}-\d{2}$/.test(date) ? D.parseYmd(date) : new Date(msOf(date));
     return (d.getMonth() + 1) + '/' + d.getDate() + '(' + D.WEEKDAYS[d.getDay()] + ')';
   }
   function fmtRange(start, end) { return D.hm(new Date(msOf(start))) + '–' + D.hm(new Date(msOf(end))); }
@@ -213,6 +219,15 @@
   }
   function lengthOf(state, task, opts) {
     if (isNum(opts.minutes) && opts.minutes > 0) return Math.round(opts.minutes);
+    // 이 할 일의 작업 블록을 옮길 때(ignoreBlockId)는 그 블록의 길이를 지킨다.
+    // (남은 분은 옮기는 블록 자신을 이미 빼고 세므로 첫 조각을 옮기면 나머지 길이가 되고, 소요 시간이 없으면 후보가 없어진다)
+    if (opts.ignoreBlockId != null) {
+      var mb = M.byId((state && state.blocks) || [], opts.ignoreBlockId);
+      if (mb && mb.taskId === task.id && isWorkBlock(mb)) {
+        var bl = (msOf(mb.end) - msOf(mb.start)) / MINUTE;
+        if (isNum(bl) && bl > 0) return Math.round(bl);
+      }
+    }
     var rem = remainingMinutes(state, task, opts.now);
     if (rem != null && rem > 0) return rem;
     var est = task.estimateMinutes;
@@ -378,7 +393,7 @@
     var d = dueAtOf(task);
     return !!d && opts.allowAfterDue !== true && d.getTime() > msOf(opts.now);
   }
-  function dueLabel(task, now) { return fmtDay(task.dueDate, now) + (task.dueTime ? ' ' + task.dueTime : ''); }
+  function dueLabel(task) { return shortDay(task.dueDate) + (task.dueTime ? ' ' + task.dueTime : ''); }
 
   // 2시간 단위 시작 구간별, 같은 맥락 작업 블록 수 (prefs.learning === false 면 null)
   function historyCounts(state, task, mode, opts) {
@@ -469,8 +484,9 @@
       lvl = lvl || part.level;
       var startD = new Date(s), hour = startD.getHours() + startD.getMinutes() / 60;
       var earliness = last > first ? 1 - (s - first) / (last - first) : 1;
-      // 품는 빈 구간 G
-      var gs = w.start.getTime(), ge = w.end.getTime(), prevEnd = -Infinity, nextStart = Infinity;
+      // 품는 빈 구간 G — 창 경계(수준이 바뀌는 곳 포함: 업무 일에 이어진 점심 같은 '내림' 띠는 빈틈의 일부로 보지 않는다)와 바쁜 시간 사이
+      var run = levelRun(w, s, e);
+      var gs = run.start, ge = run.end, prevEnd = -Infinity, nextStart = Infinity;
       merged.forEach(function (b) {
         if (b.end <= s) { if (b.end > gs) gs = b.end; if (b.end > prevEnd) prevEnd = b.end; }
         if (b.start >= e) { if (b.start < ge) ge = b.start; if (b.start < nextStart) nextStart = b.start; }
@@ -505,7 +521,7 @@
       } else if (hints.energy === 'low' && hour >= 19) put('energy', WEIGHTS.energyLow, '가볍게 할 수 있는 저녁 시간이에요.');
       if (dueAt) {
         var urg = WEIGHTS.urgency * u * earliness;
-        if (urg > EPS) put('urgency', urg, '마감(' + dueLabel(task, now) + ')이 가까워 앞쪽 시간을 골랐어요.');
+        if (urg > EPS) put('urgency', urg, '마감(' + dueLabel(task) + ')이 가까워 앞쪽 시간을 골랐어요.');
         if (e <= dueAt.getTime() && dueReasonOk) put('dueOk', 0, '마감 전에 끝나요.');
         if (e > dueAt.getTime() - WEIGHTS.dueTightMin * MINUTE) put('dueTight', WEIGHTS.dueTight);
       }
@@ -535,6 +551,17 @@
         reasons: null, terms: terms, _why: reasons, _atOk: atOk
       };
     });
+  }
+
+  // 창 안에서 s 를 품는 같은 수준 조각들의 시작 ~ e 를 품는 같은 수준 조각들의 끝
+  function levelRun(w, s, e) {
+    var parts = w.parts, i, si = 0, ei = parts.length - 1;
+    for (i = 0; i < parts.length; i++) if (parts[i].start.getTime() <= s && s < parts[i].end.getTime()) { si = i; break; }
+    for (i = 0; i < parts.length; i++) if (parts[i].start.getTime() < e && e <= parts[i].end.getTime()) { ei = i; break; }
+    var a = si, b = ei;
+    while (a > 0 && parts[a - 1].level === parts[si].level && parts[a - 1].end.getTime() === parts[a].start.getTime()) a--;
+    while (b < parts.length - 1 && parts[b + 1].level === parts[ei].level && parts[b + 1].start.getTime() === parts[b].end.getTime()) b++;
+    return { start: Math.max(w.start.getTime(), parts[a].start.getTime()), end: Math.min(w.end.getTime(), parts[b].end.getTime()) };
   }
 
   function cmpCand(a, b) {
@@ -687,7 +714,7 @@
     };
     if (ymd < D.ymd(now)) return withAlt(fail('past', '지난 날짜에는 넣을 수 없어요.'));
     if (dueBinds(task, opts) && task.dueDate < ymd) {
-      return withAlt(fail('after_due', '마감(' + fmtDay(task.dueDate, now) + ')보다 늦은 날이에요.'));
+      return withAlt(fail('after_due', '마감(' + shortDay(task.dueDate) + ')보다 늦은 날이에요.'));
     }
     var r = analyze(state, task, ymd, opts, len);
     var c = opts.__ctx;
@@ -720,9 +747,10 @@
             (b.end.getTime() - b.start.getTime()) - (a.end.getTime() - a.start.getTime()) || a.start.getTime() - b.start.getTime();
         });
         var p0 = parts[0];
-        detail = p0 ? p0.label + '(' + fmtRange(p0.start, p0.end) + ')가 일정으로 차 있어요.' : null;
+        // 조사는 띠 라벨에 붙는다 ('퇴근 후(…)가' · '업무 중(…)이')
+        detail = p0 ? p0.label + '(' + fmtRange(p0.start, p0.end) + ')' + iga(p0.label) + ' 일정으로 차 있어요.' : null;
       }
-      return withAlt(fail('no_slot', fmtDay(ymd, now) + '에는 ' + D.duration(len) + ' 빈 시간이 없어요.', detail));
+      return withAlt(fail('no_slot', shortDay(ymd) + '에는 ' + D.duration(len) + ' 빈 시간이 없어요.', detail));
     }
     var limit = 3;
     var list = diversify(r.scored, limit).map(function (x, i) { return publish(x, i, r.mode, opts); });
