@@ -1,1 +1,33 @@
-/* placeholder — owned by W2-slash */
+/* 명령어 자동완성 팝업 — W2-slash. 홈 입력창 위에 뜬다 (빠른 메모 창은 quick.html 안의 자체 CSS). */
+.chat-input { position: relative; }
+.slash-pop {
+  position: absolute; left: 12px; right: 12px; bottom: calc(100% + 4px); z-index: 20;
+  max-height: 280px; overflow: auto; padding: 4px;
+  background: var(--surface-raised); border: 1px solid var(--border-deco);
+  border-radius: var(--r-panel); box-shadow: var(--shadow-float);
+}
+.slash-opt {
+  display: flex; align-items: center; gap: 10px; min-height: 38px; padding: 4px 10px;
+  border-radius: 8px; cursor: pointer; color: var(--text-primary);
+}
+.slash-opt.is-active { background: var(--primary-soft); }
+.slash-ico { flex: none; display: inline-flex; width: 18px; height: 18px; color: var(--text-secondary); }
+.slash-ico svg { width: 18px; height: 18px; }
+.slash-opt.kind-task .slash-ico { color: var(--kind-task); }
+.slash-opt.kind-event .slash-ico { color: var(--kind-event); }
+.slash-opt.kind-memo .slash-ico { color: var(--kind-memo); }
+.slash-opt.kind-idea .slash-ico { color: var(--kind-idea); }
+.slash-opt.kind-link .slash-ico { color: var(--kind-link); }
+.slash-main { flex: 1; min-width: 0; display: flex; align-items: baseline; gap: 10px; }
+.slash-token { font-weight: 600; white-space: nowrap; }
+.slash-desc { color: var(--text-secondary); font-size: 13px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.slash-alt { flex: none; color: var(--text-tertiary); font-size: 12px; white-space: nowrap; }
+.slash-empty { padding: 10px; color: var(--text-secondary); font-size: 13px; }
+.slash-foot { padding: 6px 10px 4px; color: var(--text-tertiary); font-size: 12px; border-top: 1px solid var(--border-deco); margin-top: 4px; }
+@media (max-width: 640px) {
+  .slash-opt { min-height: 44px; }
+  .slash-foot { display: none; }
+  .slash-alt { display: none; }
+  .slash-main { flex-direction: column; gap: 0; align-items: flex-start; }
+  .slash-desc { max-width: 100%; }
+}

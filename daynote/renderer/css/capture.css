@@ -13,13 +13,13 @@
 .help-card-title { font-size: 14px; font-weight: 600; letter-spacing: -0.01em; }
 .help-card ul { list-style: none; margin: 0; padding: 0; display: flex; flex-direction: column; gap: 6px; }
 .help-card li {
-  display: grid; grid-template-columns: auto 1fr; column-gap: 8px; row-gap: 1px; align-items: baseline;
+  display: grid; grid-template-columns: 88px minmax(0, 1fr); column-gap: 8px; row-gap: 1px; align-items: baseline;
   padding: 4px 0; border-top: 1px solid var(--border-deco);
 }
 .help-card li:first-child { border-top: 0; }
 .help-card li > div { grid-column: 2; min-width: 0; overflow-wrap: anywhere; }
 .help-card li > .meta:not(div) { grid-column: 2; grid-row: 1; }
-.help-cmd { grid-row: 1 / span 3; cursor: pointer; font-weight: 600; color: var(--primary-ink); background: var(--primary-soft); align-self: start; }
+.help-cmd { grid-row: 1 / span 3; justify-self: start; cursor: pointer; font-weight: 600; color: var(--primary-ink); background: var(--primary-soft); align-self: start; }
 .help-cmd:hover, .help-cmd:focus-visible { border-color: var(--primary-line); }
 .help-card > .meta { line-height: 1.5; }
 

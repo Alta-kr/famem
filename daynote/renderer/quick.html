@@ -35,6 +35,24 @@
   body.is-sent .sent { display: flex; }
   .panel { transform-origin: 50% 0; animation: pop 160ms cubic-bezier(.2,.7,.3,1); }
   @keyframes pop { from { transform: scale(.98) translateY(-4px); } to { transform: none; } }
+  /* 명령어 자동완성(slash.js) — 입력 줄 아래에 제자리 블록으로 펼친다 */
+  .slash-pop { border-top: 1px solid var(--border); padding: 4px 8px; max-height: 280px; overflow: auto; }
+  .slash-opt { display: flex; align-items: center; gap: 10px; min-height: 36px; padding: 4px 10px; border-radius: 8px; cursor: pointer; font-size: 14px; }
+  .slash-opt.is-active { background: var(--primary-soft); }
+  .slash-main { flex: 1; min-width: 0; display: flex; align-items: baseline; gap: 10px; }
+  .slash-token { font-weight: 600; white-space: nowrap; }
+  .slash-desc { color: var(--text-2); font-size: 13px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+  .slash-alt { flex: none; color: var(--text-2); font-size: 12px; white-space: nowrap; }
+  .slash-empty { padding: 8px 10px; color: var(--text-2); font-size: 13px; }
+  .slash-foot { display: none; }
+  .qhelp { display: none; border-top: 1px solid var(--border); padding: 6px 8px; max-height: 280px; overflow: auto; }
+  .qhelp.is-open { display: block; }
+  .qhelp div { display: flex; gap: 10px; align-items: baseline; min-height: 32px; padding: 4px 10px; font-size: 13px; color: var(--text-2); }
+  .qhelp b { color: var(--text); font-weight: 600; white-space: nowrap; }
+  .qhelp span { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+  .qnote { display: none; padding: 0 18px 8px 54px; font-size: 12px; color: var(--primary); }
+  .qnote.is-open { display: block; }
+  body.is-sent .qhelp, body.is-sent .qnote, body.is-sent .slash-pop { display: none; }
   @media (prefers-reduced-motion: reduce) { .panel { animation: none; } }
 </style>
 </head>
@@ -44,15 +62,21 @@
       <span class="mark" aria-hidden="true"><i></i></span>
       <textarea id="text" rows="1" aria-label="빠른 메모" placeholder="생각나는 걸 적고 Enter — 할 일인지 메모인지는 Daynote가 나눠요"></textarea>
     </div>
+    <div class="qnote" id="qnote" role="status" aria-live="polite"></div>
+    <div id="slash-mount"></div>
+    <div class="qhelp" id="qhelp" aria-label="명령어 목록"></div>
     <div class="foot">
       <span><kbd>Enter</kbd> 보내기</span>
       <span><kbd>Shift</kbd>+<kbd>Enter</kbd> 줄바꿈</span>
       <span><kbd>Esc</kbd> 닫기</span>
+      <span><kbd>/</kbd> 명령어</span>
       <span class="sp"></span>
       <span class="ai" id="ai"><span class="dot off"></span><span>확인 중…</span></span>
     </div>
     <div class="sent" role="status" aria-live="polite"><b>✓</b><span id="sent-text">보냈어요. 정리 결과는 Daynote 오늘 화면에 있어요.</span></div>
   </div>
+  <script src="../src/core/commands.js"></script>
+  <script src="slash.js"></script>
   <script src="quick.js"></script>
 </body>
 </html>
