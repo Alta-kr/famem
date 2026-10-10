@@ -187,6 +187,11 @@ test('#100 돌파 경계(금 19:00 명시 퇴근): 토 23:59 마감 내림 · �
   assert.equal(v.levels[soon.id].sentence, '‘업무’ 할 일이지만 21:00 마감이라 골랐어요.');
   assert.equal(v.levels[sat.id].sentence, '‘업무’ 할 일이지만 내일 마감이라 남겨 뒀어요.');
   assert.equal(v.levels[mon.id].sentence, null);
+  // 마감 시각이 없는 오늘 마감 → '23:59' 가 아니라 '오늘'
+  const today = T(ymd(9));
+  const v2 = ST.view(s, pf, at(9, 21, 30));
+  assert.equal(v2.levels[today.id].reason, 'due_soon');
+  assert.equal(v2.levels[today.id].sentence, '‘업무’ 할 일이지만 오늘 마감이라 골랐어요.');
 });
 
 test('#101 nextActiveStart: 금 19:00 퇴근 → 월 09:00, 수 15:00 퇴근 → 목 09:00, 짐작 끔 → now + 12시간', () => {

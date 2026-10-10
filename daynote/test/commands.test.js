@@ -293,3 +293,90 @@ test('24. require 만으로 동작(window 없음)하고, 빠른 메모 창(다�
   assert.equal(JSON.stringify(CMD.COMMANDS), before);
   assert.deepEqual(CMD.match('')[0].alt, ['/todo', '/t']);
 });
+
+// ---------------------------------------------------------------- 더 확인 (검증 단계에서 보탬)
+
+test('25. 표 문구는 FEATURES §6.1 그대로 (도움말 카드·자동완성이 이 값을 그린다)', () => {
+  const rows = [
+    // name, kind, ko, en, short, icon, desc, example, needsArgs, noArgs
+    ['todo', 'task', ['할일', '할 일'], ['todo', 'task'], ['t'], 'task', '할 일로 적어요', '/할일 내일까지 견적서 보내기', true, false],
+    ['event', 'event', ['일정'], ['event'], ['e'], 'calendar', '일정으로 적어요', '/일정 금요일 오후 3시 치과', true, false],
+    ['memo', 'memo', ['메모'], ['memo', 'note'], ['m'], 'note', '메모로만 남겨요 (할 일을 만들지 않아요)', '/메모 회의 분위기 좋았음', true, false],
+    ['idea', 'idea', ['아이디어'], ['idea'], ['i'], 'idea', '아이디어로 남겨요', '/아이디어 온보딩에 퀴즈 넣기', true, false],
+    ['link', 'link', ['링크'], ['link'], ['l'], 'link', '링크로 남겨요', '/링크 https://… 나중에 읽기', true, false],
+    ['status', null, ['상태'], ['status'], ['s'], 'clock', '지금 상태를 바꿔요', '/상태 회의 중', false, false],
+    ['help', null, ['도움말'], ['help'], ['h', '?'], 'command', '명령어 목록을 보여 줘요', '/도움말', false, true]
+  ];
+  assert.equal(CMD.COMMANDS.length, rows.length);
+  rows.forEach(([name, kind, ko, en, short, icon, desc, example, needsArgs, noArgs], i) => {
+    const c = CMD.COMMANDS[i];
+    assert.deepEqual({ name: c.name, kind: c.kind, ko: c.ko, en: c.en, short: c.short, icon: c.icon, desc: c.desc, example: c.example, needsArgs: c.needsArgs, noArgs: c.noArgs },
+      { name, kind, ko, en, short, icon, desc, example, needsArgs, noArgs }, name);
+  });
+});
+
+test('26. 두벌식으로 치는 도중의 글자마다 그 명령이 후보에 든다', () => {
+  const steps = {
+    todo: ['ㅎ', '하', '할', '할ㅇ', '할이', '할일'],
+    event: ['ㅇ', '이', '일', '일ㅈ', '일저', '일정'],
+    memo: ['ㅁ', '메', '멤', '메모'],
+    idea: ['ㅇ', '아', '앙', '아이', '아읻', '아이디', '아이딩', '아이디어'],
+    link: ['ㄹ', '리', '링', '링ㅋ', '링크'],
+    status: ['ㅅ', '사', '상', '상ㅌ', '상태'],
+    help: ['ㄷ', '도', '동', '도우', '도움', '도움ㅁ', '도움마', '도움말']
+  };
+  for (const [name, qs] of Object.entries(steps)) {
+    for (const q of qs) {
+      const hit = CMD.match(q).find((x) => x.name === name);
+      assert.ok(hit, `${q} → ${name}`);
+      assert.equal(hit.token, '/' + CMD.get(name).ko[0], q);   // 한글로 맞으면 한글 토큰
+    }
+    // 다 친 이름은 exact 이고 맨 앞
+    const full = CMD.match(qs[qs.length - 1]);
+    assert.equal(full[0].name, name);
+    assert.equal(full[0].exact, true);
+  }
+  // 여러 명령이 맞으면 표 순서
+  assert.deepEqual(names(CMD.match('ㅇ')), ['event', 'idea']);
+});
+
+test('27. 자모 분해: NFD 입력도 같고, 겹모음도 둘로 풀며, 슬래시를 붙인 질의도 같은 결과', () => {
+  assert.equal(CMD._jamo('할일'.normalize('NFD')), 'ㅎㅏㄹㅇㅣㄹ');
+  assert.equal(CMD._jamo('과'), 'ㄱㅗㅏ');
+  assert.equal(CMD._jamo('ㄺ'), 'ㄹㄱ');
+  assert.equal(CMD._jamo(null), '');
+  assert.deepEqual(CMD.match('/할'), CMD.match('할'));
+  assert.deepEqual(CMD.match('할'.normalize('NFD')), CMD.match('할'));
+  assert.deepEqual(CMD.match('ㄺ'), []);
+  assert.deepEqual(names(CMD.match('NO')), ['memo']);       // 영어 별칭으로 맞으면 그 별칭이 토큰
+  assert.equal(CMD.match('NO')[0].token, '/note');
+  assert.deepEqual(CMD.match('NO')[0].alt, ['/메모', '/memo', '/m']);
+});
+
+test('28. suggestFor: 한 글자 짧은 형태로는 넘겨짚지 않고, 둘 이상 걸리면 null', () => {
+  const rows = [
+    ['tood', 'todo'], ['tdo', 'todo'], ['evnet', 'event'], ['stauts', 'status'], ['hlep', 'help'],
+    ['memos', 'memo'], ['notes', 'memo'], ['links', 'link'], ['메모장', 'memo'], ['일정표', 'event'], ['할일이', 'todo'],
+    ['sale', null], ['test', null], ['ai', null], ['hi', null],   // t·s·h 로 시작할 뿐인 글
+    ['일', null],                                                  // 일정(앞부분)·할일(거리 1) 둘 다 걸림
+    ['?', null], ['??', null]
+  ];
+  for (const [t, want] of rows) assert.equal(CMD.suggestFor(t), want, t);
+});
+
+test('29. parse 가장자리: // 하나만, 전각 이스케이프, 이름 뒤 슬래시, 줄 끝 \\r\\n', () => {
+  const a = CMD.parse('//');
+  assert.equal(a.escaped, true);
+  assert.equal(a.args, '/');
+  const b = CMD.parse('／／할일 x');
+  assert.equal(b.escaped, true);
+  assert.equal(b.args, '／할일 x');
+  const c = CMD.parse('/todo/x');
+  assert.equal(c.command, null);
+  assert.equal(c.unknown, null);
+  assert.equal(CMD.parse('/할일\r\n우유\r\n').args, '우유');
+  // 이름 뒤 쌍점은 하나만 뗀다
+  assert.equal(CMD.parse('/메모::)').args, ':)');
+  // NFD 로 친 토큰은 NFC 로 돌려준다 (그리는 쪽이 같은 글자로 보이게)
+  assert.equal(CMD.parse('/' + '할일'.normalize('NFD') + ' 우유').token, '/할일');
+});

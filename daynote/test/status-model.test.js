@@ -1,9 +1,15 @@
 'use strict';
-// 현재 상태 — 유효 상태·시간표 짐작·상태 기계·기록 (STATUS §20.2 #39–62. #63–66 은 model/store 테스트가 맡는다)
+// 현재 상태 — 유효 상태·시간표 짐작·상태 기계·기록 (STATUS §20.2 #39–62. #63–66 은 model/store 테스트가 맡는다 — #65 는 여기서도 ST 로 한 번 더)
 const test = require('node:test');
 const assert = require('node:assert/strict');
+const fs = require('fs');
+const path = require('path');
+const vm = require('vm');
 const M = require('../src/core/model');
 const ST = require('../src/core/status');
+
+// 다른 wave-1 패키지가 아직 합쳐지지 않았으면 그 테스트만 건너뛴다 (IMPLEMENTATION_PLAN §0.9)
+const V4 = require('../src/core/model').SCHEMA_VERSION >= 4;                        // W1-model
 
 const at = (d, h, m) => new Date(2026, 9, d, h, m || 0);   // 10월 d일 — 5 월 · 9 금 · 10 토 · 12 월
 const NOW = at(5, 10);
@@ -361,6 +367,99 @@ test('toGuess·wake: 시간표대로 두기와 잠에서 깨기는 presence 만 
   assert.equal(s.presence.current, null);
   assert.equal(JSON.stringify([s.tasks, s.blocks, s.notes]), before, 'I2: 할 일·블록·메모는 그대로');
   assert.equal(M.byId(s.tasks, t.id).updatedAt, t.updatedAt);
+});
+
+test('#53·#54 바탕이 바뀔 때 옛 상태에서 펼쳐 본(shown) 할 일도 parked 로 센다 (shown 을 먼저 비운다)', () => {
+  const { s, pf } = fresh();
+  const t = M.addTask(s, { title: '분기 보고서 작성', status: 'in_progress', startedAt: at(5, 9, 30).toISOString() }, at(5, 9));
+  set(s, pf, 'work', at(5, 9));
+  ST.markShown(s, t.id);
+  const tr = set(s, pf, 'off', at(5, 18, 40));
+  assert.deepEqual(tr.parked, [t.id]);
+  assert.deepEqual(s.presence.shown, []);
+});
+
+test('깨진 저장값: since·until 이 없거나 읽을 수 없고 log 에 null 이 있어도 던지지 않는다 (낡은 것으로 본다)', () => {
+  const { s, pf } = fresh();
+  s.presence.activatedAt = at(5, 9).toISOString();
+  s.presence.current = { id: 'off', label: '퇴근' };                       // since 없음
+  assert.equal(ST.effective(s, pf, at(5, 10)).guessed, true);
+  assert.ok(ST.view(s, pf, at(5, 10)));
+  s.presence.current = { id: 'meal', label: '점심', since: at(5, 12).toISOString(), until: at(5, 13).toISOString(),
+    returnTo: { id: 'work', label: '업무 중' } };                            // returnTo.since 없음
+  const e = ST.effective(s, pf, at(5, 12, 30));
+  assert.deepEqual([e.overlay.id, e.guessed], ['meal', true]);
+  s.presence.current = { id: 'break', label: '휴식', since: at(5, 15).toISOString(), until: 'garbage', returnTo: null };
+  const v = ST.view(s, pf, at(5, 15, 5));
+  assert.deepEqual([v.overlay.id, v.overlay.until, v.remainMinutes], ['break', null, null]);
+  assert.equal(ST.current(s, pf, at(5, 15, 5)).until, null);
+  assert.equal(ST.settle(s, pf, at(5, 15, 20)), true, '기본 15분이 지나면 끝난다');
+  assert.equal(s.presence.current, null);
+  s.presence.log.push(null);
+  set(s, pf, 'work', at(5, 16));
+  s.presence.log.push(null);
+  assert.doesNotThrow(() => ST.revert(s, pf, at(5, 16, 1)));
+});
+
+test('#65 (store vm) 메모 저장 → 라벨 없는 ST.setStatus(퇴근) → undo: 메모는 되돌아가고 presence 는 그대로', { skip: !V4 && 'W1-model 병합 전' }, () => {
+  const mem = {};
+  const localStorage = { getItem: (k) => (k in mem ? mem[k] : null), setItem: (k, v) => { mem[k] = String(v); }, removeItem: (k) => { delete mem[k]; } };
+  const window = { Daynote: { model: M }, addEventListener() {} };
+  const ctx = vm.createContext({ window, localStorage, setTimeout() { return 0; }, clearTimeout() {}, console, JSON, Promise, Date });
+  vm.runInContext(fs.readFileSync(path.join(__dirname, '../renderer/store.js'), 'utf8'), ctx);
+  const S = window.Daynote.store;
+  const now = at(9, 18, 42);
+  S.mutate('메모 저장', (s) => { M.addNote(s, { title: '퇴근 전 메모' }, now); });
+  S.mutate(null, (s) => ST.setStatus(s, { id: 'off' }, { source: 'text', text: '퇴근!' }, ST.profile(s.prefs), now), { source: 'status' });
+  const presence = S.state.presence;
+  assert.equal(S.undo(), '메모 저장');
+  assert.equal(S.state.notes.length, 0);
+  assert.equal(S.state.presence, presence);
+  assert.equal(S.state.presence.current.id, 'off');
+  assert.equal(ST.effective(S.state, ST.profile(S.state.prefs), now).id, 'off');
+});
+
+test('I4 코어는 벽시계를 읽지 않는다: 상태 바꾸기·보기·나누기·예산을 Date.now·인자 없는 new Date 없이 돌린다', () => {
+  const { s, pf } = fresh();
+  const now = at(9, 18, 42);
+  const tasks = ['견적서 보내기', '빨래 돌리기', '우유 사기', '엄마 생신 선물 주문'].map((title, i) =>
+    M.addTask(s, { title, dueDate: i === 0 ? '2026-10-09' : null, dueTime: i === 0 ? '18:00' : null, atMode: i === 2 ? 'out' : null }, at(8, 9)));
+  M.addBlock(s, { taskId: tasks[1].id, title: tasks[1].title, start: at(9, 19).toISOString(), end: at(9, 20).toISOString() });
+  const Orig = Date;
+  function Guard(...a) {
+    if (!new.target) throw new Error('Date() — 벽시계를 읽었다');
+    if (a.length === 0) throw new Error('new Date() — 벽시계를 읽었다');
+    return new Orig(...a);
+  }
+  Guard.prototype = Orig.prototype;
+  Guard.now = () => { throw new Error('Date.now — 벽시계를 읽었다'); };
+  Guard.UTC = Orig.UTC;
+  Guard.parse = Orig.parse;
+  global.Date = Guard;
+  try {
+    const pf2 = ST.profile({ workHours: { start: '10:00', end: '19:00', days: [1, 2, 3, 4] }, statusProfile: { afterWork: 'down' } });
+    ST.setStatus(s, { id: 'work' }, { source: 'text' }, pf, at(9, 9));
+    ST.setStatus(s, { id: 'break', minutes: 10 }, { source: 'text' }, pf, at(9, 15));
+    ST.settle(s, pf, at(9, 16));
+    ST.overtimeDue(s, pf, at(9, 19, 30));
+    ST.setStatus(s, { id: 'off' }, { source: 'text', text: '퇴근!' }, pf, now);
+    const sv = ST.view(s, pf, now);
+    ST.view(s, pf2, now);
+    ST.partitionToday(s, tasks, sv, { rankedIds: tasks.map((t) => t.id) });
+    ST.applyStatusPolicy(s, tasks, ST.effective(s, pf, now), pf, now);
+    ST.current(s, pf, now);
+    ST.hiddenSummaryText(sv.summary, pf);
+    ST.nextActiveStart(pf, 'work', ST.effective(s, pf, now), now);
+    ST.timeline(pf, now, 3);
+    ST.revert(s, pf, at(9, 18, 43));
+    ST.toGuess(s, at(9, 18, 44), pf);
+    ST.confirmGuess(s, pf, at(9, 20));
+    ST.budgetOk(s, pf, now); ST.useBudget(s, pf, now);
+    ST.notePresetSignal(s, 'freelance', now); ST.presetOfferDue(s, pf, now); ST.guessPreset(s);
+    ST.markShown(s, tasks[0].id); ST.wake(s, now);
+    ST.contextOf(s, tasks[3], pf, now); ST.ruleContext('빨래 돌리기', pf); ST.contextHintsForAi(pf);
+  } finally { global.Date = Orig; }
+  assert.equal(s.presence.current.source, 'confirm');
 });
 
 test('ensure: 옛 상태(presence 없음·모양이 틀림)도 채운다. 읽기 함수는 state 를 바꾸지 않는다', () => {

@@ -88,7 +88,7 @@
 
   // ------------------------------------------------------------------ 시각
   function toMs(v) {
-    if (v instanceof Date) return v.getTime();
+    if (v instanceof Date || Object.prototype.toString.call(v) === '[object Date]') return v.getTime();   // 다른 realm(vm·iframe)의 Date 도
     if (typeof v === 'number') return v;
     if (typeof v === 'string' && v) return Date.parse(v);
     return NaN;
@@ -123,13 +123,16 @@
   function enabled(state) { return !(state && state.prefs && state.prefs.learning === false); }
 
   // 규칙 항목은 normalize 가 정리하지 않으므로 방어적으로 읽는다. 모양이 틀린 규칙은 무시하고 compact 에서 버린다
+  var DATE_TO_RE = /^(d[0-6]|m(-1|[1-9]|[12][0-9]|3[01]))$/;
   function validRule(r) {
     if (!r || typeof r !== 'object') return false;
     var cfg = TYPES[r.type];
     return !!cfg && cfg.roles.indexOf(r.role) !== -1 &&
       typeof r.id === 'string' && !!r.id &&
       typeof r.key === 'string' && !!r.key &&
-      typeof r.to === 'string' && !!r.to &&
+      typeof r.to === 'string' && !!r.to && r.to.length <= TO_MAX &&
+      (!cfg.targets || cfg.targets.indexOf(r.to) !== -1) &&
+      (r.type !== 'date' || DATE_TO_RE.test(r.to)) &&
       typeof r.w === 'number' && isFinite(r.w) && isFinite(Date.parse(r.at));
   }
 
@@ -196,15 +199,28 @@
   function oneLine(t) { return !!t && !/[\r\n]/.test(t); }
   function collapse(t) { return t.replace(/\s+/g, ' ').slice(0, LIMITS.LABEL_MAX); }
 
-  // 날짜 어휘 찾기 — 정규화한 글 위에서 긴 어휘부터, 이미 찾은 자리와 겹치는 짧은 어휘는 뺀다.
-  // label 은 원문에서 그 자리의 모양 그대로('다음 주말')
-  function lexFound(text) {
+  // 정규화한 글(nk)과, nk 의 글자마다 원문(s)에서의 자리(idx)
+  function normMap(text) {
     var s = nfc(text), chars = [], idx = [];
     for (var i = 0; i < s.length; i++) {
       var c = s.charAt(i).toLowerCase();
       for (var j = 0; j < c.length; j++) if (KEY_CHAR_RE.test(c.charAt(j))) { chars.push(c.charAt(j)); idx.push(i); }
     }
-    var nk = chars.join(''), used = [], found = [];
+    return { s: s, nk: chars.join(''), idx: idx };
+  }
+
+  // 정규화한 key 가 지금 글에서 차지하는 원문 부분 ('다음주말' → '다음 주말'). 없으면 null
+  function spanOf(text, key) {
+    if (!key) return null;
+    var m = normMap(text), at = m.nk.indexOf(key);
+    return at === -1 ? null : m.s.slice(m.idx[at], m.idx[at + key.length - 1] + 1);
+  }
+
+  // 날짜 어휘 찾기 — 정규화한 글 위에서 긴 어휘부터, 이미 찾은 자리와 겹치는 짧은 어휘는 뺀다.
+  // label 은 원문에서 그 자리의 모양 그대로('다음 주말')
+  function lexFound(text) {
+    var m = normMap(text), s = m.s, idx = m.idx;
+    var nk = m.nk, used = [], found = [];
     LEX_KEYS.forEach(function (w) {
       var from = 0, at;
       while ((at = nk.indexOf(w, from)) !== -1) {
@@ -222,7 +238,7 @@
 
   // 배울 표현 [{ key, label, role }]
   function phrases(text, type) {
-    var src = nfc(text), t = src.trim(), out = [], seen = {};
+    var t = nfc(text).trim(), out = [], seen = {};
     function add(key, label, role) {
       if (seen[role + ':' + key]) return;
       seen[role + ':' + key] = true;
@@ -247,7 +263,7 @@
         add(nk2, collapse(t), 'exact');
       }
       var parts = 0;
-      tokens(src.slice(0, LIMITS.PART_SCAN), type).forEach(function (p) {
+      tokens(t.slice(0, LIMITS.PART_SCAN), type).forEach(function (p) {
         if (parts >= LIMITS.MAX_PARTS || p.key === exactKey || seen['part:' + p.key]) return;
         add(p.key, p.label, 'part');
         parts++;
@@ -263,11 +279,11 @@
 
   // ------------------------------------------------------------------ 맞추기
   function matchCtx(text, type) {
-    var t = nfc(text).trim();
+    var t = nfc(text).trim(), single = oneLine(t) && t.length <= LIMITS.KIND_TEXT_MAX;
     return {
       nk: normKey(t),
-      toks: tokens(t, type),
-      single: oneLine(t) && t.length <= LIMITS.KIND_TEXT_MAX,
+      toks: single && type === 'kind' ? tokens(t, type) : [],      // tail·head 는 kind 의 한 줄 글에서만 본다
+      single: single,
       lex: type === 'date' ? lexFound(t).map(function (f) { return f.key; }) : []
     };
   }
@@ -341,14 +357,15 @@
       }
       var hit = group.filter(function (r) { return r.to === to; })[0];
       if (hit) {
-        // ② 같은 대상 — 무게를 더하고 횟수를 올린다
+        // ② 같은 대상 — 무게를 더하고 횟수를 올린다.
+        //    씨앗(bootstrap)은 무게만 더하고 횟수는 올리지 않는다 — 씨앗만으로는 '참고' 수준까지만 간다(§4.2, 확실은 n ≥ strongN)
         hit.w = eff(hit, nowMs) + weight;
         hit.at = nowIso;
         hit.last = nowIso;
-        hit.n = (Number(hit.n) || 0) + 1;
+        if (source !== 'bootstrap') hit.n = (Number(hit.n) || 0) + 1;
         hit.from = from;
         hit.ref = ev.ref || null;
-        hit.src = source;
+        if (source !== 'bootstrap' || !hit.src) hit.src = source;
         if (!ev.sample) delete hit.sample;
         res.updated.push(hit.id);
       } else {
@@ -374,6 +391,10 @@
     });
     L.metrics.learned = (Number(L.metrics.learned) || 0) + 1;
     if (L.rules.length > LIMITS.MAX_RULES) compact(state, nowMs);
+    // 상한(④·compact)으로 이미 지운 규칙의 id 는 돌려주지 않는다
+    var alive = {};
+    L.rules.forEach(function (r) { if (r && r.id) alive[r.id] = true; });
+    ['added', 'updated', 'damped'].forEach(function (k) { res[k] = res[k].filter(function (id) { return alive[id]; }); });
     return res;
   }
 
@@ -394,7 +415,7 @@
     rules.forEach(function (r) {
       if (!r || r.type !== type || !validRule(r) || !allow(r.to) || !matches(r, c)) return;
       var contrib = eff(r, nowMs) * ROLE_W[r.role];
-      var g = byTo[r.to];
+      var g = has(byTo, r.to) ? byTo[r.to] : null;               // to 는 부르는 쪽 값(맥락 id 등) — 'constructor' 같은 이름에도 안전하게
       if (!g) {
         g = byTo[r.to] = { to: r.to, support: 0, maxN: 0, newest: -Infinity, ids: [], allPart: true, top: null, topC: -1 };
         groups.push(g);
@@ -429,7 +450,10 @@
       phrase: best.top.label || best.top.key, role: best.top.role, ruleIds: best.ids.slice(),
       alternatives: groups.slice(1).map(function (g) { return { to: g.to, support: g.support }; })
     };
-    if (type === 'date' && opts.refTime != null) out.value = resolveDate(best.top.key, best.to, opts.refTime);
+    if (type === 'date' && opts.refTime != null) {
+      out.value = resolveDate(best.top.key, best.to, opts.refTime);
+      if (!out.value) return null;                                // 기준 시각으로 날짜를 못 정하면 제안하지 않는다
+    }
     return out;
   }
 
@@ -449,12 +473,14 @@
       var sopts = type === 'project' ? { allowed: function (to) { return to === 'none' || has(names, to); } } : {};
       var s = suggest(state, type, text, now, sopts);
       if (!s) return;
-      var pk = normKey(s.phrase);
-      if (!pk || nk.indexOf(pk) === -1) return;                  // 전송 불변식: 지금 글 안에 있는 표현만
+      // 전송 불변식: 지금 글 안에 있는 표현만. 보내는 표현은 규칙 label(예전 글의 모양 — 이모지·한자·문장부호가
+      // 섞일 수 있다)이 아니라 지금 글에서 그 자리를 그대로 잘라 쓴다
+      var pk = normKey(s.phrase), span = pk && nk.indexOf(pk) !== -1 ? spanOf(text, pk) : null;
+      if (!span) return;
       var said = type === 'project'
         ? (s.to === 'none' ? '프로젝트 없음' : '프로젝트 ‘' + names[s.to] + '’')
         : says(type, s.to, { key: pk });
-      out.push({ type: type, phrase: s.phrase, to: s.to, says: said, n: s.n, ruleIds: s.ruleIds });
+      out.push({ type: type, phrase: collapse(span), to: s.to, says: said, n: s.n, ruleIds: s.ruleIds });
     });
     return out.slice(0, LIMITS.MAX_HINTS);
   }
@@ -681,6 +707,7 @@
   // learned.bootstrappedAt 이 없을 때 한 번만. 지우지 않은 최근 글 200개에서
   //  - capture.changedByUser 인 한 줄(80자 이하) 글 → kind 를 무게 0.5 로
   //  - capture.status 'done' + projectId + projectByAi === false 인 글 → project 를 무게 0.5 로 배운다 → 배운 수
+  // 같은 표현이 여러 글에 있어도 씨앗은 횟수(n)를 올리지 않는다 — 씨앗만으로는 '참고' 수준까지만 간다(§4.2)
   // 배우기를 껐으면 아무것도 하지 않고 표시도 남기지 않는다(켜면 그때 뿌린다)
   function bootstrap(state, now) {
     var nowMs = toMs(now);

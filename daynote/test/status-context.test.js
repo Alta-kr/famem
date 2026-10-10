@@ -60,6 +60,15 @@ test('#69 낱말마다 가장 긴 키워드 하나만 센다', () => {
   assert.equal(ST.ruleContext('회의록 정리', P0).score, 3);
 });
 
+test('#69 띄어 쓴 키워드는 낱말 머리에서 시작할 때만 센다 (다른 낱말 안에 걸리지 않는다)', () => {
+  assert.equal(rc('화분 물 주기'), 'home');
+  assert.equal(rc('엄마 선물 주기'), 'family', "'선물 주기' 안의 '물 주기'는 집안일이 아니다");
+  assert.equal(rc('코드 리뷰 요청'), 'work');
+  assert.notEqual(rc('바코드 리뷰 남기기'), 'work', "'바코드' 안의 '코드 리뷰'는 업무 키워드가 아니다");
+  assert.equal(rc('(빨래 개기)'), 'home');
+  assert.equal(rc('이불 빨래 개기'), 'home');
+});
+
 test('#70 제외어로 시작하는 낱말은 건너뛴다', () => {
   assert.equal(rc('청소년 지원사업 보고서'), 'work');
   assert.equal(rc('은행나무 사진 찍기'), null);
@@ -192,6 +201,14 @@ test('#81 메모: 같은 할 일을 두 번 부르면 같은 객체. 제목·upd
   assert.equal(ST.contextOf(s, t, pf, NOW).source, 'rule');
   p.context = 'home';
   assert.equal(ST.contextOf(s, t, pf, NOW).source, 'project');
+});
+
+test('#81 메모: now 없이 부른 결과(학습 단계 없음)가 now 를 준 호출의 메모를 차지하지 않는다', { skip: !AD && 'W1-adapt 병합 전' }, () => {
+  const { s, pf } = world();
+  AD.learn(s, { type: 'context', text: '보고서 쓰기', from: 'work', to: 'home', source: 'correction' }, NOW);
+  const t = M.addTask(s, { title: '보고서 쓰기' }, NOW);
+  assert.equal(ST.contextOf(s, t, pf).source, 'rule');
+  assert.deepEqual([ST.contextOf(s, t, pf, NOW).value, ST.contextOf(s, t, pf, NOW).source], ['home', 'learned']);
 });
 
 test('#81 메모: 배운 것이 바뀌면 다시 계산한다', { skip: !AD && 'W1-adapt 병합 전' }, () => {

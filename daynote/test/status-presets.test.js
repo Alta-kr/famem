@@ -130,6 +130,12 @@ test('#148 잔소리 예산: 하루 1번, 하루 시작(04:00)이 지나면 다�
   ST.useBudget(s, pf, at(6, 4));
   assert.equal(s.presence.hints.day, '2026-10-06');
   assert.equal(s.presence.hints.used, 1);
+  // STATUS §13 의 (state, now) 꼴로 불러도 같다 (계획 §3.6 은 (state, profile, now))
+  assert.equal(ST.budgetOk(s, at(6, 10)), false);
+  assert.equal(ST.budgetOk(s, at(7, 10)), true);
+  ST.useBudget(s, at(7, 10));
+  assert.equal(ST.budgetOk(s, at(7, 11)), false);
+  assert.equal(s.presence.hints.day, '2026-10-07');
   // 근무 끝 줄: 닫으면 그날 끝, 2번 닫으면 영영 끝
   const w = world();
   ST.setStatus(w.s, { id: 'work' }, { source: 'text' }, w.pf, at(5, 9));

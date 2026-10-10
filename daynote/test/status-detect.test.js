@@ -45,6 +45,8 @@ const ROWS = [
   ['2', '오늘 일 끝!', SURE('off')],
   ['2', '퇴근 🎉', SURE('off')],
   ['2', '퇴근!!!', SURE('off', { pure: true })],
+  ['2', '정시 퇴근', SURE('off', { pure: true })],          // '정시퇴근' 과 띄어쓰기만 다른 말
+  ['2', '정시퇴근', SURE('off')],
   ['3', '퇴근할게', SURE('off')],
   ['4', '출근 중', SURE('to_work', { role: 'commute_in' })],
   ['4', '출근길', SURE('to_work')],
@@ -59,6 +61,9 @@ const ROWS = [
   ['5', '내일 퇴근하고 장보기', null],
   ['5', '퇴근 15분 전', null],
   ['5', '퇴근하고', null],
+  ['5', '퇴근 안 해', null],                                 // 부정은 '못' 처럼 막는다 (퇴근 제안이 되면 뜻이 거꾸로)
+  ['5', '오늘 출근 안 함', null],
+  ['5', '회의 안건 정리', null],
   ['6', '퇴근 못 함', MAYBE('work', { role: 'work_start', label: '야근', pure: false })],
   ['6', '퇴근 못해', MAYBE('work', { label: '야근' })],
   ['7', '팀장님 퇴근하심', null],
@@ -73,8 +78,10 @@ const ROWS = [
   ['12', '15분 쉼', SURE('break', { untilMin: 15 })],
   ['12', '휴식', SURE('break', { untilMin: 15 })],
   ['12', '30분 휴식', SURE('break', { untilMin: 30 })],
+  ['12', '브레이크 타임', SURE('break', { untilMin: 15 })],  // 뜻이 하나라 공통 사전 (자영업 전용 말이 아니다)
   ['13', '1시까지 점심', SURE('meal', { until: MON(13, 0), label: '점심' }), { cur: 'guess', now: MON(12, 20) }],
   ['13', '점심', SURE('meal', { until: MON(13, 0) }), { cur: 'guess', now: MON(12, 5) }],
+  ['13', '점심 시간', SURE('meal', { until: MON(13, 0) }), { cur: 'guess', now: MON(12, 5) }],   // '점심시간' 과 띄어쓰기만 다름 ('시간' 막기에 걸리지 않는다)
   ['13', '저녁 먹으러', SURE('meal', { untilMin: 40, label: '저녁' }), { cur: 'work', now: MON(15, 0) }],
   ['14', '6시까지 외출', SURE('out', { until: MON(18, 0) }), { now: MON(14, 0) }],
   ['14', '6시까지 외출', SURE('out', { until: null }), { now: MON(19, 0) }],
@@ -154,6 +161,27 @@ test('#1–32·34 감지 표: 상태 보고·막기·시간·문·특수어·프
   });
 });
 
+test('사전 전체: §5.6 공통 말·§12.3 프리셋 전용 말이 모두 그 역할·등급으로 잡힌다', () => {
+  const SW = require('../src/core/statusWords');
+  // 문(gate)이 열리는 지금 상태를 고른다
+  const curFor = (g) => (g.gate === 'in_meal' ? ['work', 'meal'] : g.gate === 'in_meeting' ? ['work', 'meeting']
+    : g.gate === 'moving_or_out' ? 'to_home' : g.role === 'wake' ? 'sleep' : g.role === 'back' ? ['work', 'break']
+    : g.gate ? 'work' : 'guess');
+  const run = (groups, prefs) => groups.forEach((g) => ['sure', 'tail', 'maybe', 'special'].forEach((tier) => (g[tier] || []).forEach((w) => {
+    const { ctx } = mk(curFor(g), NOW, prefs);
+    const d = ST.detect(w, ctx);
+    const tag = (prefs ? prefs.statusProfile.preset + ' ' : '') + JSON.stringify(w);
+    assert.ok(d, tag + ' → 감지되어야 함');
+    assert.equal(d.tier, tier === 'tail' || tier === 'maybe' ? 'maybe' : 'sure', tag + ' 등급');
+    assert.equal(d.role, g.role, tag + ' 역할');
+    if (g.id) assert.equal(d.id, g.id, tag + ' 상태');
+    if (tier === 'sure' && g.role !== 'idle' && g.role !== 'wake') assert.equal(d.pure, true, tag + ' pure');
+    if (tier === 'tail') assert.equal(ST.detect(w + ' 중', ctx).tier, 'sure', tag + ' + 꼬리 → sure');
+  })));
+  run(SW.PHRASES);
+  Object.keys(SW.PRESET_WORDS).forEach((pid) => run(SW.PRESET_WORDS[pid], { statusProfile: { preset: pid } }));
+});
+
 test('#9·#10 섞인 글: 상태 문장만 statusLine, 나머지는 rest 로 남는다 (원문은 지우지 않는다)', () => {
   const { ctx } = mk(undefined, NOW);
   const d = ST.detect('퇴근! 가는 길에 우유 사기', ctx);
@@ -196,6 +224,17 @@ test('#23 "일어났어"는 잘 시간일 때만 wake (시간표대로)', () => 
   assert.equal(d.label, '출근 전');   // 깨면 시간표 짐작으로 (월 07:00 = 출근 전)
 });
 
+test('#22·#23 낮잠에서 "일어났어" → 낮잠 전 명시 상태로 (밤잠만 시간표대로) — ST.wake 와 같은 결과', () => {
+  const { s, pf } = mk('work', MON(13));
+  const ctxAt = (now) => ({ profile: pf, eff: ST.effective(s, pf, now), current: s.presence.current, now });
+  ST.setStatus(s, ST.detect('낮잠 잘게', ctxAt(MON(13))), { source: 'text' }, pf, MON(13));
+  const d = ST.detect('일어났어', ctxAt(MON(13, 30)));
+  assert.deepEqual([d.role, d.id, d.label, d.same], ['wake', 'work', '업무 중', false]);
+  ST.setStatus(s, d, { source: 'text' }, pf, MON(13, 30));
+  const e = ST.effective(s, pf, MON(20));
+  assert.deepEqual([e.id, e.guessed], ['work', false], '20:00 에도 명시 업무 (시간표 짐작 퇴근 후가 아님)');
+});
+
 test('#33 /상태 인자: 고르기·이름·오타(편집 거리 1)·시간·자동·이전·모르는 이름', () => {
   const pf = ST.profile({});
   const eff = null;
@@ -223,6 +262,18 @@ test('#33 /상태 인자: 고르기·이름·오타(편집 거리 1)·시간·�
   // 명령은 막기·문을 쓰지 않는다: 켜기 전에도 '점심'은 식사 덧씌움
   assert.equal(P('점심').id, 'meal');
   assert.equal(P('모두 보기').id, 'none');
+  assert.equal(P('정시 퇴근').id, 'off');
+});
+
+test('#19·#33 /상태 복귀: 덧씌움 아래 명시 바탕으로 (current 없이 eff 만으로), 바탕이 짐작이면 시간표대로', () => {
+  const pf = ST.profile({});
+  const a = mk(['work', 'meeting'], MON(20));     // 19:58 출근(야근) · 19:59 회의
+  assert.deepEqual(ST.parseStatusArgs('복귀', pf, a.ctx.eff, MON(20)), { cmd: 'set', id: 'work', label: '업무 중', until: null, minutes: null });
+  assert.equal(ST.detect('복귀', a.ctx).id, 'work');
+  const s = M.emptyState();
+  ST.toGuess(s, MON(19, 58), pf);
+  ST.setStatus(s, { id: 'meeting' }, { source: 'chip' }, pf, MON(19, 59));
+  assert.deepEqual(ST.parseStatusArgs('복귀', pf, ST.effective(s, pf, MON(20)), MON(20)), { cmd: 'guess' });
 });
 
 test('#34 일반 글에서는 오타를 고치지 않는다', () => {
@@ -231,16 +282,31 @@ test('#34 일반 글에서는 오타를 고치지 않는다', () => {
   assert.equal(ST.detect('퇴큰했어', ctx), null);
 });
 
-test('#35 같은 입력·같은 now → 같은 결과. 감지는 벽시계를 읽지 않는다', () => {
+// Date.now 와 인자 없는 new Date()·Date() 를 막은 채 fn 을 돌린다 (벽시계를 읽으면 던진다)
+function withoutWallClock(fn) {
+  const Orig = Date;
+  function Guard(...a) {
+    if (!new.target) throw new Error('Date() — 벽시계를 읽었다');
+    if (a.length === 0) throw new Error('new Date() — 벽시계를 읽었다');
+    return new Orig(...a);
+  }
+  Guard.prototype = Orig.prototype;
+  Guard.now = () => { throw new Error('Date.now — 벽시계를 읽었다'); };
+  Guard.UTC = Orig.UTC;
+  Guard.parse = Orig.parse;
+  global.Date = Guard;
+  try { return fn(); } finally { global.Date = Orig; }
+}
+
+test('#35 같은 입력·같은 now → 같은 결과. 감지는 벽시계를 읽지 않는다 (Date.now·인자 없는 new Date 를 막아도 통과)', () => {
   const prepared = ROWS.map((row) => { const opt = row[3] || {}; const now = opt.now || NOW; return { row, now, ctx: mk(opt.cur, now, opt.prefs).ctx }; });
-  const orig = Date.now;
-  Date.now = () => { throw new Error('벽시계를 읽었다'); };
-  try {
+  withoutWallClock(() => {
     const a = prepared.map((p) => ST.detect(p.row[1], p.ctx));
     const b = prepared.map((p) => ST.detect(p.row[1], p.ctx));
     assert.deepEqual(a, b);
     prepared.forEach((p) => ST.parseStatusArgs(p.row[1], p.ctx.profile, p.ctx.eff, p.now));
-  } finally { Date.now = orig; }
+    prepared.forEach((p) => { ST.presetSignal(p.row[1], p.ctx.profile); ST.extractAtMode(p.row[1]); ST.findAtMode(p.row[1]); });
+  });
 });
 
 test('#36 extractAtMode 표 (맨 앞 표현만, 남는 제목이 2자 미만이면 떼지 않음)', () => {

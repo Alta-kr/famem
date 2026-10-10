@@ -116,3 +116,46 @@ test('14. 기존 내보내기는 그대로 있다', () => {
   assert.equal(D.duration(90), '1시간 30분');
   assert.equal(D.ymd(new Date(2026, 9, 5, 10, 0)), '2026-10-05');
 });
+
+// ---------------------------------------------------------------- 더 확인 (검증 단계에서 보탬)
+
+test('15. 5–720분 전부 duration 글과 시:분 글로 왕복하고, 범위 밖은 정해진 오류', () => {
+  for (let m = 0; m <= 800; m++) {
+    const forms = [D.duration(m), Math.floor(m / 60) + ':' + D.pad(m % 60), String(m)];
+    for (const f of forms) {
+      const r = D.parseDuration(f);
+      if (m < D.DURATION_MIN) assert.equal(r.error, 'too_short', f);
+      else if (m > D.DURATION_MAX) assert.equal(r.error, 'too_long', f);
+      else assert.deepEqual(r, { ok: true, minutes: m }, f);
+    }
+  }
+});
+
+test('16. 명세보다 조금 넓게 받는 것(약30분 · 열한/열두 시간 · 아주 긴 수는 too_long)과 분 0–59 경계', () => {
+  ok('약30분', 30);
+  ok('대략1시간', 60);
+  ok('열한 시간', 660);
+  ok('열두시간', 720);
+  ok('한 시간 30분', 90);
+  bad('열두 시간 반', 'too_long');
+  bad('99999999999999999999', 'too_long');
+  bad('9'.repeat(400) + '분', 'too_long');
+  bad('1.0시간 반', 'invalid');
+  bad('1시 30분', 'invalid');      // 시각(1시)은 길이가 아니다
+  // 시간과 함께 쓴 분의 경계 0–59
+  ok('1:59', 119);
+  ok('1시간 59분', 119);
+  ok('1h0m', 60);
+  bad('1:60', 'invalid');
+  bad('1시간 60분', 'invalid');
+  bad('1h60', 'invalid');
+});
+
+test('17. 문자열이 아닌 입력도 던지지 않는다', () => {
+  ok(45, 45);
+  bad(4.5, 'invalid');
+  bad(0, 'too_short');
+  bad({}, 'invalid');
+  bad(true, 'invalid');
+  bad(NaN, 'invalid');
+});

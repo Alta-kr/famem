@@ -368,6 +368,7 @@ test('24. 전송 불변식: 힌트 표현은 지금 글 안에 있고, context �
   const nk = AD.normKey(text);
   for (const h of hs) {
     assert.ok(nk.includes(AD.normKey(h.phrase)), h.phrase);
+    assert.ok(text.includes(h.phrase), h.phrase);                       // 지금 글을 그대로 자른 표현이다
     assert.deepEqual(Object.keys(h).sort(), ['n', 'phrase', 'ruleIds', 'says', 'to', 'type']);
   }
   assert.ok(hs.every((h) => h.type !== 'context'));
@@ -653,4 +654,103 @@ test('35. date suggest: refTime 을 주면 value 로 실제 날짜를 돌려준�
   assert.deepEqual(s.value, { date: '2026-10-11' });
   assert.equal('value' in AD.suggest(st, 'date', '주말에 세차', NOW), false);
   assert.equal(AD.suggest(st, 'date', '다음 주말에 세차', NOW), null);   // '다음주말' 은 다른 어휘
+});
+
+test('36. hints 표현은 지금 글에서 그대로 자른다 — 예전 글의 모양(이모지·한자·문장부호)은 보내지 않는다', () => {
+  const st = fresh();
+  learnN(st, { type: 'kind', text: '장 보기!! 🍺秘密', to: 'task' }, 2);          // exact key '장보기', label 은 예전 글 모양
+  learnN(st, { type: 'date', text: '다음 주말… 세차 🚗', to: { date: '2026-10-17' }, refTime: NOW.toISOString() }, 2);
+  assert.equal(AD.suggest(st, 'kind', '장보기', NOW).phrase, '장 보기!! 🍺秘密');    // suggest 는 규칙 label 그대로 (기기 안 설명용)
+  const text = '장보기';
+  const hs = AD.hints(st, text, NOW, { projects: [] });
+  assert.equal(hs.length, 1);
+  assert.equal(hs[0].phrase, '장보기');
+  const dt = '다음주말 세차';
+  const hd = AD.hints(st, dt, NOW, { projects: [] });
+  assert.deepEqual(hd.map((h) => [h.type, h.phrase, h.says]), [['date', '다음주말', '다음 주 토요일']]);
+  for (const h of hs.concat(hd)) {
+    assert.ok(!/[🍺🚗秘密…!]/u.test(h.phrase), h.phrase);
+  }
+  // 띄어 쓴 모양도 지금 글 그대로 (공백은 하나로)
+  const spaced = AD.hints(st, '장   보기', NOW, { projects: [] });
+  assert.equal(spaced[0].phrase, '장 보기');
+});
+
+test('37. date suggest: refTime 이 있는데 날짜를 못 정하면(잘못된 기준·손댄 규칙) 제안하지 않는다', () => {
+  const st = fresh();
+  learnN(st, { type: 'date', text: '주말에 장보기', to: { date: '2026-10-11' }, refTime: NOW.toISOString() }, 2);
+  assert.equal(AD.suggest(st, 'date', '주말에 세차', NOW, { refTime: 'garbage' }), null);
+  assert.equal(AD.suggest(st, 'date', '주말에 세차', NOW, { refTime: new Date(NaN) }), null);
+  assert.equal(AD.suggest(st, 'date', '주말에 세차', NOW).level, 'strong');   // refTime 없이는 value 없이 제안
+  // '월말' 규칙인데 to 가 요일(d6)인 손댄 데이터 → 해석할 수 없으니 null
+  const bad = fresh();
+  bad.learned.rules.push({ id: 'lr_bad', type: 'date', key: '월말', role: 'lex', label: '월말', to: 'd6',
+    w: 3, at: NOW.toISOString(), n: 3, neg: 0, from: null, first: NOW.toISOString(), last: NOW.toISOString(), ref: null, src: 'manual' });
+  assert.equal(AD.suggest(bad, 'date', '월말 정산', NOW, { refTime: NOW.toISOString() }), null);
+});
+
+test('38. bootstrap 씨앗은 같은 표현이 여러 글에 있어도 참고 수준까지만 — 진짜 교정이 더해져야 확실', () => {
+  const st = fresh();
+  const past = later(-3);
+  ['n1', 'n2', 'n3'].forEach((id) => M.addNote(st, { id, body: '장보기', kind: 'memo', capture: { status: 'done', changedByUser: true, created: [] } }, past));
+  ['우유 사기', '계란 사기', '두부 사기'].forEach((body, i) =>
+    M.addNote(st, { id: 'm' + i, body, kind: 'memo', capture: { status: 'done', changedByUser: true, created: [] } }, past));
+  assert.equal(AD.bootstrap(st, NOW), 6);
+  const ex = rulesOf(st).find((r) => r.key === '장보기');
+  assert.equal(ex.n, 1);
+  assert.ok(Math.abs(ex.w - 1.5) < 1e-9);                                // 무게는 더한다
+  assert.equal(ex.src, 'bootstrap');
+  const seeded = AD.suggest(st, 'kind', '장보기', NOW);
+  assert.equal(seeded.to, 'memo');
+  assert.equal(seeded.level, 'hint');                                    // 3개 글이지만 확실이 아니다 (support 2.25 · n 1)
+  assert.equal(AD.suggest(st, 'kind', '휴지 사기', NOW).level, 'hint');  // tail '사기' 도 씨앗만으로는 참고
+  // 진짜 교정 한 번이 더해지면 n 2 → 확실, src 는 correction
+  AD.learn(st, { type: 'kind', text: '장보기', from: 'task', to: 'memo' }, NOW);
+  const s = AD.suggest(st, 'kind', '장보기', NOW);
+  assert.equal(s.level, 'strong');
+  assert.equal(AD.get(st, ex.id).n, 2);
+  assert.equal(AD.get(st, ex.id).src, 'correction');
+  // 이미 교정으로 배운 규칙에 씨앗이 닿아도 출처(src)와 횟수는 그대로
+  const mix = fresh();
+  AD.learn(mix, { type: 'kind', text: '세차', to: 'task' }, NOW);
+  M.addNote(mix, { id: 'z', body: '세차', capture: { status: 'done', changedByUser: true, created: [] } }, past);
+  M.addTask(mix, { id: 'tz', title: '세차' }, past);
+  mix.notes[0].capture.created = [{ kind: 'task', id: 'tz' }];
+  assert.equal(AD.bootstrap(mix, NOW), 1);
+  const r = rulesOf(mix)[0];
+  assert.equal(r.n, 1);
+  assert.equal(r.src, 'correction');
+  assert.ok(Math.abs(r.w - 1.5) < 1e-9);
+});
+
+test('39. learn 결과에는 살아 있는 규칙 id 만 — 대상 상한으로 지운 id 는 빠진다. 다른 realm 의 Date 도 받는다', () => {
+  const st = fresh();
+  ['task', 'event', 'memo'].forEach((to, i) => AD.learn(st, { type: 'kind', text: '장보기', to }, mins(i)));
+  const taskId = rulesOf(st).find((r) => r.to === 'task').id;
+  const r = AD.learn(st, { type: 'kind', text: '장보기', from: 'task', to: 'idea' }, mins(10));   // task 를 반으로 → 가장 약해져 지워진다
+  assert.equal(AD.get(st, taskId), null);
+  assert.deepEqual(r.damped, []);
+  assert.equal(r.added.length, 1);
+  assert.ok(r.added.every((id) => AD.get(st, id)));
+  const vm = require('node:vm');
+  const foreign = vm.runInNewContext('new Date(2026, 9, 5, 10, 0)');
+  const other = fresh();
+  assert.ok(AD.learn(other, { type: 'kind', text: '장보기', to: 'task' }, foreign));
+  assert.equal(rulesOf(other)[0].at, NOW.toISOString());
+  assert.equal(AD.suggest(other, 'kind', '장보기', foreign).level, 'hint');
+});
+
+test('40. 모양이 틀린 규칙(kind 목록 밖 대상·잘못된 날짜 대상·40자 넘는 대상)은 읽을 때 무시하고 compact 가 버린다', () => {
+  const st = fresh();
+  const base = { role: 'exact', w: 3, at: NOW.toISOString(), n: 3, neg: 0, from: null, first: NOW.toISOString(), last: NOW.toISOString(), ref: null, src: 'manual' };
+  st.learned.rules.push(Object.assign({ id: 'lr_k', type: 'kind', key: '장보기', label: '장보기', to: 'work' }, base));
+  st.learned.rules.push(Object.assign({ id: 'lr_d', type: 'date', key: '주말', label: '주말', to: 'zz' }, base, { role: 'lex' }));
+  st.learned.rules.push(Object.assign({ id: 'lr_c', type: 'context', key: '고객사', label: '고객사', to: 'x'.repeat(41) }, base));
+  assert.equal(AD.suggest(st, 'kind', '장보기', NOW), null);
+  assert.equal(AD.suggest(st, 'date', '주말 세차', NOW), null);
+  assert.equal(AD.suggest(st, 'context', '고객사', NOW), null);
+  assert.deepEqual(AD.hints(st, '주말 장보기', NOW, { projects: [] }), []);
+  assert.deepEqual(AD.list(st, NOW), []);
+  assert.equal(AD.compact(st, NOW), 3);
+  assert.equal(rulesOf(st).length, 0);
 });

@@ -23,6 +23,8 @@
 // ── 부르는 쪽이 알아 둘 것 ──────────────────────────────────────
 //   · Detection 은 setStatus 의 target 으로 그대로 넘길 수 있다. id 가 null 이면 '시간표대로'(wake·바탕 없는 복귀).
 //     단 role 'idle'(한가해)은 상태를 바꾸지 않는다 — setStatus 에 넘기지 말고 '다음 할 일'을 부른다.
+//     낮잠(끝 시각이 있는 잠)에서 wake 하면 id 는 null 이 아니라 낮잠 전 상태다(ST.wake 와 같은 결과).
+//   · budgetOk·useBudget·overtimeDue·dismissOvertime 은 (state, profile, now) 와 STATUS §13 의 (state, now) 를 둘 다 받는다.
 //   · setStatus 에 같은 덧씌움 id 와 minutes 를 주면 '지금부터 N분'으로, until 을 주면 그 시각으로 연장한다([5분 더]는 until).
 //   · view.id/label/category 는 바탕 상태다. 덧씌움은 view.overlay 에 따로 있다(목록은 바탕으로 나눈다).
 //   · profile 의 statuses·contexts·matrix·rawMatrix 는 프로토타입 없는 객체다('constructor' 같은 이름이 걸리지 않게).
@@ -59,6 +61,8 @@
   function tight(s) { return String(s == null ? '' : s).replace(/\s+/g, ''); }
   function escRe(s) { return String(s).replace(/[.*+?^${}()|[\]\\]/g, '\\$&'); }
   function wordRe(w) { return String(w).trim().split(/\s+/).map(escRe).join('\\s*'); }
+  // 띄어쓰기를 가리지 않는 정규식 ('정시퇴근' 색인이 '정시 퇴근' 도 잡는다 — 색인은 공백 뺀 key 로 한 번만 둔다)
+  function flexRe(key) { return String(key).replace(/\s+/g, '').split('').map(escRe).join('\\s*'); }
   function byLenDesc(a, b) { return tight(b).length - tight(a).length; }
   function alt(list) { return list.slice().sort(byLenDesc).map(wordRe).join('|'); }
   function nfc(s) { s = String(s == null ? '' : s); return s.normalize ? s.normalize('NFC') : s; }
@@ -434,12 +438,12 @@
     return finishIndex(out);
   }
   function finishIndex(list) {
-    list.forEach(function (e, i) { e.order = i; e.re = new RegExp(wordRe(e.w.toLowerCase()), 'g'); e.grammar = null; });
+    list.forEach(function (e, i) { e.order = i; e.re = new RegExp(flexRe(e.key), 'g'); e.grammar = null; });
     return list.sort(function (a, b) { return b.key.length - a.key.length || a.order - b.order; });
   }
   function grammarOf(e) {
     if (!e.grammar) {
-      e.grammar = new RegExp('^(?:(?:' + FILLER_ALT + ')\\s*)*(?:(' + DUR_ALT + ')\\s*)?(?:' + wordRe(e.w.toLowerCase()) +
+      e.grammar = new RegExp('^(?:(?:' + FILLER_ALT + ')\\s*)*(?:(' + DUR_ALT + ')\\s*)?(?:' + flexRe(e.key) +
         ')\\s*(?:(' + TAIL_ALT + ')\\s*)?(?:(' + DUR_ALT + '))?$');
     }
     return e.grammar;
@@ -498,11 +502,15 @@
   }
 
   // ------------------------------------------------------------------ 유효 상태 (§4)
+  // 읽을 수 없는 시각은 NaN (저장값이 깨졌을 때)
+  function timeOf(v) { return v == null || v === '' ? NaN : ms(v); }
   function staleAt(cur, pf) {
     var d = pf.statuses[cur.id];
-    if (!d) return toDate(cur.since || 0);
-    if (cur.until) return toDate(cur.until);
-    var since = toDate(cur.since);
+    var u = cur.until ? timeOf(cur.until) : NaN;
+    if (isFinite(u)) return new Date(u);
+    var since = toDate(timeOf(cur.since));
+    // 모르는 상태이거나 since 가 깨진 저장값은 이미 낡은 것으로 본다 (계산이 던지지 않게)
+    if (!d || isNaN(since.getTime())) return new Date(0);
     if (d.stale === 'dayStart') return nextDayStart(since, pf);
     if (d.stale === 'until') return D.addMinutes(since, d.minutes || 60);
     return new Date(since.getTime() + (d.stale.h || 16) * HOUR);
@@ -568,7 +576,7 @@
       b = { id: 'none', label: pf.statuses.none.label, category: 'none', place: null, guessed: true, source: 'none', since: null, expiresAt: null };
     }
     var src = overlay ? pf.statuses[overlay.id] : pf.statuses[b.id];
-    b.overlay = overlay ? { id: overlay.id, label: overlay.label || src.label, until: overlay.until || null, rec: src.rec } : null;
+    b.overlay = overlay ? { id: overlay.id, label: overlay.label || src.label, until: isFinite(timeOf(overlay.until)) ? overlay.until : null, rec: src.rec } : null;
     b.rec = src.rec; b.busy = src.busy; b.nudges = src.nudges;
     return b;
   }
@@ -581,7 +589,7 @@
     if (!eff) return null;
     if (eff.overlay) return { id: eff.overlay.id, label: eff.overlay.label, busy: eff.busy, until: eff.overlay.until || null, guessed: false };
     var cur = pres(state).current;
-    var until = !eff.guessed && cur && cur.id === eff.id && cur.until ? cur.until : null;
+    var until = !eff.guessed && cur && cur.id === eff.id && isFinite(timeOf(cur.until)) ? cur.until : null;
     return { id: eff.id, label: eff.label, busy: eff.busy, until: until, guessed: eff.guessed };
   }
 
@@ -751,10 +759,8 @@
     function toGuessTarget() { return { id: null, label: now ? guess(pf, now).label : null, guess: true }; }
     function back() {
       if (!eff) return null;
-      if (eff.overlay) {
-        var rt = cur && cur.returnTo && pf.statuses[cur.returnTo.id] ? cur.returnTo : null;
-        return rt ? { id: rt.id, label: rt.label || pf.statuses[rt.id].label } : toGuessTarget();
-      }
+      // 덧씌움 아래 바탕: 명시(낡지 않은 returnTo)면 그 상태로, 짐작이면 시간표대로. eff 만 보므로 current 가 없어도(/상태 복귀) 맞다
+      if (eff.overlay) return eff.guessed ? toGuessTarget() : { id: eff.id, label: eff.label };
       if (!eff.guessed && (eff.id === 'out' || eff.id === 'field')) {
         if (!now) return null;
         return guess(pf, now).id === 'work' ? to(pf.roleMap.work_start || 'work', { label: pf.statuses[pf.roleMap.work_start || 'work'].label }) : to('off', { label: pf.statuses.off.label });
@@ -782,7 +788,12 @@
       r = eff.id === 'to_work' ? to(pf.roleMap.work_start || 'work', { label: pf.statuses[pf.roleMap.work_start || 'work'].label })
         : eff.id === 'to_home' ? to('off', { label: pf.statuses.off.label }) : eff.id === 'out' ? back() : null;
     }
-    else if (role === 'wake') return cur && cur.id === 'sleep' ? toGuessTarget() : null;
+    else if (role === 'wake') {
+      if (!cur || cur.id !== 'sleep') return null;
+      // 낮잠(끝 시각이 있는 잠)에서 깨면 그 아래 상태로 (ST.wake 와 같다). 밤잠은 시간표대로
+      var rt = cur.until && cur.returnTo && pf.statuses[cur.returnTo.id] ? restoreRef(cur.returnTo) : null;
+      return rt && now && !isStale(rt, pf, now) ? { id: rt.id, label: rt.label || pf.statuses[rt.id].label } : toGuessTarget();
+    }
     else if (role === 'idle') return { id: null, label: null, idle: true };
     else if (role === 'reset') r = to('none', { label: pf.statuses.none.label });
     else r = pf.roleMap[role] ? to(pf.roleMap[role]) : null;
@@ -930,7 +941,21 @@
     if (mode === 'rest') return c === 'rest';
     return false;
   }
+  var TOKEN_SEP = /[\s,./·()\[\]!?~:;'"“”‘’]/;
   function tokensOf(text) { return nfc(text).toLowerCase().split(/[\s,./·()\[\]!?~:;'"“”‘’]+/).filter(Boolean); }
+  // 공백을 뺀 글에서 낱말이 시작하는 자리 { index: true }
+  function tokenStarts(t) {
+    var starts = {}, ti = 0, prevSep = true;
+    for (var i = 0; i < t.length; i++) {
+      var ch = t.charAt(i);
+      if (/\s/.test(ch)) { prevSep = true; continue; }
+      var sep = TOKEN_SEP.test(ch);
+      if (!sep && prevSep) starts[ti] = true;
+      prevSep = sep;
+      ti++;
+    }
+    return starts;
+  }
   function onPhone(task) {
     var title = typeof task === 'string' ? task : (task && task.title) || '';
     return tokensOf(title).some(function (tok) { return SW.PHONE_WORDS.some(function (w) { return tok.indexOf(w) === 0; }); });
@@ -941,14 +966,19 @@
     pf = pf || profile({});
     var t = nfc(text).replace(/(^|\s)#[^\s#]+/g, ' ').toLowerCase().replace(/\s+/g, ' ').trim();
     if (!t) return null;
-    var tt = t.replace(/\s+/g, ''), toks = tokensOf(t);
+    var tt = t.replace(/\s+/g, ''), toks = tokensOf(t), starts = tokenStarts(t);
     var scores = {}, ev = {}, used = {};
     function add(c, w, word) {
       scores[c] = (scores[c] || 0) + w;
       if (!ev[c] || w > ev[c].w) ev[c] = { w: w, word: word };
     }
+    // 띄어 쓴 키워드는 낱말 머리에서 시작할 때만 ('선물 주기' 안의 '물 주기', '바코드 리뷰' 안의 '코드 리뷰' 는 아니다)
+    function spacedAt(k) {
+      for (var i = tt.indexOf(k.t); i !== -1; i = tt.indexOf(k.t, i + 1)) if (starts[i]) return true;
+      return false;
+    }
     var idx = pf.ctxWords;
-    idx.spaced.forEach(function (k) { if (tt.indexOf(k.t) !== -1) { add(k.ctx, k.weight, k.w); k.parts.forEach(function (p) { used[p] = true; }); } });
+    idx.spaced.forEach(function (k) { if (spacedAt(k)) { add(k.ctx, k.weight, k.w); k.parts.forEach(function (p) { used[p] = true; }); } });
     toks.forEach(function (tok) {
       if (used[tok]) return;
       if (SW.CONTEXT_EXCLUDE.some(function (x) { return tok.indexOf(x) === 0; })) return;
@@ -985,8 +1015,9 @@
     var email = (task.sources || []).some(function (s) { return s && s.type === 'email'; });
     var lr = state.learned, mt = lr && lr.metrics;
     var stamp = !adaptOn(state) ? 'off' : (mt ? [mt.learned, mt.applied, mt.reverted, mt.hinted].join(',') : '-') + ':' + (lr && Array.isArray(lr.rules) ? lr.rules.length : 0);
+    // now 가 없으면 학습 단계를 건너뛰므로 키에 넣는다 (now 없이 부른 결과가 메모를 차지하지 않게)
     var key = [pf.hash, task.id, task.updatedAt, task.title, task.projectId, projCtx, task.context, task.contextSource,
-      email ? 1 : 0, src0 && src0.excerpt, stamp].join('|');
+      email ? 1 : 0, src0 && src0.excerpt, now ? stamp : 'no-now'].join('|');
     if (ctxMemo[key]) return ctxMemo[key];
     var r = computeContext(state, task, pf, now, projCtx, proj, email);
     if (ctxMemoN > 4000) { ctxMemo = {}; ctxMemoN = 0; }
@@ -1127,7 +1158,7 @@
   }
   // 작업 블록 색인 (view·applyStatusPolicy 한 번에 한 번 만든다)
   function blockIndex(state) {
-    var idx = {};
+    var idx = dict();
     (state.blocks || []).forEach(function (b) { if (b.taskId) (idx[b.taskId] = idx[b.taskId] || []).push(b); });
     return idx;
   }
@@ -1184,7 +1215,8 @@
     if (o.reason === 'phone') return '이동 중에 폰으로 할 수 있는 일이에요.';
     if (o.breakthrough) {
       var due = toDate(o.breakthrough.dueAt);
-      if (o.breakthrough.soon) return '‘' + o.ctxLabel + '’ 할 일이지만 ' + D.hm(due) + ' 마감이라 골랐어요.';
+      // 마감 시각이 없으면 '23:59' 대신 '오늘'
+      if (o.breakthrough.soon) return '‘' + o.ctxLabel + '’ 할 일이지만 ' + (task.dueTime ? D.hm(due) : D.relDay(task.dueDate, now)) + ' 마감이라 골랐어요.';
       return '‘' + o.ctxLabel + '’ 할 일이지만 ' + D.relDay(task.dueDate, now) + (task.dueTime ? ' ' + task.dueTime : '') + ' 마감이라 남겨 뒀어요.';
     }
     if (o.level === 'up' && o.reason === 'policy' && !eff.guessed && o.ctx) {
@@ -1216,12 +1248,14 @@
   }
 
   // 오늘 목록 조건 (renderer/views/today.js todayTaskList 와 같은 식) — 숨긴 수를 오늘 화면과 같게 센다
-  function inTodayList(state, t, now) {
+  // idx: (선택) blockIndex 결과 — 할 일마다 블록 전체를 훑지 않게
+  function inTodayList(state, t, now, idx) {
     var today = D.ymd(now);
     if (t.status === 'in_progress') return true;
     if (t.dueDate && t.dueDate <= today) return true;
     if (t.createdAt && D.ymd(t.createdAt) === today) return true;
-    return (state.blocks || []).some(function (b) { return b.taskId === t.id && b.start && D.ymd(b.start) === today; });
+    var list = idx ? (own(idx, t.id) ? idx[t.id] : []) : (state.blocks || []);
+    return list.some(function (b) { return b.taskId === t.id && b.start && D.ymd(b.start) === today; });
   }
   function excluded(state, t, now) {
     if (t.deletedAt || t.archivedAt || t.status === 'done' || t.status === 'waiting') return true;
@@ -1247,7 +1281,7 @@
       levels[t.id] = o;
       if (o.level === 'hide') {
         hiddenIds.push(t.id);
-        if (inTodayList(state, t, now)) {
+        if (inTodayList(state, t, now, idx)) {
           var k = o.ctx || '_none';
           summary.hidden++;
           summary.byCtx[k] = (summary.byCtx[k] || 0) + 1;
@@ -1259,7 +1293,7 @@
     var win = workWindowOn(D.startOfDay(now), pf.schedule.workHours);
     var inWin = !!win && now.getTime() >= win.start.getTime() && now.getTime() < win.end.getTime();
     var remain = null;
-    if (eff.overlay && eff.overlay.until && eff.rec === 'short') remain = Math.max(0, Math.floor((ms(eff.overlay.until) - now.getTime()) / MIN));
+    if (eff.overlay && eff.overlay.until && eff.rec === 'short') remain = Math.max(0, Math.floor((timeOf(eff.overlay.until) - now.getTime()) / MIN));
     return {
       active: true, id: eff.id, label: eff.label, category: eff.category, guessed: eff.guessed, since: eff.since,
       overlay: eff.overlay, rec: eff.rec, busy: eff.busy, nudges: eff.nudges,
@@ -1375,6 +1409,8 @@
     var eff1 = effective(state, pf, now);
     var newOverlay = !!newCur && overlayLike(newCur, pf) && pf.statuses[newCur.id].overlay;
     var parked = [], resume = [];
+    // 바탕이 바뀌면 '펼쳐 본' 목록을 먼저 비운다 (옛 상태에서 펼친 할 일이 parked 계산에서 보통으로 보이지 않게)
+    if (!newOverlay && (!eff0 || !eff1 || eff0.id !== eff1.id || eff0.guessed !== eff1.guessed)) p.shown = [];
     if (!newOverlay && eff1) {
       // 이어하기는 '명시한' 업무 상태가 될 때 돌려준다 (밤사이 퇴근이 낡아 짐작이 이미 '업무 중'이어도)
       var wasWork = !!eff0 && eff0.category === 'work', isWork = eff1.category === 'work';
@@ -1390,7 +1426,6 @@
         p.parked = [];
       }
     }
-    if (!newOverlay && (!eff0 || !eff1 || eff0.id !== eff1.id || eff0.guessed !== eff1.guessed)) p.shown = [];
     var to = newCur ? { id: newCur.id, label: newCur.label } : { id: eff1 ? eff1.id : null, label: eff1 ? eff1.label : null, guessed: true };
     var from = eff0 ? { id: eff0.id, label: eff0.label, guessed: eff0.guessed } : null;
     pushLog(p, { at: nowIso, id: newCur ? newCur.id : null, label: to.label, from: eff0 && !eff0.guessed ? eff0.id : null,
@@ -1434,7 +1469,7 @@
     return commit(state, pf, now, eff0, newCur, opts);
   }
   function lastUserLog(p) {
-    for (var i = p.log.length - 1; i >= 0; i--) if (!AUTO_SOURCES[p.log[i].source]) return p.log[i];
+    for (var i = p.log.length - 1; i >= 0; i--) if (p.log[i] && !AUTO_SOURCES[p.log[i].source]) return p.log[i];
     return null;
   }
   // 마지막 기록의 from 으로 (from 이 null 이면 시간표대로). 카드는 만들지 않는다
@@ -1492,18 +1527,23 @@
   }
 
   // ------------------------------------------------------------------ 잔소리 예산 (§13) · 근무 끝 줄 · 프리셋 제안 (§12.4)
+  // STATUS §13 은 (state, now) 로 적었고 계획 §3.6 은 (state, profile, now) 다 — 둘 다 받는다
+  function isProfile(x) { return !!x && typeof x === 'object' && !(x instanceof Date) && !!x.schedule && !!x.statuses; }
   function budgetOk(state, pf, now) {
+    if (now === undefined && !isProfile(pf)) { now = pf; pf = null; }
     pf = pf || profile(state && state.prefs);
     var h = pres(state).hints;
     return h.day !== dayKey(pf, now) || (h.used || 0) < 1;
   }
   function useBudget(state, pf, now) {
+    if (now === undefined && !isProfile(pf)) { now = pf; pf = null; }
     pf = pf || profile(state.prefs);
     var h = ensure(state).hints, k = dayKey(pf, now);
     if (h.day !== k) { h.day = k; h.used = 0; }
     h.used = (h.used || 0) + 1;
   }
   function overtimeDue(state, pf, now) {
+    if (now === undefined && !isProfile(pf)) { now = pf; pf = null; }
     pf = pf || profile(state && state.prefs);
     now = toDate(now);
     if (!pf.schedule.overtimeLine) return false;
@@ -1518,6 +1558,7 @@
     return !(cur && cur.since && ms(cur.since) >= win.end.getTime());
   }
   function dismissOvertime(state, pf, now) {
+    if (now === undefined && !isProfile(pf)) { now = pf; pf = null; }
     var p = ensure(state);
     p.hints.overtimeDismiss = (p.hints.overtimeDismiss || 0) + 1;
     useBudget(state, pf, now);
