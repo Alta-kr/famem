@@ -10,8 +10,17 @@
 //
 // ── 쓸 수 있는 시간 T ─────────────────────────────────────────────
 //   1) 사용자가 고른 시간(15분·30분·1시간·직접 입력)이 있으면 그것을 쓴다.
-//   2) 없으면 앱 캘린더의 "다음 일정까지 남은 시간" 을 후보로 쓴다 (실제 여유를 보장하지 않음을 화면에 표시).
-//   3) 지금 일정 중이거나 오늘 남은 일정이 없으면 T 를 모른다고 본다.
+//   2) (현재 상태) 회의·수업·잘 시간처럼 추천을 쉬는 상태면 T 를 모르고 결과는 'quiet' 다.
+//   3) (현재 상태) 휴식·식사 덧씌움이면 그 남은 시간을 쓴다 (source 'status').
+//   4) 없으면 캘린더의 "다음 일정까지 남은 시간" 을 후보로 쓴다 (실제 여유를 보장하지 않음을 화면에 표시).
+//      캘린더에는 Daynote 블록과 Google 의 바쁜(종일 아닌) 일정이 함께 들어간다. 근무 시간 끝에서 자른다.
+//   5) 지금 일정 중이거나, 근무 시간 밖이거나, 오늘 남은 일정이 없으면 T 를 모른다고 본다.
+//   근무 시간은 slots.normalizeWorkHours 로 읽는다 (없으면 월–금 09:00–18:00 — 주말은 근무 시간 밖).
+//
+// ── 현재 상태 (opts.statusView — status.js 가 만든 평범한 데이터, 이 모듈은 status 를 require 하지 않는다) ──
+//   없으면(null) 아래 상태 규칙이 하나도 적용되지 않는다 — 결과가 상태 없는 결과와 같다(I1).
+//   있으면: 'hide' 수준 할 일은 후보에서 뺀다(excluded.hidden · hiddenIds), 정렬의 첫 기준은 수준(levelRank),
+//           상태 이유 문장은 하나만 맨 앞에 둔다.
 //
 // ── 시간 적합도 ───────────────────────────────────────────────────
 //   fits       : 남은 예상 시간 ≤ T
@@ -21,6 +30,7 @@
 //   T 를 모르면 모든 후보가 open 이다.
 //
 // ── 정렬 (앞 기준이 같을 때만 다음 기준을 본다) ──────────────────────
+//   0. 상태 수준        : 띄움 → 보통 → 내림                      (statusView 가 있을 때만)
 //   1. 시간 적합 그룹    : fits/step_fits → unknown          (T 를 알 때만)
 //   2. 마감 긴급도       : 기한 초과 → 오늘 → 내일 → 7일 이내 → 이후·마감 없음
 //   3. 이어하기          : 진행 중이거나 지금 작업 시간이 잡힌 업무 먼저
@@ -32,12 +42,12 @@
 
 (function (factory) {
   var deps = (typeof module !== 'undefined' && module.exports)
-    ? { dates: require('./dates'), model: require('./model') }
-    : { dates: window.Daynote.dates, model: window.Daynote.model };
-  var api = factory(deps.dates, deps.model);
+    ? { dates: require('./dates'), model: require('./model'), slots: require('./slots') }
+    : { dates: window.Daynote.dates, model: window.Daynote.model, slots: window.Daynote.slots };
+  var api = factory(deps.dates, deps.model, deps.slots);
   if (typeof module !== 'undefined' && module.exports) module.exports = api;
   if (typeof window !== 'undefined') { window.Daynote = window.Daynote || {}; window.Daynote.recommend = api; }
-})(function (D, M) {
+})(function (D, M, SL) {
   var PRIORITY_RANK = { high: 0, normal: 1, low: 2 };
   var MAX_ALTERNATIVES = 2;
 
@@ -61,19 +71,36 @@
     return { bucket: bucket, key: task.dueDate + 'T' + (task.dueTime || '23:59'), text: text };
   }
 
-  // 지금 시각 기준으로 캘린더가 말해 주는 것
+  function msOf(v) { return v == null || v === '' ? NaN : new Date(v).getTime(); }
+
+  // 지금 시각 기준으로 캘린더가 말해 주는 것.
+  // Daynote 블록 + Google 의 바쁘고 종일 아닌 일정(M.externalItems). 외부 일정은 오프셋 ISO 일 수 있어 밀리초로 비교한다.
   function calendarContext(state, now) {
+    now = new Date(now);
+    var t0 = now.getTime();
     var nowIso = now.toISOString();
-    var eod = D.endOfDay(now).toISOString();
-    var live = state.blocks.filter(function (b) {
+    var eodDate = D.endOfDay(now);
+    var eodMs = eodDate.getTime();
+    var blocks = state.blocks.filter(function (b) {
       if (b.taskId) {
         var t = M.byId(state.tasks, b.taskId);
         if (!t || t.deletedAt) return false;
       }
-      return b.end > nowIso && b.start < eod;
-    }).sort(function (a, b) { return a.start < b.start ? -1 : 1; });
-    var current = live.filter(function (b) { return b.start <= nowIso; });
-    var upcoming = live.filter(function (b) { return b.start > nowIso; });
+      return true;
+    });
+    var ext = typeof M.externalItems === 'function'
+      ? M.externalItems(state, nowIso, eodDate.toISOString()).filter(function (x) { return x.busy && !x.allDay; })
+      : [];
+    var live = blocks.concat(ext).filter(function (b) {
+      var s = msOf(b.start), e = msOf(b.end);
+      return !isNaN(s) && !isNaN(e) && e > t0 && s < eodMs;
+    }).sort(function (a, b) {
+      var sa = msOf(a.start), sb = msOf(b.start);
+      if (sa !== sb) return sa - sb;
+      return a.id < b.id ? -1 : a.id > b.id ? 1 : 0;
+    });
+    var current = live.filter(function (b) { return msOf(b.start) <= t0; });
+    var upcoming = live.filter(function (b) { return msOf(b.start) > t0; });
     var busyEvent = current.filter(function (b) { return b.kind === 'event'; })[0] || null;
     var next = upcoming[0] || null;
     return {
@@ -114,7 +141,7 @@
     var T = ctx.availableMinutes;
     var est = t.estimateMinutes;
     var nextName = cal.next ? '‘' + blockTitle(state, cal.next) + '’' : '';
-    var timeLead = ctx.source === 'user'
+    var timeLead = ctx.source === 'user' || ctx.source === 'status'
       ? '지금 쓸 수 있는 시간이 ' + D.duration(T) + '이고'
       : ctx.source === 'calendar' && ctx.until === 'work_end' ? '근무 종료(' + ctx.workHours.end + ')까지 ' + D.duration(T) + '이 있고'
       : ctx.source === 'calendar' ? '다음 일정 ' + nextName + '까지 ' + D.duration(T) + '이 있고' : '';
@@ -137,34 +164,59 @@
     return r;
   }
 
-  function compare(a, b) {
-    // 홈에서 끌어 놓아 정한 순서(manual)는 우선순위 필드보다 앞선다 — 사용자가 직접 정한 것이므로
-    var keys = ['fitGroup', 'urgency', 'cont', 'manual', 'prio'];
-    for (var i = 0; i < keys.length; i++) if (a[keys[i]] !== b[keys[i]]) return a[keys[i]] - b[keys[i]];
-    if (a.dueKey !== b.dueKey) return a.dueKey < b.dueKey ? -1 : 1;
-    if (a.slack !== b.slack) return a.slack - b.slack;
-    if (a.createdAt !== b.createdAt) return a.createdAt < b.createdAt ? -1 : 1;
-    return a.taskId < b.taskId ? -1 : a.taskId > b.taskId ? 1 : 0;
+  var BASE_KEYS = ['fitGroup', 'urgency', 'cont', 'manual', 'prio'];
+  var STATUS_KEYS = ['levelRank'].concat(BASE_KEYS);
+  var LEVEL_RANK = { up: 0, normal: 1, down: 2 };
+
+  // 홈에서 끌어 놓아 정한 순서(manual)는 우선순위 필드보다 앞선다 — 사용자가 직접 정한 것이므로.
+  // 현재 상태가 있으면 수준(levelRank)이 가장 앞선다.
+  function comparator(keys) {
+    return function (a, b) {
+      for (var i = 0; i < keys.length; i++) if (a[keys[i]] !== b[keys[i]]) return a[keys[i]] - b[keys[i]];
+      if (a.dueKey !== b.dueKey) return a.dueKey < b.dueKey ? -1 : 1;
+      if (a.slack !== b.slack) return a.slack - b.slack;
+      if (a.createdAt !== b.createdAt) return a.createdAt < b.createdAt ? -1 : 1;
+      return a.taskId < b.taskId ? -1 : a.taskId > b.taskId ? 1 : 0;
+    };
+  }
+  var compare = comparator(BASE_KEYS);
+  var compareWithStatus = comparator(STATUS_KEYS);
+
+  function tooLongOrder(a, b) { return a.urgency - b.urgency || a.prio - b.prio || a.slack - b.slack; }
+
+  // 결과에 돌려주는 상태 요약 (화면이 '지금: 퇴근 · 내 시간' 같은 줄을 그릴 때 쓴다)
+  function statusSummary(sv) {
+    return { id: sv.id || null, label: sv.label || '', guessed: !!sv.guessed, category: sv.category || null, overlay: sv.overlay || null };
   }
 
-  // opts: { now: Date, availableMinutes: number|null, skipIds: [taskId] }
+  // opts: { now: Date, availableMinutes: number|null, skipIds: [taskId],
+  //         workHours: prefs.workHours (없으면 월–금 09:00–18:00),
+  //         status: DN.status.current(now) — context.status 로 그대로 돌려준다 (statusView 가 없을 때),
+  //         statusView: ST.view(…) | null — 있으면 숨김·수준·쉬기·덧씌움 남은 시간을 반영한다 }
   function recommend(state, opts) {
     opts = opts || {};
     var now = opts.now ? new Date(opts.now) : new Date();
+    var sv = opts.statusView || null;          // null 이면 상태 규칙이 하나도 적용되지 않는다 (I1)
+    var levels = (sv && sv.levels) || {};
     var cal = calendarContext(state, now);
 
     // 근무 시간 — 캘린더 빈 시간은 근무 시간 안에서만 "쓸 수 있는 시간 후보" 로 본다.
-    // 근무 시간 밖(새벽·퇴근 뒤)에는 다음 일정까지가 비어 있어도 가용 시간으로 정하지 않고 사용자에게 묻는다.
-    var wh = opts.workHours || { start: '09:00', end: '18:00' };
-    var whStart = D.parseYmd(D.ymd(now), wh.start), whEnd = D.parseYmd(D.ymd(now), wh.end);
-    var offHours = now < whStart || now >= whEnd;
+    // 근무 시간 밖(새벽·퇴근 뒤·근무하지 않는 요일)에는 다음 일정까지가 비어 있어도 가용 시간으로 정하지 않고 사용자에게 묻는다.
+    // 현재 상태가 있으면 그쪽이 정한다: 명시 업무 → 근무 시간 안(시간표 밖 야근이면 근무 끝에서 자르지 않음), 명시 그 밖 → 근무 시간 밖.
+    var wh = SL.normalizeWorkHours(opts.workHours);
+    var win = SL.workWindow(now, wh);
+    var offHours = sv ? !!sv.offHours : !SL.isWorkingTime(now, wh);
+    var capEnd = sv ? (sv.workWindow && sv.workWindow.end ? new Date(sv.workWindow.end) : null) : (win ? win.end : null);
+    var quiet = !!(sv && sv.rec === 'none');
 
     var userT = opts.availableMinutes;
     var ctx;
     if (userT != null && userT > 0) ctx = { availableMinutes: userT, source: 'user' };
+    else if (quiet) ctx = { availableMinutes: null, source: 'none' };
+    else if (sv && sv.remainMinutes != null) ctx = { availableMinutes: sv.remainMinutes, source: 'status', until: 'status_end' };
     else if (!cal.busyWith && !offHours && cal.minutesToNext != null) {
-      var toEnd = D.minutesBetween(now, whEnd);
-      ctx = cal.minutesToNext > toEnd
+      var toEnd = capEnd && capEnd.getTime() > now.getTime() ? D.minutesBetween(now, capEnd) : null;
+      ctx = toEnd != null && cal.minutesToNext > toEnd
         ? { availableMinutes: toEnd, source: 'calendar', until: 'work_end' }
         : { availableMinutes: cal.minutesToNext, source: 'calendar', until: 'next' };
     }
@@ -174,15 +226,28 @@
     ctx.busyWith = cal.busyWith ? { id: cal.busyWith.id, title: blockTitle(state, cal.busyWith), end: cal.busyWith.end } : null;
     ctx.next = cal.next ? { id: cal.next.id, title: blockTitle(state, cal.next), start: cal.next.start } : null;
     ctx.minutesToNext = cal.minutesToNext;
+    ctx.status = sv ? statusSummary(sv) : (opts.status || null);
 
     var excluded = { done: 0, waiting: 0, blocked: 0, snoozed: 0 };
+    if (sv) excluded.hidden = 0;
+    var hiddenIds = [];
     var ranked = [], tooLong = [];
     var openCount = 0;
+    var statusReasoned = {};                   // taskId → 상태 이유 문장을 이미 넣었나 (항목에 새 키를 넣지 않으려고 따로 둔다)
+
+    // 상태 이유는 하나만, 맨 앞에 둔다 — 화면(nextCard)이 reasons.slice(0, 2) 만 보이므로
+    function addStatusReason(item, sentence) {
+      if (!sentence || statusReasoned[item.taskId]) return;
+      item.reasons.unshift(sentence + (sv.guessed ? ' (시간표 기준)' : ''));
+      statusReasoned[item.taskId] = true;
+    }
 
     state.tasks.forEach(function (t) {
       var ex = exclusionOf(state, t, now);
       if (ex === 'removed') return;
       if (ex) { excluded[ex]++; if (ex !== 'done') openCount++; return; }
+      var lv = sv && Object.prototype.hasOwnProperty.call(levels, t.id) ? levels[t.id] : null;
+      if (lv && lv.level === 'hide') { excluded.hidden++; hiddenIds.push(t.id); openCount++; return; }
       openCount++;
       var fit = fitOf(t, ctx.availableMinutes);
       var due = dueInfo(t, now);
@@ -202,32 +267,53 @@
         estimateIsGuess: t.estimateSource === 'ai',
         reasons: reasonsFor(state, t, fit, due, ctx, cal, now)
       };
+      if (sv) {
+        var level = lv && LEVEL_RANK[lv.level] != null ? lv.level : 'normal';
+        item.levelRank = LEVEL_RANK[level];
+        item.level = level;
+        item.ctx = (lv && lv.ctx) || null;
+        if (lv && lv.sentence) addStatusReason(item, lv.sentence);
+        else if (ctx.source === 'status' && (fit.fit === 'fits' || fit.fit === 'step_fits')) {
+          var name = sv.overlay && sv.overlay.label ? sv.overlay.label : sv.label;
+          addStatusReason(item, '‘' + name + '’ 남은 시간(' + ctx.availableMinutes + '분) 안에 끝나는 일을 골랐어요.');
+        }
+      }
       if (fit.fit === 'too_long') tooLong.push(item); else ranked.push(item);
     });
 
-    ranked.sort(compare);
-    tooLong.sort(function (a, b) { return a.urgency - b.urgency || a.prio - b.prio || a.slack - b.slack; });
+    ranked.sort(sv ? compareWithStatus : compare);
+    tooLong.sort(sv ? function (a, b) { return a.levelRank - b.levelRank || tooLongOrder(a, b); } : tooLongOrder);
 
     var skip = opts.skipIds || [];
     var visible = ranked.filter(function (i) { return skip.indexOf(i.taskId) === -1; });
 
     var empty = null;
-    if (!ranked.length) {
+    if (quiet) empty = 'quiet';
+    else if (!ranked.length) {
       if (openCount === 0) empty = 'no_tasks';
       else if (tooLong.length) empty = 'time_short';
+      else if (sv && excluded.hidden > 0) empty = 'all_hidden';
       else empty = 'all_excluded';
     } else if (!visible.length) empty = 'all_skipped';
 
-    return {
+    var primary = quiet ? null : (visible[0] || null);
+    // 뒤로 둔(down) 일밖에 없으면 그 까닭을 말한다
+    if (primary && sv && primary.level === 'down') {
+      addStatusReason(primary, '‘' + sv.label + '’ 상태라 뒤로 둔 일이지만 지금 할 수 있는 다른 일이 없어요.');
+    }
+
+    var out = {
       evaluatedAt: now.toISOString(),
       context: ctx,
-      primary: visible[0] || null,
-      alternatives: visible.slice(1, 1 + MAX_ALTERNATIVES),
+      primary: primary,
+      alternatives: quiet ? [] : visible.slice(1, 1 + MAX_ALTERNATIVES),
       ranked: ranked,
       tooLong: tooLong,
       excluded: excluded,
       empty: empty
     };
+    if (sv) out.hiddenIds = hiddenIds;
+    return out;
   }
 
   // 실행 직전 재확인 — 그사이 완료·대기·미루기 등으로 바뀌었으면 시작하지 않는다

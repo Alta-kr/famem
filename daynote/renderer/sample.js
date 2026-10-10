@@ -3,6 +3,7 @@
 // 샘플 데이터 — 처음 실행했을 때 앱이 어떻게 쓰이는지 보여 준다.
 // 모든 날짜는 now 를 기준으로 계산하므로 언제 열어도 "오늘·이번 주" 가 의미 있게 보인다.
 // 모든 항목은 sample:true 라서 model.clearSample 로 사용자 항목만 남기고 지울 수 있다.
+// 현재 상태(presence)는 건드리지 않는다 — 샘플을 불러도 상태 기능은 켜지지 않는다.
 
 (function (factory) {
   var deps = (typeof module !== 'undefined' && module.exports)
@@ -21,10 +22,10 @@
     function iso(d) { return d.toISOString(); }
     function x(fields) { return Object.assign({}, S, fields); }
 
-    // ── 프로젝트
-    var pOnb = M.addProject(state, x({ name: '신규 온보딩 개선', description: '신규 입사자 첫 2주 경험 정리' }), now);
-    var pRep = M.addProject(state, x({ name: '3분기 리포트', description: '3분기 실적 정리와 경영진 보고' }), now);
-    var pSem = M.addProject(state, x({ name: '사내 세미나', description: '다음 달 사내 기술 세미나 준비' }), now);
+    // ── 프로젝트 (모두 업무 맥락 — 프로젝트 → 맥락을 보여 준다)
+    var pOnb = M.addProject(state, x({ name: '신규 온보딩 개선', description: '신규 입사자 첫 2주 경험 정리', context: 'work' }), now);
+    var pRep = M.addProject(state, x({ name: '3분기 리포트', description: '3분기 실적 정리와 경영진 보고', context: 'work' }), now);
+    var pSem = M.addProject(state, x({ name: '사내 세미나', description: '다음 달 사내 기술 세미나 준비', context: 'work' }), now);
 
     // ── 메모
     var nMeet = M.addNote(state, x({
@@ -71,6 +72,14 @@
         { id: 'step_s2', title: '목차 새로 짜기', estimateMinutes: 40, done: false },
         { id: 'step_s3', title: '본문 다시 쓰기', estimateMinutes: 60, done: false }
       ] }, 60 * 30);
+
+    // 업무 밖의 할 일 — 현재 상태를 '퇴근' 으로 바꾸면 업무는 접히고 이런 일이 올라온다
+    task({ title: '빨래 돌리기', estimateMinutes: 15 }, 60 * 24);              // 날짜 없음, 어제 만듦 → 오늘 목록 밖(퇴근하면 '더 할 만한 일')
+    task({ title: '분리수거', dueDate: day(0) });                               // 오늘 마감 집안일
+    task({ title: '엄마 생신 선물 주문', dueDate: day(1) });                    // 내일 마감 가족 일
+    // 걸어 둔 상태(나가는 김에) — 오늘 만든 것으로 둔다 (자정 직후에도 '오늘' 이 되게)
+    var sinceMidnight = Math.floor((now.getTime() - D.startOfDay(now).getTime()) / 60000);
+    M.addTask(state, x({ title: '우유 사기', atMode: 'out', atModeSource: 'rule' }), minsAgo(Math.min(30, sinceMidnight)));
 
     // 이번 주 완료 3개 — completeTask 로 히스토리 자동 기록
     var doneSpecs = [

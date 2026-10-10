@@ -136,3 +136,89 @@ test('자세히 적기: "샤워하기" 같은 분명한 행동·시간 정한 �
   assert.strictEqual(A.nextNudge(st, { now: NOW, reason: 'idle', lastCaptureAt: new Date(NOW - 30 * 60000).toISOString() }).type, 'elaborate');
   assert.ok(A.nextNudge(st, { now: NOW, reason: 'button', lastCaptureAt: new Date(NOW - 60000).toISOString() }));
 });
+
+// ================================================================== 근무 시간·현재 상태와 자동 제안 (FEATURES §7.5, STATUS #129–131)
+
+const R = require('../src/core/recommend');
+const OLD = new Date(NOW - 3 * 3600000).toISOString();
+const atH = (h, m) => new Date(2026, 9, 5, h, m || 0).toISOString();
+// 손으로 만든 statusView (status.js 없이)
+function sv(fields) {
+  return Object.assign({ active: true, id: 'off', label: '퇴근 · 내 시간', category: 'life', guessed: false, since: atH(9, 0), overlay: null,
+    rec: 'normal', busy: false, nudges: true, remainMinutes: null, offHours: true, workWindow: null, levels: {}, hiddenIds: [], anchored: [],
+    summary: { hidden: 0, byCtx: {}, parked: 0 } }, fields || {});
+}
+const lvl = (level) => ({ level, reason: 'policy', ctx: null, ctxSource: null, ctxLabel: null, evidence: null, breakthrough: null, sentence: null });
+
+test('looksIdle 은 state.prefs.workHours 를 넘긴다 — 지금이 근무 시간 밖이면 캘린더 T 를 쓰지 않는다', () => {
+  const st = M.emptyState();
+  M.addBlock(st, { title: '회의', start: atH(10, 30), end: atH(11, 0) });
+  M.addTask(st, { title: '한 시간 업무', estimateMinutes: 60, createdAt: OLD }, NOW);
+  // 기본 근무 시간(09–18)이면 T 30분 → 60분 일은 너무 길다 → 할 만한 일이 없어 보인다
+  assert.strictEqual(A.looksIdle(st, NOW), true);
+  // 근무 시간을 13–18 로 두면 지금(10:00)은 근무 시간 밖 → T 모름 → 후보가 있다
+  st.prefs.workHours = { start: '13:00', end: '18:00' };
+  assert.strictEqual(A.looksIdle(st, NOW), false);
+  assert.strictEqual(A.looksIdle(st, NOW), !R.recommend(st, { now: NOW, workHours: st.prefs.workHours }).primary);
+  assert.strictEqual(R.recommend(st, { now: NOW, workHours: st.prefs.workHours }).context.source, 'none');
+});
+
+test('129. looksIdle(state, now, sv) 가 workHours 를 넘긴다 (10–19 이면 18:30 이 근무 시간)', () => {
+  const st = M.emptyState();
+  const t1830 = new Date(2026, 9, 5, 18, 30);
+  M.addBlock(st, { title: '저녁 회의', start: atH(18, 45), end: atH(19, 30) });
+  M.addTask(st, { title: '한 시간 업무', estimateMinutes: 60, createdAt: OLD }, NOW);
+  assert.strictEqual(A.looksIdle(st, t1830, null), false);                     // 기본(09–18): 18:30 은 근무 시간 밖 → 후보 있음
+  st.prefs.workHours = { start: '10:00', end: '19:00' };
+  assert.strictEqual(A.looksIdle(st, t1830, null), true);                      // 근무 시간 안 → T 15분 → 60분 일은 못 함
+  assert.strictEqual(R.recommend(st, { now: t1830, workHours: st.prefs.workHours }).context.availableMinutes, 15);
+  // sv 도 같이 넘긴다: 명시 퇴근(offHours)이면 T 를 모르므로 후보가 있다
+  assert.strictEqual(A.looksIdle(st, t1830, sv({ offHours: true })), false);
+  // 할 일이 숨김이면 후보가 없다
+  assert.strictEqual(A.looksIdle(st, t1830, sv({ levels: { [st.tasks[0].id]: lvl('hide') } })), true);
+});
+
+test('130. elaborateCandidates·pendingBreakdowns: sv 의 hide·down 할 일을 뺀다. sv 가 없으면 지금과 같다', () => {
+  const st = M.emptyState();
+  const a = M.addTask(st, { title: '분기 보고서', createdAt: OLD }, NOW);
+  const b = M.addTask(st, { title: '설문 정리', createdAt: OLD }, NOW);
+  const c = M.addTask(st, { title: '집 정리', createdAt: OLD }, NOW);
+  [a, b, c].forEach((t) => A.storeBreakdown(st, t.id, { steps: [{ title: '하나', minutes: 5 }, { title: '둘', minutes: 5 }], reason: '' }, 'ai', NOW));
+  const before = A.pendingBreakdowns(st, NOW).map((t) => t.id);
+  assert.strictEqual(before.length, 3);
+  assert.deepStrictEqual(A.pendingBreakdowns(st, NOW, null).map((t) => t.id), before);
+  const v = sv({ levels: { [a.id]: lvl('hide'), [b.id]: lvl('down'), [c.id]: lvl('up') } });
+  assert.deepStrictEqual(A.pendingBreakdowns(st, NOW, v).map((t) => t.id), [c.id]);
+  assert.deepStrictEqual(A.pendingBreakdowns(st, NOW, sv({ levels: { [a.id]: lvl('normal') } })).map((t) => t.id), before);
+
+  const st2 = M.emptyState();
+  const x = M.addTask(st2, { title: '분기 보고서', createdAt: OLD }, NOW);
+  const y = M.addTask(st2, { title: '설문 정리', createdAt: OLD }, NOW);
+  const z = M.addTask(st2, { title: '온보딩 개선', createdAt: OLD }, NOW);
+  const all = A.elaborateCandidates(st2, NOW).map((t) => t.id);
+  assert.deepStrictEqual(all.slice().sort(), [x.id, y.id, z.id].sort());
+  assert.deepStrictEqual(A.elaborateCandidates(st2, NOW, null).map((t) => t.id), all);
+  const v2 = sv({ levels: { [x.id]: lvl('down'), [y.id]: lvl('hide'), [z.id]: lvl('normal') } });
+  assert.deepStrictEqual(A.elaborateCandidates(st2, NOW, v2).map((t) => t.id), [z.id]);
+});
+
+test('131. nextNudge 가 ctx.statusView 를 pendingBreakdowns·looksIdle·elaborateCandidates 에 넘긴다', () => {
+  // 나눠 둔 초안이 있어도, 그 할 일이 지금 뒤로 둔 일이면 묻지 않는다
+  const st = M.emptyState();
+  const big = M.addTask(st, { title: '분기 보고서 작성', createdAt: OLD }, NOW);
+  A.storeBreakdown(st, big.id, { steps: [{ title: '하나', minutes: 5 }, { title: '둘', minutes: 5 }], reason: '' }, 'ai', NOW);
+  assert.deepStrictEqual(A.nextNudge(st, { now: NOW, reason: 'completed' }), { type: 'breakdown', taskId: big.id });
+  const down = sv({ levels: { [big.id]: lvl('down') } });
+  assert.strictEqual(A.nextNudge(st, { now: NOW, reason: 'completed', statusView: down }), null);
+  // 숨긴 할 일은 자세히 적기 후보도 아니다
+  assert.strictEqual(A.nextNudge(st, { now: NOW, reason: 'idle', statusView: sv({ levels: { [big.id]: lvl('hide') } }) }), null);
+
+  // looksIdle 에도 sv 가 간다: 추천을 쉬는 상태(rec none)면 할 만한 일이 없어 보이므로 'open' 에서도 자세히 적기
+  const st2 = M.emptyState();
+  const vague = M.addTask(st2, { title: '정리', createdAt: OLD }, NOW);
+  assert.strictEqual(A.nextNudge(st2, { now: NOW, reason: 'open' }), null);
+  const quiet = sv({ id: 'focus', label: '집중', category: 'work', rec: 'none', offHours: false });
+  assert.deepStrictEqual(A.nextNudge(st2, { now: NOW, reason: 'open', statusView: quiet }), { type: 'elaborate', candidates: [vague.id] });
+  // statusView 가 null 이면 지금과 같다
+  assert.strictEqual(A.nextNudge(st2, { now: NOW, reason: 'open', statusView: null }), null);
+});

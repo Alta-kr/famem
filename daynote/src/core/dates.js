@@ -84,10 +84,67 @@
     return (s.getMonth() + 1) + '월 ' + s.getDate() + '일 – ' + (e.getMonth() + 1) + '월 ' + e.getDate() + '일';
   }
 
+  // ------------------------------------------------------------------ 쓸 수 있는 시간 읽기 (duration 의 역함수)
+  // '45', '45분', '1시간 30분', '1h30m', '한 시간 반', '1.5시간', '1:30' → 분(정수).
+  // 글 전체가 한 형태와 맞아야 한다. 상대 시각('30분 후')·한자어 수('삼십분')·소수 분은 받지 않는다.
+  var DURATION_MIN = 5;
+  var DURATION_MAX = 720;
+  var DURATION_MESSAGES = {
+    empty: '시간을 적어 주세요.',
+    invalid: '‘45’, ‘1시간 30분’, ‘1:30’처럼 적어 주세요.',
+    too_short: '5분 이상으로 적어 주세요.',
+    too_long: '12시간 이하로 적어 주세요.'
+  };
+  // 시간에만 쓰는 한글 수 (한 시간 · 두시간 · 열두 시간)
+  var KO_HOURS = { '한': 1, '두': 2, '세': 3, '네': 4, '다섯': 5, '여섯': 6, '일곱': 7, '여덟': 8, '아홉': 9, '열': 10, '열한': 11, '열두': 12 };
+  var DUR_MIN_UNIT = '(?:분|minutes?|mins?|m)';
+  var DUR_MINUTES_RE = new RegExp('^(\\d+) ?' + DUR_MIN_UNIT + '?$');
+  var DUR_CLOCK_RE = /^(\d+):(\d{2})$/;
+  var DUR_HOURS_RE = new RegExp('^(\\d+(?:\\.\\d+)?|열한|열두|다섯|여섯|일곱|여덟|아홉|열|한|두|세|네) ?(시간|hours?|hrs?|h)' +
+    '(?: ?(반)| ?(\\d+) ?' + DUR_MIN_UNIT + '?)?$');
+  var DUR_HALF_RE = /^반 ?시간$/;
+
+  function durationFail(error) { return { ok: false, error: error, message: DURATION_MESSAGES[error] }; }
+
+  function durationMinutesOf(t) {
+    var m = DUR_MINUTES_RE.exec(t);
+    if (m) return Number(m[1]);
+    m = DUR_CLOCK_RE.exec(t);
+    if (m) { var mm = Number(m[2]); return mm > 59 ? null : Number(m[1]) * 60 + mm; }
+    if (DUR_HALF_RE.test(t)) return 30;
+    m = DUR_HOURS_RE.exec(t);
+    if (!m) return null;
+    var ko = Object.prototype.hasOwnProperty.call(KO_HOURS, m[1]);
+    if (ko && m[2] !== '시간') return null;                       // '한 h' 같은 섞어 쓰기는 받지 않는다
+    var hours = ko ? KO_HOURS[m[1]] : Number(m[1]);
+    var decimal = !ko && m[1].indexOf('.') >= 0;
+    if (m[3]) return decimal ? null : hours * 60 + 30;            // '1시간 반'
+    if (m[4] != null) {                                           // '1시간 30분' — 분은 0–59, 소수 시간과는 함께 쓰지 않는다
+      var min = Number(m[4]);
+      return (decimal || min > 59) ? null : hours * 60 + min;
+    }
+    return Math.round(hours * 60);
+  }
+
+  // parseDuration(text) → { ok:true, minutes } | { ok:false, error:'empty'|'invalid'|'too_short'|'too_long', message }
+  function parseDuration(text) {
+    var s = text == null ? '' : String(text);
+    if (typeof s.normalize === 'function') s = s.normalize('NFKC');   // 전각 숫자 → 반각
+    s = s.trim().toLowerCase().replace(/\s+/g, ' ');
+    if (!s) return durationFail('empty');
+    s = s.replace(/^(?:약|대략) ?/, '').replace(/ ?(?:정도|쯤|가량|내외)$/, '');
+    var minutes = s ? durationMinutesOf(s) : null;
+    if (minutes == null) return durationFail('invalid');
+    if (minutes < DURATION_MIN) return durationFail('too_short');
+    if (minutes > DURATION_MAX) return durationFail('too_long');
+    return { ok: true, minutes: minutes };
+  }
+
   return {
     DAY: DAY, WEEKDAYS: WEEKDAYS, pad: pad, ymd: ymd, parseYmd: parseYmd,
     startOfDay: startOfDay, endOfDay: endOfDay, addDays: addDays, addMinutes: addMinutes,
     startOfWeek: startOfWeek, dayDiff: dayDiff, minutesBetween: minutesBetween,
-    hm: hm, relDay: relDay, longDay: longDay, shortDay: shortDay, duration: duration, weekLabel: weekLabel
+    hm: hm, relDay: relDay, longDay: longDay, shortDay: shortDay, duration: duration, weekLabel: weekLabel,
+    DURATION_MIN: DURATION_MIN, DURATION_MAX: DURATION_MAX, parseDuration: parseDuration
   };
 });

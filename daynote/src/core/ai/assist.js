@@ -5,6 +5,8 @@
 //   작게 나누기(breakdown) : 큰 할 일을 3~6개의 작은 단계로 나눈 초안. 사용자가 고치고 적용한다.
 //   자세히 적기(elaborate)  : 할 일이 비어 보일 때, 자세히 적어 두면 시작하기 쉬운 할 일을 골라 질문한다.
 //   제안 시점(nextNudge)   : 할 일을 끝낸 직후, 한동안 입력이 없을 때 — 너무 자주 묻지 않는다.
+//                            현재 상태(statusView)가 있으면 지금 숨기거나 뒤로 둔 할 일은 묻지 않는다
+//                            (퇴근 뒤에 "보고서를 작게 나눠 볼까요?" 가 나오지 않게).
 //   휴식(STRETCHES)        : AI 없이 쓰는 짧은 스트레칭 목록.
 //
 // AI 의 역할은 해석·제안이고, 앱은 검증하고 사용자가 고른 것만 반영한다(바로 적용하지 않음).
@@ -130,6 +132,12 @@
   // ------------------------------------------------------------------ 후보 고르기
   function isOpen(t) { return !t.deletedAt && !t.archivedAt && t.status !== 'done' && t.status !== 'waiting'; }
 
+  // 현재 상태가 숨기거나(hide) 뒤로 둔(down) 할 일 — 자동 제안 대상이 아니다. sv 가 없으면 늘 false.
+  function setAside(sv, taskId) {
+    var lv = sv && sv.levels && Object.prototype.hasOwnProperty.call(sv.levels, taskId) ? sv.levels[taskId] : null;
+    return !!lv && (lv.level === 'hide' || lv.level === 'down');
+  }
+
   // 자세히 적어 두면 좋을 할 일 — "무엇을 하면 끝인지" 가 제목만으로 안 보이는 일만.
   //   "샤워하기", "견적서 보내기" 처럼 행동이 분명한 일은 묻지 않는다.
   //   시각을 정해 둔 일(작업 시간 있음), 방금 적은 일(1시간 안)도 묻지 않는다.
@@ -139,10 +147,12 @@
     var last = String(t.title || '').trim().split(/\s+/).pop().replace(/(하기|하자|할 것|함|해야 함)$/, '');
     return ABSTRACT_RE.test(last) || (t.estimateMinutes != null && t.estimateMinutes >= 90);
   }
-  function elaborateCandidates(state, now) {
+  // sv: 현재 상태 보기(ST.view) | null — 숨김·내림 할 일은 뺀다
+  function elaborateCandidates(state, now, sv) {
     var n = now ? new Date(now) : new Date();
     return M.liveTasks(state).filter(function (t) {
       if (!isOpen(t)) return false;
+      if (setAside(sv, t.id)) return false;
       if ((t.steps || []).length || (t.memo || '').trim().length > 20) return false;
       if (t.breakdown && (t.breakdown.status === 'pending' || t.breakdown.status === 'later')) return false;
       if (t.elaboratedAt) return false;
@@ -154,10 +164,11 @@
     }).slice(0, 5);
   }
 
-  function pendingBreakdowns(state, now) {
+  function pendingBreakdowns(state, now, sv) {
     var t0 = (now ? new Date(now) : new Date()).toISOString();
     return M.liveTasks(state).filter(function (t) {
       if (!isOpen(t) || !t.breakdown) return false;
+      if (setAside(sv, t.id)) return false;
       if (t.breakdown.status === 'pending') return true;
       return t.breakdown.status === 'later' && t.breakdown.remindAfter && t.breakdown.remindAfter <= t0;
     }).sort(function (a, b) {
@@ -166,26 +177,29 @@
     });
   }
 
-  // 지금 할 만한 일이 없어 보이는가 — 진행 중인 일이 없고, 지금 시작할 수 있는 후보도 없을 때
-  function looksIdle(state, now) {
+  // 지금 할 만한 일이 없어 보이는가 — 진행 중인 일이 없고, 지금 시작할 수 있는 후보도 없을 때.
+  // 추천과 같은 근무 시간(prefs.workHours)·현재 상태(sv)로 판단한다.
+  function looksIdle(state, now, sv) {
     var live = M.liveTasks(state);
     if (live.some(function (t) { return t.status === 'in_progress'; })) return false;
-    var r = R.recommend(state, { now: now });
+    var r = R.recommend(state, { now: now, workHours: state.prefs && state.prefs.workHours, statusView: sv || null });
     return !r.primary;
   }
 
   // 지금 제안할 것. reason: 'completed'(할 일을 끝냄) | 'idle'(한동안 입력 없음) | 'open'(앱을 엶) | 'button'
+  // ctx: { now, reason, lastNudgeAt, lastCaptureAt, statusView } — statusView 는 아래 세 함수에 그대로 넘긴다
   // 반환: { type:'breakdown', taskId } | { type:'elaborate', candidates } | null
   function nextNudge(state, ctx) {
     ctx = ctx || {};
     var now = ctx.now ? new Date(ctx.now) : new Date();
+    var sv = ctx.statusView || null;
     if (ctx.reason !== 'button' && ctx.lastNudgeAt && (now - new Date(ctx.lastNudgeAt)) < NUDGE_GAP_MIN * 60000) return null;
     // 방금 무언가를 적었으면(10분 안) 먼저 묻지 않는다 — 적은 걸 바로 되묻는 건 흐름을 끊는다
     if (ctx.reason !== 'button' && ctx.lastCaptureAt && (now - new Date(ctx.lastCaptureAt)) < 10 * 60000) return null;
-    var pend = pendingBreakdowns(state, now);
+    var pend = pendingBreakdowns(state, now, sv);
     if (pend.length) return { type: 'breakdown', taskId: pend[0].id };
-    if (ctx.reason === 'idle' || ctx.reason === 'button' || looksIdle(state, now)) {
-      var c = elaborateCandidates(state, now);
+    if (ctx.reason === 'idle' || ctx.reason === 'button' || looksIdle(state, now, sv)) {
+      var c = elaborateCandidates(state, now, sv);
       if (c.length) return { type: 'elaborate', candidates: c.map(function (t) { return t.id; }) };
     }
     return null;

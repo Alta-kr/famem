@@ -3,6 +3,7 @@
 // 화면 쪽 상태 저장소.
 //  - 상태는 하나의 객체(state)이고, 변경은 반드시 store.mutate(label, fn) 로 한다.
 //  - mutate 는 바꾸기 전 상태를 기억해 두어 "되돌리기" 를 제공한다.
+//    단 prefs(화면 설정)·presence(현재 상태)·gcal(Google 동기화)는 되돌리지 않는다 — 스냅숏에도 넣지 않는다.
 //  - 저장은 잠깐 모아서(디바운스) 한 번에. 실패해도 메모리와 로컬 비상 사본에 남기고 재시도한다.
 //  - 저장 장소: Electron 이면 앱 데이터 폴더의 JSON 파일, 브라우저면 localStorage.
 
@@ -11,6 +12,14 @@
   var LS_KEY = 'daynote:data';
   var EMERGENCY_KEY = 'daynote:unsaved';
   var SAVE_DELAY = 400;
+  // 되돌리기가 건드리지 않는 최상위 키 — undo 뒤에도 '지금 값' 을 유지한다
+  var KEEP_ON_UNDO = ['prefs', 'presence', 'gcal'];
+
+  // 브라우저 미리보기에는 메인 프로세스가 없어서 Google 로그인·캘린더를 쓸 수 없다 — 같은 모양의 '쓸 수 없음' 응답을 준다
+  var G_UNAVAILABLE = { available: false, state: 'unavailable', signedIn: false, email: null, name: null, picture: null,
+    reason: 'Google 캘린더 연결은 데스크톱 앱에서만 쓸 수 있어요.' };
+  function gStatus() { return Object.assign({}, G_UNAVAILABLE); }
+  function gNo() { return Promise.resolve({ ok: false, error: { type: 'unavailable', message: G_UNAVAILABLE.reason, retryable: false }, status: gStatus() }); }
 
   var host = window.daynoteHost || {
     kind: 'browser',
@@ -46,7 +55,7 @@
     ai: {
       status: function () {
         if ((window.DAYNOTE_WEB_DEMO || /[?&]fakeai\b/.test(location.search))) return Promise.resolve({ configured: true, provider: 'fake', model: '가짜 AI(테스트)' });
-        return Promise.resolve({ configured: false, provider: null, reason: '브라우저 미리보기에서는 AI를 쓸 수 없습니다. 데스크톱 앱에서 GEMINI_API_KEY 또는 ANTHROPIC_API_KEY 를 설정해 주세요.' });
+        return Promise.resolve({ configured: false, provider: null, reason: '브라우저 미리보기에서는 AI를 연결할 수 없어요. 데스크톱 앱에서 키를 넣어 주세요.' });
       },
       organizeNote: function (input) {
         if (!(window.DAYNOTE_WEB_DEMO || /[?&]fakeai\b/.test(location.search))) return Promise.resolve({ ok: false, error: { type: 'not_configured', message: '브라우저 미리보기에서는 AI를 쓸 수 없습니다.', retryable: false } });
@@ -60,6 +69,14 @@
       clearKey: function () { return Promise.resolve({ ok: true }); },
       check: function () { return Promise.resolve((window.DAYNOTE_WEB_DEMO || /[?&]fakeai\b/.test(location.search)) ? { ok: true, ms: 500, model: '가짜 AI(테스트)' } : { ok: false, error: { message: '브라우저 미리보기에서는 AI를 쓸 수 없습니다.' } }); }
     },
+    google: {
+      status: function () { return Promise.resolve(gStatus()); },
+      setClient: gNo, clearClient: gNo, signIn: gNo,
+      cancelSignIn: function () { return Promise.resolve({ ok: true }); },
+      signOut: gNo,
+      onChanged: function () {}
+    },
+    gcal: { calendars: gNo, ensureExportCalendar: gNo, list: gNo, instances: gNo, push: gNo },
     onBeforeClose: function () {},
     flushed: function () {}
   };
@@ -75,6 +92,14 @@
   var readyQueue = [];
 
   function clone(o) { return JSON.parse(JSON.stringify(o)); }
+
+  // 되돌리기용 스냅숏 — KEEP_ON_UNDO 키는 빼고(null) 복제한다 (되돌리지 않는 값이고, gcal 은 커서 메모리도 아낀다)
+  function snapshot() {
+    var keep = {};
+    KEEP_ON_UNDO.forEach(function (k) { if (k in state) { keep[k] = state[k]; state[k] = null; } });
+    try { return clone(state); }
+    finally { Object.keys(keep).forEach(function (k) { state[k] = keep[k]; }); }
+  }
 
   function emit(info) { listeners.forEach(function (fn) { try { fn(info || {}); } catch (e) { console.error(e); } }); }
   function setStatus(p) {
@@ -144,7 +169,7 @@
     // label 이 있으면 되돌리기 대상이 된다. fn 의 반환값을 그대로 돌려준다.
     mutate: function (label, fn, opts) {
       opts = opts || {};
-      var before = label ? clone(state) : null;
+      var before = label ? snapshot() : null;
       var result = fn(state);
       if (label) {
         undoStack.push({ label: label, snapshot: before, at: Date.now() });
@@ -159,10 +184,15 @@
     undo: function () {
       var last = undoStack.pop();
       if (!last) return null;
-      // 화면 설정(prefs: 사이드바·모션 줄이기·홈 분할 비율 등)은 되돌리기 대상이 아니다 — 지금 값을 유지한다
-      var prefs = state.prefs;
+      // 화면 설정(prefs: 사이드바·모션 줄이기·홈 분할 비율 등), 현재 상태(presence), Google 동기화(gcal)는
+      // 되돌리기 대상이 아니다 — 지금 값(같은 객체)을 그대로 유지한다
+      var keep = {};
+      KEEP_ON_UNDO.forEach(function (k) { if (state[k] !== undefined) keep[k] = state[k]; });
       state = last.snapshot;
-      state.prefs = prefs;
+      KEEP_ON_UNDO.forEach(function (k) {
+        if (keep[k] !== undefined) state[k] = keep[k];
+        else if (state[k] === null) delete state[k];   // 스냅숏에서 비워 둔 자리 — 지금도 없으면 없는 대로
+      });
       scheduleSave();
       emit({ type: 'undo', label: last.label });
       return last.label;

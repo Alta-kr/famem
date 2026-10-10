@@ -12,6 +12,7 @@
 //   Suggestion    → 출처와 검토 상태, 수락하면 만들어진 Task 를 가리킨다
 //   HistoryEntry  → 발생 시각, 유형, 자동/직접, 원본 참조
 //   WeeklyReport  → 대상 주, 자동 초안(draft)과 사용자 편집본(body)을 따로 보관
+//   ExtItem       → Google 캘린더에서 가져온 일정(state.gcal.events)의 읽기 전용 투영 — 저장하지 않는다
 //
 // "지금 할 일 추천" 결과는 저장하지 않는다. recommend.js 가 매번 다시 계산하는 값이다.
 
@@ -20,7 +21,7 @@
   if (typeof module !== 'undefined' && module.exports) module.exports = api;
   if (typeof window !== 'undefined') { window.Daynote = window.Daynote || {}; window.Daynote.model = api; }
 })(function () {
-  var SCHEMA_VERSION = 3;   // 2: AI 층(aiRuns·proposals·noteDigests) · 3: 홈 채팅(chat), 수동 순서(sortOrder), 단계 초안(breakdown)
+  var SCHEMA_VERSION = 4;   // 2: AI 층(aiRuns·proposals·noteDigests) · 3: 홈 채팅(chat), 수동 순서(sortOrder), 단계 초안(breakdown) · 4: Google 캘린더(gcal, 되돌리기 제외) · 적응(learned) · 현재 상태(presence, 되돌리기 제외) · 할 일 맥락(context·atMode)
 
   var TASK_STATUS = { todo: '할 일', in_progress: '진행 중', waiting: '대기', done: '완료' };
   var PRIORITY = { high: '높음', normal: '보통', low: '낮음' };
@@ -50,11 +51,23 @@
       emailConnection: { status: 'disconnected', provider: null, lastSyncAt: null, error: null },
       quickDraft: { text: '', projectId: null },
       prefs: { sidebarCollapsed: false, reduceMotion: false },
-      meta: { createdAt: iso(), sampleLoaded: false }
+      meta: { createdAt: iso(), sampleLoaded: false },
+      // 현재 상태 — 같은 기기 안에서만 산다. 되돌리기(undo) 대상이 아니다 (store.js KEEP_ON_UNDO)
+      presence: { v: 1, activatedAt: null, current: null, shown: [], parked: [], log: [],
+                  hints: { day: null, used: 0, overtimeDismiss: 0, presetSeen: {}, presetOffered: {} } },
+      // 적응 — 사용자가 직접 고친 것에서 배운 규칙. 교정과 함께 되돌린다 (undo 대상)
+      learned: { v: 1, rules: [], metrics: { learned: 0, applied: 0, reverted: 0, hinted: 0 }, bootstrappedAt: null, compactedAt: null },
+      // Google 캘린더 동기화 — 가져온 일정·내보낸 링크·보낼 목록. 되돌리기 대상이 아니다. 토큰·비밀값은 절대 넣지 않는다
+      gcal: { v: 1, accountId: null, settings: { exportEnabled: true, exportWork: true, exportTitles: true },
+              calendars: [], exportCalendarId: null, events: [], links: {}, gens: {}, outbox: [],
+              backoffUntil: null, lastSyncAt: null, lastError: null }
     };
   }
 
+  function isPlainObject(x) { return !!x && typeof x === 'object' && !Array.isArray(x); }
+
   // 저장된 파일을 읽을 때 빠진 필드를 채운다. 모르는 필드는 버리지 않는다.
+  // 최상위 객체는 얕게 합치므로, 안쪽 기본값(presence.hints·learned.metrics·gcal.settings 등)은 아래에서 따로 채운다.
   function normalize(raw) {
     var s = emptyState();
     if (!raw || typeof raw !== 'object') return s;
@@ -64,13 +77,28 @@
       else if (s[k] && typeof s[k] === 'object') s[k] = Object.assign({}, s[k], raw[k]);
       else s[k] = raw[k];
     });
+    var E = emptyState();
+    // 객체가 아닌 값(문자열·배열 등 망가진 파일)이면 위의 얕은 병합이 글자 단위 키를 만들 수 있다 — 기본값으로 둔다
+    ['presence', 'learned', 'gcal'].forEach(function (k) { if (raw[k] !== undefined && !isPlainObject(raw[k])) s[k] = E[k]; });
+    // 현재 상태
+    if (!s.presence || typeof s.presence !== 'object') s.presence = E.presence;
+    ['shown', 'parked', 'log'].forEach(function (k) { if (!Array.isArray(s.presence[k])) s.presence[k] = []; });
+    s.presence.hints = Object.assign({}, E.presence.hints, isPlainObject(s.presence.hints) ? s.presence.hints : {});
+    // 적응
+    if (!Array.isArray(s.learned.rules)) s.learned.rules = [];
+    s.learned.metrics = Object.assign({}, E.learned.metrics, isPlainObject(s.learned.metrics) ? s.learned.metrics : {});
+    // Google 캘린더
+    s.gcal.settings = Object.assign({}, E.gcal.settings, isPlainObject(s.gcal.settings) ? s.gcal.settings : {});
+    ['calendars', 'events', 'outbox'].forEach(function (k) { if (!Array.isArray(s.gcal[k])) s.gcal[k] = []; });
+    ['links', 'gens'].forEach(function (k) { if (!isPlainObject(s.gcal[k])) s.gcal[k] = {}; });
     s.version = SCHEMA_VERSION;
     s.tasks = s.tasks.map(normalizeTask);
     return s;
   }
 
+  var TASK_NULLABLE = ['context', 'contextSource', 'atMode', 'atModeSource'];
   function normalizeTask(t) {
-    return Object.assign({
+    var r = Object.assign({
       id: uid('task'), title: '', memo: '', projectId: null, status: 'todo', priority: null,
       dueDate: null, dueTime: null,
       // 남은 예상 소요 시간(분). null 은 "미정" — 0분과 다르다.
@@ -81,9 +109,17 @@
       sortOrder: null,                    // 홈에서 끌어 놓아 정한 순서 (작을수록 위)
       breakdown: null,                    // AI 가 나눠 둔 단계 초안 { status: pending|later|accepted|dismissed, steps, ... }
       elaboratedAt: null,
+      // 할 일 맥락 (현재 상태 기능). 규칙·학습·프로젝트로 정한 맥락은 저장하지 않고 읽을 때 계산한다.
+      context: null,                      // null | 'work'|'home'|'errand'|'personal'|'family'|'study'|'u_…'
+      contextSource: null,                // null | 'user' | 'ai'  ('user' + context null = 사용자가 '정하지 않음'으로 고정)
+      atMode: null,                       // 걸어 둔 상태: null | 'work'|'off'|'out'|'pause'|'rest'
+      atModeSource: null,                 // null | 'user' | 'ai' | 'rule'
       createdAt: iso(), updatedAt: iso(), startedAt: null, completedAt: null, deletedAt: null, archivedAt: null,
       sample: false
     }, t);
+    // { context: undefined } 처럼 넘겨도 '없음'은 늘 null 이다 (저장했다 불러온 값과 같게)
+    TASK_NULLABLE.forEach(function (k) { if (r[k] === undefined) r[k] = null; });
+    return r;
   }
 
   // ------------------------------------------------------------------ 조회
@@ -168,8 +204,10 @@
     var p = Object.assign({
       id: uid('proj'), name: '새 프로젝트', description: '',
       color: PROJECT_COLORS[state.projects.length % PROJECT_COLORS.length],
+      context: null,                      // 소속 할 일의 기본 맥락 (사용자만 정한다). 옛 프로젝트는 p.context || null 로 읽는다
       createdAt: iso(now), deletedAt: null, sample: false
     }, fields);
+    p.context = (fields && fields.context) || null;
     state.projects.push(p);
     return p;
   }
@@ -186,6 +224,11 @@
     var t = byId(state.tasks, id);
     if (!t) return null;
     var p = Object.assign({}, patch);
+    // 제목이 바뀌면 AI 가 정한 맥락의 근거가 사라진다 — AI 맥락만 지운다 (사용자가 정한 값은 그대로)
+    if ('title' in p && p.title !== t.title && t.contextSource === 'ai' && !('contextSource' in p)) {
+      p.context = null;
+      p.contextSource = null;
+    }
     // 사용자가 소요 시간을 직접 고치면 더 이상 추정값이 아니다
     if ('estimateMinutes' in p && !('estimateSource' in p)) p.estimateSource = p.estimateMinutes == null ? null : 'user';
     Object.assign(t, p, { updatedAt: iso(now) });
@@ -328,14 +371,111 @@
     return b;
   }
 
-  // 주어진 구간과 겹치는 블록
-  function conflictsFor(state, startIso, endIso, ignoreId) {
-    return state.blocks.filter(function (b) {
+  // 삭제된 할 일의 작업 블록은 캘린더·충돌 계산에서 뺀다
+  function liveBlock(state, b) {
+    if (b.taskId) { var t = byId(state.tasks, b.taskId); if (t && t.deletedAt) return false; }
+    return true;
+  }
+
+  // 주어진 구간과 겹치는 블록 + 바쁜(busy) 종일 아닌 Google 일정.
+  // opts.blocksOnly === true 면 예전처럼 Daynote 블록만 본다.
+  function conflictsFor(state, startIso, endIso, ignoreId, opts) {
+    var out = state.blocks.filter(function (b) {
       if (b.id === ignoreId) return false;
-      if (b.taskId) { var t = byId(state.tasks, b.taskId); if (t && t.deletedAt) return false; }
+      if (!liveBlock(state, b)) return false;
       return b.start < endIso && b.end > startIso;
     });
+    if (opts && opts.blocksOnly) return out;
+    // 구간이 없거나 잘못되면 블록 쪽과 같이 겹치는 것이 없다 (경계 없는 externalItems 로 모든 일정을 돌려주지 않게)
+    if (isNaN(msOf(startIso)) || isNaN(msOf(endIso))) return out;
+    return out.concat(externalItems(state, startIso, endIso).filter(function (x) {
+      return x.busy && !x.allDay && x.id !== ignoreId;
+    }));
   }
+
+  // ------------------------------------------------------------------ 외부 캘린더(Google) 일정 — 읽기 전용 투영
+  // state.gcal.events(가져온 원본)를 화면·충돌 계산이 읽는 ExtItem 으로 바꾼다. 저장하지 않는 값이다.
+  // id 는 'g:캘린더|이벤트' 꼴이라 blocks 에는 없다 — M.byId(state.blocks, id) 가 null 이므로 기존 편집 경로가 자연히 무시한다.
+  //   ExtItem = { id, kind:'event', external:'google', readOnly:true, taskId:null,
+  //               title, start, end, allDay, startDate, endDate, busy, tentative,
+  //               calendarId, eventId, htmlLink, location, color, calendarName, origin, tz }
+  function msOf(x) {
+    if (x == null || x === '') return NaN;
+    return (x instanceof Date ? x : new Date(x)).getTime();
+  }
+
+  function calendarIndex(state) {
+    var map = {};
+    var cals = (state.gcal && Array.isArray(state.gcal.calendars)) ? state.gcal.calendars : [];
+    cals.forEach(function (c) { if (c && c.id) map[c.id] = c; });
+    return map;
+  }
+
+  function extItem(ev, cal) {
+    return {
+      id: ev.key || ('g:' + ev.calendarId + '|' + ev.eventId),
+      kind: 'event', external: 'google', readOnly: true, taskId: null,
+      title: ev.title || '(제목 없음)',
+      start: ev.start, end: ev.end, allDay: !!ev.allDay,
+      startDate: ev.startDate || null, endDate: ev.endDate || null,
+      busy: !!ev.busy,
+      // 참석 미정·응답 전인 일정도 바쁨으로 보되 점선으로 그린다
+      tentative: ev.status === 'tentative' || ev.response === 'tentative' || ev.response === 'needsAction',
+      calendarId: ev.calendarId || null, eventId: ev.eventId || null,
+      htmlLink: ev.htmlLink || null, location: ev.location || '',
+      color: (cal && cal.color) || null, calendarName: (cal && cal.summary) || '',
+      origin: ev.origin || 'google',
+      tz: ev.tz || null                   // 원래 시간대 (정보 팝오버의 시간대 안내용)
+    };
+  }
+
+  // 시작 시각 순, 같으면 id 사전순 (항상 같은 순서)
+  function byStartThenId(a, b) {
+    var sa = msOf(a.start), sb = msOf(b.start);
+    if (isNaN(sa)) sa = Infinity;
+    if (isNaN(sb)) sb = Infinity;
+    if (sa !== sb) return sa < sb ? -1 : 1;
+    return a.id < b.id ? -1 : a.id > b.id ? 1 : 0;
+  }
+
+  // 구간과 겹치는(end > from && start < to) Google 일정. from·to 를 빼면 그쪽 경계는 보지 않는다.
+  function externalItems(state, fromIso, toIso) {
+    var events = (state && state.gcal && Array.isArray(state.gcal.events)) ? state.gcal.events : [];
+    if (!events.length) return [];
+    var from = msOf(fromIso), to = msOf(toIso);
+    var cals = calendarIndex(state);
+    var out = [];
+    events.forEach(function (ev) {
+      if (!ev || typeof ev !== 'object' || ev.tombstone || ev.status === 'cancelled') return;
+      var s = msOf(ev.start), e = msOf(ev.end);
+      if (isNaN(s) || isNaN(e)) return;
+      if (!isNaN(from) && !(e > from)) return;
+      if (!isNaN(to) && !(s < to)) return;
+      out.push(extItem(ev, cals[ev.calendarId]));
+    });
+    return out.sort(byStartThenId);
+  }
+
+  // 캘린더·오늘 일정이 그리는 목록: Daynote 블록(삭제된 할 일의 블록 제외) + Google 일정, 시작 순.
+  // opts: { busyOnly?: Google 일정 중 바쁨만, includeAllDay?: 종일 일정 포함(기본 true) }
+  function calendarItems(state, fromIso, toIso, opts) {
+    opts = opts || {};
+    var from = msOf(fromIso), to = msOf(toIso);
+    var blocks = state.blocks.filter(function (b) {
+      if (!liveBlock(state, b)) return false;
+      if (!isNaN(from) && !(msOf(b.end) > from)) return false;
+      if (!isNaN(to) && !(msOf(b.start) < to)) return false;
+      return true;
+    });
+    var ext = externalItems(state, fromIso, toIso).filter(function (x) {
+      if (opts.includeAllDay === false && x.allDay) return false;
+      if (opts.busyOnly && !x.busy) return false;
+      return true;
+    });
+    return blocks.concat(ext).sort(byStartThenId);
+  }
+
+  function isExternal(item) { return !!(item && item.external); }
 
   // ------------------------------------------------------------------ 히스토리
   function addHistory(state, fields, now) {
@@ -435,6 +575,7 @@
 
   // ------------------------------------------------------------------ 샘플 데이터
   // 샘플 항목은 sample:true 로 표시된다. 지우면 사용자가 직접 만든 것은 그대로 남는다.
+  // 현재 상태(presence)와 Google 캘린더(gcal)는 건드리지 않는다. 샘플 글에서만 배운 규칙은 함께 지운다.
   function clearSample(state) {
     ['projects', 'notes', 'tasks', 'blocks', 'history', 'suggestions', 'emails', 'proposals'].forEach(function (k) {
       state[k] = state[k].filter(function (x) { return !x.sample; });
@@ -444,6 +585,9 @@
     state.notes.forEach(function (n) { alive[n.id] = true; });
     state.aiRuns = state.aiRuns.filter(function (r) { return alive[r.noteId]; });
     state.noteDigests = state.noteDigests.filter(function (d) { return alive[d.noteId]; });
+    if (state.learned && Array.isArray(state.learned.rules)) {
+      state.learned.rules = state.learned.rules.filter(function (r) { return !(r && r.sample); });
+    }
     if (state.emailConnection.provider === 'sample') {
       state.emailConnection = { status: 'disconnected', provider: null, lastSyncAt: null, error: null };
     }
@@ -462,6 +606,7 @@
     addTask: addTask, updateTask: updateTask, completeTask: completeTask, reopenTask: reopenTask,
     startTask: startTask, snoozeTask: snoozeTask, deleteTask: deleteTask,
     addBlock: addBlock, updateBlock: updateBlock, deleteBlock: deleteBlock, conflictsFor: conflictsFor,
+    externalItems: externalItems, calendarItems: calendarItems, isExternal: isExternal,
     liveCreated: liveCreated, liveCompleted: liveCompleted, liveUpdated: liveUpdated, captureHasResults: captureHasResults, revealSources: revealSources,
     addHistory: addHistory, updateHistory: updateHistory, deleteHistory: deleteHistory,
     mergeSuggestions: mergeSuggestions, acceptSuggestion: acceptSuggestion,
