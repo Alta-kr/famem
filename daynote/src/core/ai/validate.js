@@ -12,14 +12,17 @@
 //   status 'ok'      → 원문으로 검증된 값(또는 원문에 없어서 비어 있는 것이 맞는 값)
 //   status 'confirm' → value 는 비워 두고, 근거 있는 후보만 options 로 보여준다
 
+//  5. 맥락·걸어 둔 상태·상태 보고(capture.v7 K·L·M)와 배치 힌트(N): 목록에 없는 값, 원문에 근거가 없는 값은 버린다.
+
 (function (factory) {
-  var deps = (typeof module !== 'undefined' && module.exports)
-    ? { dates: require('../dates'), model: require('../model'), suggest: require('../suggest') }
-    : { dates: window.Daynote.dates, model: window.Daynote.model, suggest: window.Daynote.suggest };
-  var api = factory(deps.dates, deps.model, deps.suggest);
-  if (typeof module !== 'undefined' && module.exports) module.exports = api;
+  var node = typeof module !== 'undefined' && module.exports;
+  var deps = node
+    ? { dates: require('../dates'), model: require('../model'), suggest: require('../suggest'), status: require('../status') }
+    : { dates: window.Daynote.dates, model: window.Daynote.model, suggest: window.Daynote.suggest, status: window.Daynote.statusCore || null };
+  var api = factory(deps.dates, deps.model, deps.suggest, deps.status);
+  if (node) module.exports = api;
   if (typeof window !== 'undefined') { window.Daynote = window.Daynote || {}; window.Daynote.aiValidate = api; }
-})(function (D, M, SG) {
+})(function (D, M, SG, ST) {
   var norm = SG.normalizeText;
   var DATE_RE = /^\d{4}-\d{2}-\d{2}$/;
   var TIME_RE = /^([01]\d|2[0-3]):[0-5]\d$/;
@@ -91,27 +94,81 @@
     return out;
   }
 
+  // 시각 표현 하나와 그 위치 — "오후 3시", "15:30", "3시 반". '1시간' 의 '1시' 는 시각이 아니다.
+  //   → { text, index, candidates } | null  (candidates 는 timeCandidates 와 같은 규칙)
+  var TIME_AT_RE = /(오전|오후|아침|저녁|밤)?\s*(\d{1,2})\s*(?::\s*(\d{2})|시(?!간)(?:\s*(\d{1,2})\s*분|\s*(반))?)/;
+  function timeMatch(text) {
+    var s = String(text || '');
+    var m = s.match(/정오|자정/);
+    var t = s.match(TIME_AT_RE);
+    if (m && (!t || m.index < t.index)) return { text: m[0], index: m.index, candidates: m[0] === '정오' ? ['12:00'] : ['00:00'] };
+    if (!t) return null;
+    var cands = timeCandidates(t[0]);
+    if (!cands.length) return null;
+    var lead = t[0].length - t[0].replace(/^\s+/, '').length;
+    return { text: t[0].trim(), index: t.index + lead, candidates: cands };
+  }
+
   // "30분 후", "1시간 뒤", "한 시간 반 후", "반 시간 있다가" 같은 상대 시각 → 기준 시각에서 몇 분 뒤인지
+  //   → { minutes, text, index } | null
   var KNUM = { '한': 1, '두': 2, '세': 3, '네': 4, '다섯': 5, '여섯': 6 };
   function relativeMinutes(text) {
     var s = String(text || '');
     var m = s.match(/(\d+|한|두|세|네|다섯|여섯|반)\s*시간\s*(반)?\s*(?:(\d+)\s*분)?\s*(?:후|뒤|있다가|이따)/);
     if (m) {
       var h = m[1] === '반' ? 0.5 : (KNUM[m[1]] || +m[1]);
-      return Math.round(h * 60) + (m[2] ? 30 : 0) + (m[3] ? +m[3] : 0);
+      return { minutes: Math.round(h * 60) + (m[2] ? 30 : 0) + (m[3] ? +m[3] : 0), text: m[0], index: m.index };
     }
     m = s.match(/(\d+)\s*분\s*(?:후|뒤|있다가|이따)/);
-    if (m) return +m[1];
+    if (m) return { minutes: +m[1], text: m[0], index: m.index };
     return null;
   }
-  // 기준 시각 + 상대 시각 (5분 단위로 반올림)
+  // 기준 시각 + 상대 시각 (5분 단위로 반올림) → { date, time, text, index } | null
   function relativeAt(text, ref) {
-    var mins = relativeMinutes(text);
+    var r = relativeMinutes(text);
+    var mins = r ? r.minutes : null;
     if (mins == null || mins <= 0 || mins > 24 * 60) return null;
     var t = new Date(new Date(ref).getTime() + mins * 60000);
     t.setSeconds(0, 0);
     t.setMinutes(Math.round(t.getMinutes() / 5) * 5);
-    return { date: D.ymd(t), time: D.pad(t.getHours()) + ':' + D.pad(t.getMinutes()) };
+    return { date: D.ymd(t), time: D.pad(t.getHours()) + ':' + D.pad(t.getMinutes()), text: r.text, index: r.index };
+  }
+
+  // 길이 표현: "2시~4시"(시작 시각이 있을 때), "1시간", "1시간 30분", "30분간·30분 동안" → { minutes, text, index } | null
+  function durationSpan(text, startTime) {
+    var src = String(text || '');
+    var range = src.match(/(\d{1,2})\s*(?:시|:\d{2})?\s*[~\-–]\s*(\d{1,2})\s*시/);
+    if (range && startTime) {
+      var sh = +startTime.slice(0, 2), eh = +range[2];
+      if (eh <= 12 && sh >= 12) eh += 12;
+      if (eh > sh) {
+        var span = (eh - sh) * 60 - +startTime.slice(3);
+        if (span) return { minutes: span, text: range[0], index: range.index };
+      }
+    }
+    var len = src.match(/(\d+)\s*시간(?:\s*(\d+)\s*분)?|(\d+)\s*분\s*(?:간|동안)/);
+    if (len) {
+      var mins = len[1] ? (+len[1]) * 60 + (+(len[2] || 0)) : +len[3];
+      if (mins) return { minutes: mins, text: len[0], index: len.index };
+    }
+    return null;
+  }
+
+  // 글 안의 '걸리는 시간' 표현들 (배치 힌트 minutes 검증·가짜 AI 용) — dates.parseDuration 이 읽는 것만.
+  //   "30분 후"(상대 시각), "3시 30분"(시각) 은 길이가 아니다. → [{ minutes, text, index }]
+  var DUR_SCAN_RE = /(?:\d+(?:\.\d+)?|열한|열두|다섯|여섯|일곱|여덟|아홉|열|한|두|세|네)\s*시간(?:\s*반|\s*\d+\s*분)?|반\s*시간|\d+\s*분/g;
+  function durationMentions(text) {
+    var s = String(text || ''), out = [], m;
+    DUR_SCAN_RE.lastIndex = 0;
+    while ((m = DUR_SCAN_RE.exec(s))) {
+      var after = s.slice(m.index + m[0].length);
+      var before = s.slice(0, m.index);
+      if (/^\s*(?:후|뒤|있다가|이따|전)/.test(after)) continue;
+      if (/\d\s*시\s*$/.test(before) && /^\d/.test(m[0])) continue;
+      var p = D.parseDuration ? D.parseDuration(m[0]) : null;
+      if (p && p.ok) out.push({ minutes: p.minutes, text: m[0], index: m.index });
+    }
+    return out;
   }
 
   // 날짜 검증. required 이면(일정) 비어 있을 때도 확인 필요로 둔다.
@@ -163,15 +220,8 @@
   // 길이: 메모에 "2시~4시", "30분", "1시간" 이 있을 때만 검증된 값이다
   function checkDuration(ai, w, quote, startTime) {
     var src = [w.text || '', quote || ''].join(' ');
-    var range = src.match(/(\d{1,2})\s*(?:시|:\d{2})?\s*[~\-–]\s*(\d{1,2})\s*시/);
-    var span = null;
-    if (range && startTime) {
-      var sh = +startTime.slice(0, 2), eh = +range[2];
-      if (eh <= 12 && sh >= 12) eh += 12;
-      if (eh > sh) span = (eh - sh) * 60 - +startTime.slice(3);
-    }
-    var len = src.match(/(\d+)\s*시간(?:\s*(\d+)\s*분)?|(\d+)\s*분\s*(?:간|동안)/);
-    if (!span && len) span = len[1] ? (+len[1]) * 60 + (+(len[2] || 0)) : +len[3];
+    var ds = durationSpan(src, startTime);
+    var span = ds ? ds.minutes : null;
     var aiOk = typeof ai === 'number' && ai > 0 && ai <= 24 * 60 ? ai : null;
     if (span && aiOk === span) return field(span, 'ok');
     if (span) return field(null, 'confirm', '메모 기준 소요 시간과 AI 값이 다릅니다.', [opt('메모 기준', span)].concat(aiOk ? [opt('AI 제안', aiOk)] : []));
@@ -226,6 +276,49 @@
     return out.length >= 2 ? out : [];
   }
 
+  // ------------------------------------------------------------------ 맥락 · 걸어 둔 상태 · 상태 보고 · 배치 힌트 (capture.v7)
+  var DO_IN = ['work', 'off', 'out', 'pause', 'rest'];
+  var PRESENCE_ROLES = ['work_start', 'work_end', 'commute_in', 'commute_out', 'break', 'meal', 'out', 'field', 'meeting',
+    'focus', 'class', 'drive', 'exercise', 'day_off', 'sleep', 'none'];
+  var SCHED_ENUM = { focus: ['deep', 'light'], energy: ['high', 'low'], prefer: ['morning', 'afternoon', 'evening'] };
+
+  // 맥락 id 는 지금 설정의 맥락 목록에 있을 때만 (모르면 null — 업무로 단정하지 않는다)
+  function checkContext(v, contextIds) {
+    return typeof v === 'string' && contextIds && contextIds.indexOf(v) !== -1 ? v : null;
+  }
+  // 걸어 둔 상태: 근거 문장에 그 표현이 실제로 있을 때만 (지어내지 않는다)
+  function checkAtMode(doIn, quote) {
+    if (!ST || DO_IN.indexOf(doIn) === -1) return null;
+    if (ST.findAtMode(quote) !== doIn) return null;
+    return { mode: doIn, phrase: ST.atModePhrase(doIn) };
+  }
+  // 배치 힌트: 형식이 틀린 칸만 null. minutes 는 근거 문장에 같은 길이 표현이 있을 때만. 다섯 칸이 모두 null 이면 null
+  function checkSched(raw, quote, hasDoAt) {
+    if (!raw || typeof raw !== 'object') return null;
+    var out = { focus: null, energy: null, prefer: null, splittable: null, minutes: null };
+    Object.keys(SCHED_ENUM).forEach(function (k) { if (SCHED_ENUM[k].indexOf(raw[k]) !== -1) out[k] = raw[k]; });
+    if (hasDoAt) out.prefer = null;
+    if (typeof raw.splittable === 'boolean') out.splittable = raw.splittable;
+    var m = raw.minutes;
+    if (typeof m === 'number' && Math.floor(m) === m && m >= (D.DURATION_MIN || 5) && m <= (D.DURATION_MAX || 720)) {
+      var said = durationMentions(quote).some(function (x) { return x.minutes === m; });
+      if (said) out.minutes = m;
+    }
+    var any = Object.keys(out).some(function (k) { return out[k] != null; });
+    return any ? out : null;
+  }
+  // 상태 보고(presence): 역할이 목록에 있고 'none' 이 아니며 근거 문장이 원문에 있을 때만. 앱이 이미 상태 줄을 처리한 글은 버린다
+  function checkPresence(raw, lines, note) {
+    if (!raw || typeof raw !== 'object') return null;
+    if (note && note.capture && note.capture.statusLine) return null;
+    if (PRESENCE_ROLES.indexOf(raw.role) === -1 || raw.role === 'none') return null;
+    if (typeof raw.quote !== 'string') return null;
+    var quote = raw.quote.trim();
+    var line = locate(lines, quote, null);
+    if (line < 0) return null;
+    return { role: raw.role, quote: quote, line: line };
+  }
+
   // ------------------------------------------------------------------ 본체
   // ctx: { note, state, now }
   function validateOrganizeNote(out, ctx) {
@@ -238,7 +331,8 @@
       note: note, state: state,
       ref: new Date(note.updatedAt || ctx.now || Date.now()),
       fullNorm: norm(lines.join('\n')),
-      projects: M.liveProjects(state)
+      projects: M.liveProjects(state),
+      contextIds: ST ? ST.profile(state && state.prefs).contextIds : []
     };
     var items = [], dropped = [];
     var seenQuote = {};
@@ -278,11 +372,15 @@
           fields.atDate = field(rel ? rel.date : D.ymd(c.ref), 'ok');
         }
       }
+      var hasDoAt = !!(at && (at.text || at.time));
       items.push(Object.assign(b, {
         fields: fields,
         duplicateOf: dup ? { kind: 'task', id: dup.id, label: dup.title } : null,
         // 큰 할 일의 단계 초안 — 바로 적용하지 않고 할 일에 보관했다가 나중에 제안한다
-        extra: steps.length ? { size: 'large', breakdown: steps } : null
+        extra: steps.length ? { size: 'large', breakdown: steps } : null,
+        context: checkContext(raw.context, c.contextIds),
+        atMode: checkAtMode(raw.do_in, b.quote),
+        sched: checkSched(raw.sched, b.quote, hasDoAt)
       }));
     });
 
@@ -316,7 +414,7 @@
       openQuestions: out.open_questions.map(function (q) { return { text: q.text.trim(), line: q.line != null && lines[q.line] != null ? q.line : null }; }).filter(function (q) { return q.text; })
     };
 
-    return { ok: true, errors: [], items: items, dropped: dropped, digest: digest };
+    return { ok: true, errors: [], items: items, dropped: dropped, digest: digest, presence: checkPresence(out.presence, lines, note) };
   }
 
   // 기존 할 일의 날짜·시각을 바꾸라는 보고("견적서는 내일 보낼게")에 쓴다 — 새 항목과 같은 검증을 거친다.
@@ -339,6 +437,8 @@
 
   return {
     verifyWhen: verifyWhen,
+    relativeAt: relativeAt, relativeMinutes: relativeMinutes, timeMatch: timeMatch, durationSpan: durationSpan, durationMentions: durationMentions,
+    DO_IN: DO_IN, PRESENCE_ROLES: PRESENCE_ROLES,
     validateOrganizeNote: validateOrganizeNote, shapeErrors: shapeErrors, timeCandidates: timeCandidates, sanitizeSteps: sanitizeSteps,
     noteLines: noteLines, locate: locate, DATE_RE: DATE_RE, TIME_RE: TIME_RE
   };

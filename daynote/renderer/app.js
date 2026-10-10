@@ -54,8 +54,12 @@
   function renderNav() {
     var st = S.state;
     var n = now();
+    // 지금 상태에서 숨긴 할 일은 '오늘' 숫자에서 뺀다 (상태 기능을 쓰지 않으면 sv 는 null)
+    var sv = DN.status && DN.status.view ? DN.status.view(n) : null;
+    var SC = DN.statusCore;
     var counts = {
       today: M.liveTasks(st).filter(function (t) {
+        if (sv && SC && SC.isHidden && SC.isHidden(sv, t.id)) return false;
         return t.status !== 'done' && t.dueDate && D.dayDiff(n, D.parseYmd(t.dueDate)) <= 0;
       }).length,
       tasks: M.liveTasks(st).filter(function (t) { return t.status !== 'done'; }).length
@@ -283,13 +287,55 @@
   }
 
   // 입력 저장 — 원문은 바로 메모로 저장되고, AI 가 메모/할 일·프로젝트를 나눠 바로 반영한다 (capture.js)
+  // '/할일 …' 같은 명령어와 '퇴근' 같은 상태 보고도 여기서 가른다(홈 입력창의 assistant.send 와 같은 규칙, 결과는 알림으로).
+  // opts.silent 이면 알림을 띄우지 않는다.
   function saveQuick(text, projectId, opts) {
+    text = String(text || '');
+    var quiet = !!(opts && opts.silent);
+    function say(msg, o) { if (!quiet) ui.toast(msg, o); }
+    var see = { action: { label: '오늘에서 보기', fn: function () { go('today'); } } };
     if (!text.trim()) { ui.toast('내용을 입력해 주세요.'); return false; }
+    var p = DN.commands && DN.commands.parse ? DN.commands.parse(text)
+      : { command: null, kind: null, args: text.trim(), raw: text, token: null, unknown: null, escaped: false };
+    if (p.kind && !p.args) { ui.toast('‘' + p.token + '’ 뒤에 내용을 적어 주세요.'); return false; }
     S.mutate(null, function (s) { s.quickDraft = { text: '', projectId: null }; }, { source: 'today', silent: true });
-    var note = DN.capture.submit(text, projectId);
-    if (!(opts && opts.silent)) {
-      ui.toast('저장했어요. AI가 메모인지 할 일인지 나누는 중이에요.', { action: { label: '오늘에서 보기', fn: function () { go('today'); } } });
+    var AS = DN.assistant, SU = DN.status, note;
+    if (p.command === 'help') {
+      go('today');
+      if (AS && AS.postHelp) AS.postHelp();
+      return true;
     }
+    if (p.command === 'status') {
+      if (AS && AS.statusCommand) AS.statusCommand(p.args, { surface: 'toast' });
+      return true;
+    }
+    if (p.kind) {
+      note = DN.capture.submit(p.args, projectId, null, { command: p });
+      var kl = ui.KIND_LABEL[p.kind] || '메모';
+      say(ui.josa(kl, '로/으로') + ' 저장했어요.', see);
+      return note;
+    }
+    if (p.escaped) {
+      note = DN.capture.submit(p.args, projectId);
+      say('저장했어요. AI가 메모인지 할 일인지 나누는 중이에요.', see);
+      return note;
+    }
+    var d = (!p.unknown && SU && SU.detect) ? SU.detect(text) : null;
+    if (d && d.tier === 'sure' && d.pure && SU.apply) {
+      SU.apply(d, { source: 'text', surface: 'toast', text: text });
+      return true;
+    }
+    if (d && d.tier === 'sure' && SU.apply) {
+      SU.apply(d, { source: 'text', surface: 'toast', text: text, quiet: true });
+      note = DN.capture.submit(text, projectId, null, { statusLine: d.statusLine });
+      say('‘' + d.label + '’' + ui.josa(d.label, '로/으로').slice(d.label.length) + ' 바꾸고, 적은 글은 저장했어요.', see);
+      return note;
+    }
+    if (SU && SU.touch) SU.touch();
+    note = DN.capture.submit(text, projectId, null, { statusHint: d && d.tier === 'maybe' && SU.hintFor ? SU.hintFor(d) : null });
+    var u = p.unknown;
+    say('저장했어요. AI가 메모인지 할 일인지 나누는 중이에요.' +
+      (u ? ' · ‘/' + u + '’' + ui.josa(u, '는/은').slice(u.length) + ' 없는 명령어라 그대로 저장했어요' : ''), see);
     return note;
   }
 
@@ -303,7 +349,16 @@
     // '/' — 지금 화면의 입력창·검색 칸으로 (홈: 적어 두기, 보관함: 검색)
     if (e.key === '/' && !inField && !e.ctrlKey && !e.metaKey && !e.altKey) {
       var slash = els.view.querySelector('[data-slash]');
-      if (slash) { e.preventDefault(); slash.focus(); if (slash.select && slash.tagName === 'INPUT') slash.select(); }
+      if (slash) {
+        e.preventDefault();
+        slash.focus();
+        if (slash.tagName === 'TEXTAREA' && !slash.value) {
+          // 홈 입력창이 비어 있으면 '/' 를 넣어 명령어 목록을 연다
+          slash.value = '/';
+          try { slash.setSelectionRange(1, 1); } catch (err) {}
+          slash.dispatchEvent(new Event('input', { bubbles: true }));
+        } else if (slash.select && slash.tagName === 'INPUT') slash.select();
+      }
       return;
     }
     if ((e.ctrlKey || e.metaKey) && (e.key === 'z' || e.key === 'Z') && !inField) {
@@ -330,6 +385,7 @@
     window.addEventListener('resize', function () { if (els.shell) applyPrefs(); });
     // 미루기 만료·현재 시각 표시를 위해 1분마다 화면에 알린다
     setInterval(function () {
+      if (DN.status && DN.status.tick) { try { DN.status.tick(now()); } catch (e) { console.error(e); } }
       if (cur.handle && cur.handle.onTick) cur.handle.onTick(now());
       renderNav();
     }, 60 * 1000);

@@ -10,15 +10,23 @@
 //   - 같은 근거 문장의 초안은 같은 key → 새로 만들지 않는다 (수락·제외한 것도 그대로)
 //   - 사용자가 고친 초안은 덮어쓰지 않는다 (AI 새 버전은 aiUpdate 로 옆에 둔다)
 //   - 원문에서 근거 문장이 사라진 초안은 'stale' 로 표시한다 (지우지 않는다)
+//
+// 적응(adapt): 결과 카드에서 사용자가 직접 고친 것(종류·프로젝트·날짜)은 같은 mutate 안에서 규칙으로 배운다(learnFrom).
+//   확실한 규칙은 AI 결과 뒤(또는 AI 없이) applyLearned 로 적용하고 capture.learned 에 적는다. applyLearned 는 배우지 않는다.
+//   now 를 넘기지 않은 교정은 배우지 않는다(벽시계를 읽지 않는다).
+// 현재 상태(status): AI 가 고른 맥락·걸어 둔 상태를 할 일에 싣고(#태그는 사용자 값), 상태 보고는 제안 칩(statusHint)만 만든다.
 
 (function (factory) {
-  var deps = (typeof module !== 'undefined' && module.exports)
-    ? { dates: require('../dates'), model: require('../model'), suggest: require('../suggest'), validate: require('./validate') }
-    : { dates: window.Daynote.dates, model: window.Daynote.model, suggest: window.Daynote.suggest, validate: window.Daynote.aiValidate };
-  var api = factory(deps.dates, deps.model, deps.suggest, deps.validate);
-  if (typeof module !== 'undefined' && module.exports) module.exports = api;
+  var node = typeof module !== 'undefined' && module.exports;
+  var deps = node
+    ? { dates: require('../dates'), model: require('../model'), suggest: require('../suggest'), validate: require('./validate'),
+        adapt: require('../adapt'), status: require('../status') }
+    : { dates: window.Daynote.dates, model: window.Daynote.model, suggest: window.Daynote.suggest, validate: window.Daynote.aiValidate,
+        adapt: window.Daynote.adapt || null, status: window.Daynote.statusCore || null };
+  var api = factory(deps.dates, deps.model, deps.suggest, deps.validate, deps.adapt, deps.status);
+  if (node) module.exports = api;
   if (typeof window !== 'undefined') { window.Daynote = window.Daynote || {}; window.Daynote.aiProposals = api; }
-})(function (D, M, SG, V) {
+})(function (D, M, SG, V, AD, ST) {
   var norm = SG.normalizeText;
   var RAW_LIMIT = 60000;
 
@@ -112,6 +120,12 @@
         title: it.title, fields: it.fields, flags: it.flags, basis: it.basis,
         duplicateOf: it.duplicateOf, defaultChecked: it.defaultChecked, extra: it.extra || null
       };
+      // capture.v7: 맥락 · 걸어 둔 상태 · 배치 힌트 (검증을 통과한 값만, 할 일 초안에만)
+      if (it.kind === 'task') {
+        payload.context = it.context || null;
+        payload.atMode = it.atMode || null;
+        payload.sched = it.sched || null;
+      }
       var ex = state.proposals.filter(function (p) { return p.key === key; })[0];
       if (ex) {
         if (ex.status === 'accepted' || ex.status === 'dismissed') { stats.alreadyReviewed++; return; }
@@ -243,6 +257,41 @@
     return { start: s.toISOString(), end: D.addMinutes(s, values.durationMinutes).toISOString() };
   }
 
+  // 새 할 일에 맥락·걸어 둔 상태·배치 힌트를 싣는다 (STATUS §14, CAL §8.4)
+  //   맥락: 근거 문장의 #태그 → 사용자 값(제목에서 태그를 뗀다) > AI 값('ai')
+  //   걸어 둔 상태: AI 값('ai'). 제목 맨 앞에 표현이 남아 있으면 한 번 더 떼고, AI 값이 없으면 'rule'
+  //   배치 힌트: 사용자가 정한 힌트가 없을 때만 'ai'. 걸리는 시간은 예상 소요 시간이 비어 있을 때만
+  function applyTaskExtras(state, t, p, now) {
+    var pl = p.payload || {};
+    if (ST) {
+      var pf = ST.profile(state.prefs);
+      var tag = ST.extractContextTag(p.source && p.source.quote || '', pf) || ST.extractContextTag(t.title, pf);
+      if (tag) {
+        var inTitle = ST.extractContextTag(t.title, pf);
+        if (inTitle && inTitle.text) t.title = inTitle.text;
+        t.context = tag.ctx; t.contextSource = 'user';
+      } else if (pl.context) {
+        t.context = pl.context; t.contextSource = 'ai';
+      }
+      var ex = ST.extractAtMode(t.title);
+      if (ex) t.title = ex.title;
+      if (pl.atMode && pl.atMode.mode) { t.atMode = pl.atMode.mode; t.atModeSource = 'ai'; }
+      else if (ex) { t.atMode = ex.mode; t.atModeSource = 'rule'; }
+    }
+    applySched(t, pl.sched, now);
+  }
+  function applySched(t, sc, now) {
+    if (!sc) return false;
+    var changed = false;
+    if (!(t.schedHints && t.schedHints.source === 'user')) {
+      var h = { focus: sc.focus == null ? null : sc.focus, energy: sc.energy == null ? null : sc.energy,
+        prefer: sc.prefer == null ? null : sc.prefer, splittable: sc.splittable == null ? null : sc.splittable };
+      if (h.focus != null || h.energy != null || h.prefer != null || h.splittable != null) { t.schedHints = Object.assign(h, { source: 'ai', at: iso(now) }); changed = true; }
+    }
+    if (sc.minutes != null && t.estimateMinutes == null) { t.estimateMinutes = sc.minutes; t.estimateSource = 'ai'; changed = true; }
+    return changed;
+  }
+
   // 선택한 초안만 확정 데이터로 만든다. 하나라도 문제가 있으면 아무것도 바꾸지 않는다.
   // selections: [proposalId]  — 값은 proposal 의 사용자 수정 + 검증값(effective)
   function applySelections(state, ids, now) {
@@ -270,6 +319,7 @@
           projectId: v.projectId || null,
           sources: [src], origin: 'ai_accepted', proposalId: p.id, sample: !!p.sample
         }, now);
+        if (p.kind === 'task') applyTaskExtras(state, task, p, now);
         p.resultRef = { kind: 'task', id: task.id };
         created.push({ kind: 'task', id: task.id, title: task.title });
         // 시간 정한 할 일: 그 시각에 작업 시간(30분)을 잡아 오늘 일정에도 보이게. 할 일은 체크해야 끝난다.
@@ -423,7 +473,23 @@
       status: 'done', entryType: entryType, runId: args.run.id, doneAt: iso(now),
       created: created, skipped: skipped, completed: completed, updated: updated, projectByAi: !!(proj && !userProject), largeTasks: large
     });
+    // 상태 보고(AI): 제안 칩만 둔다. 상태는 바꾸지 않는다 (기능을 켰고 오늘 예산이 남았을 때만)
+    var hint = presenceHint(state, note, args.validated && args.validated.presence, now);
+    if (hint) note.capture.statusHint = hint;
     return note.capture;
+  }
+
+  function presenceHint(state, note, pr, now) {
+    if (!ST || !pr || !pr.role || pr.role === 'none') return null;
+    var c = note.capture || {};
+    if (c.statusLine || c.statusHint) return null;
+    var pf = ST.profile(state.prefs);
+    if (!ST.isActive(state, pf) || !ST.budgetOk(state, pf, now)) return null;
+    var at = new Date(now);
+    var r = ST.resolveRole(pr.role, {}, { profile: pf, eff: ST.effective(state, pf, at), current: ST.ensure(state).current, now: at });
+    if (!r || !r.id) return null;
+    ST.useBudget(state, pf, now);
+    return { from: 'ai', role: pr.role, id: r.id, label: r.label, quote: pr.quote, at: iso(now) };
   }
 
   // AI 가 "끝냈다" 고 한 할 일을 실제 열린 할 일에서 찾아 완료한다.
@@ -542,7 +608,8 @@
   // 바꾼 것은 사용자 결정이라 다음 AI 정리가 덮지 않는다 (kindByUser · changedByUser).
   // 할 일 ↔ 일정을 오가도 원래 값(마감·완료·단계·소요 시간·장소·길이)을 잃지 않게 바꾸기 전 값을 함께 둔다.
   var KINDS = { task: 1, event: 1, memo: 1, idea: 1, link: 1 };
-  var TASK_KEEP = ['dueDate', 'dueTime', 'memo', 'priority', 'estimateMinutes', 'estimateSource', 'steps', 'breakdown', 'blockedBy', 'waitingFor', 'snoozedUntil', 'proposalId', 'sortOrder', 'elaboratedAt'];
+  var TASK_KEEP = ['dueDate', 'dueTime', 'memo', 'priority', 'estimateMinutes', 'estimateSource', 'steps', 'breakdown', 'blockedBy', 'waitingFor', 'snoozedUntil', 'proposalId', 'sortOrder', 'elaboratedAt',
+    'context', 'contextSource', 'atMode', 'atModeSource', 'schedHints'];
 
   function hm(d) { return ('0' + d.getHours()).slice(-2) + ':' + ('0' + d.getMinutes()).slice(-2); }
   // 시각이 없으면 그날 9시, 오늘이면 다음 정시(자정을 넘기면 지금) — '시각 확인 필요' 로 표시한다
