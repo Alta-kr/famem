@@ -3,7 +3,7 @@
 // Daynote 메인 프로세스 — 창, 로컬 저장, 내보내기만 맡는다.
 // 업무 규칙은 src/core 에, 화면은 renderer 에 있다.
 
-const { app, BrowserWindow, ipcMain, dialog, clipboard, shell, safeStorage, nativeTheme, Tray, Menu, globalShortcut, nativeImage, screen } = require('electron');
+const { app, BrowserWindow, ipcMain, dialog, clipboard, shell, safeStorage, nativeTheme, Tray, Menu, globalShortcut, nativeImage, screen, net } = require('electron');
 const path = require('path');
 const fs = require('fs/promises');
 const fsSync = require('fs');
@@ -29,7 +29,12 @@ if (process.argv.includes('--shots') || (process.argv.includes('--smoke') && pro
 
 // 개발용 .env (GEMINI_API_KEY=...) — 환경변수가 이미 있으면 그대로 둔다
 const keystoreMod = require('./services/keystore');
-keystoreMod.loadDotEnv(__dirname);
+const dotenvKeys = [];
+keystoreMod.loadDotEnv(__dirname, dotenvKeys);
+const googleAuthMod = require('./services/google-auth');
+const gcalMod = require('./services/gcal');
+const envGoogleClient = googleAuthMod.captureEnvClient(process.env, dotenvKeys);   // ai.captureEnvKeys() 바로 옆
+let googleAuth = null, gcalSvc = null;
 
 let mainWindow = null;
 let quickWindow = null;
@@ -110,6 +115,33 @@ ipcMain.handle('ai:check', async () => {
   return r.ok ? { ok: true, ms: Date.now() - t0, model: r.model } : { ok: false, ms: Date.now() - t0, error: r.error };
 });
 
+// Google 캘린더 — 로그인·토큰은 services/google-auth, 일정 호출은 services/gcal. 화면에는 상태와 결과만 간다.
+const G_UNAVAILABLE = () => ({ available: false, state: 'unavailable', signedIn: false, email: null, name: null, picture: null,
+  reason: CHECK_RUN ? '검사 실행 중에는 Google 연결을 쓰지 않아요.' : '잠시 뒤 다시 시도해 주세요.' });
+const fromMain = (e) => !!mainWindow && e.sender === mainWindow.webContents;
+function gh(fn) {                       // 보낸 창 확인 + 미준비 + 예외 → 평범한 객체
+  return async (e, arg) => {
+    if (!fromMain(e)) return { ok: false, error: { type: 'forbidden', message: '허용되지 않은 요청이에요.', retryable: false } };
+    if (!googleAuth) return { ok: false, error: { type: 'unavailable', message: G_UNAVAILABLE().reason, retryable: false }, status: G_UNAVAILABLE() };
+    try { return await fn(arg || {}); }
+    catch (err) { return { ok: false, error: { type: 'unknown', message: googleAuthMod.redact(String((err && err.message) || err)), retryable: false } }; }
+  };
+}
+ipcMain.handle('google:status', (e) => {
+  if (!fromMain(e) || !googleAuth) return G_UNAVAILABLE();
+  try { return googleAuth.status(); } catch (_) { return G_UNAVAILABLE(); }
+});
+ipcMain.handle('google:setClient', gh((a) => googleAuth.setClient({ clientId: a.clientId, clientSecret: a.clientSecret, text: a.text })));
+ipcMain.handle('google:clearClient', gh(() => { googleAuth.clearClient(); return { ok: true, status: googleAuth.status() }; }));
+ipcMain.handle('google:signIn', gh((a) => googleAuth.signIn({ loginHint: a.loginHint || null })));
+ipcMain.handle('google:cancelSignIn', gh(() => googleAuth.cancelSignIn()));
+ipcMain.handle('google:signOut', gh(() => googleAuth.signOut()));
+ipcMain.handle('gcal:calendars', gh(() => gcalSvc.listCalendars()));
+ipcMain.handle('gcal:ensureExportCalendar', gh((a) => gcalSvc.ensureExportCalendar(a)));
+ipcMain.handle('gcal:list', gh((a) => gcalSvc.listEvents(a)));
+ipcMain.handle('gcal:instances', gh((a) => gcalSvc.listInstances(a)));
+ipcMain.handle('gcal:push', gh((ops) => gcalSvc.push(ops)));
+
 ipcMain.handle('clipboard:write', (_e, text) => { clipboard.writeText(String(text || '')); return true; });
 
 // 보고서·백업 내보내기 — 사용자가 고른 위치에만 쓴다
@@ -177,7 +209,7 @@ function createWindow() {
       setTimeout(async () => {
         const res = await mainWindow.webContents.executeJavaScript(`(function () {
           var D = window.Daynote || {};
-          var out = { core: !!(D.model && D.recommend && D.suggest && D.weekly), editor: typeof window.createEditor === 'function', views: Object.keys(D.views || {}).sort().join(','), title: document.title, rendered: !!document.querySelector('.sidebar') };
+          var out = { core: !!(D.model && D.recommend && D.suggest && D.weekly && D.slots && D.commands && D.adapt && D.statusCore && D.gcal && D.aiForced && D.planner), editor: typeof window.createEditor === 'function', views: Object.keys(D.views || {}).sort().join(','), title: document.title, rendered: !!document.querySelector('.sidebar') };
           ['notes', 'tasks', 'calendar', 'projects', 'weekly', 'inbox', 'settings', 'today'].forEach(function (v) { try { D.app.go(v); } catch (e) { out.fail = (out.fail || '') + v + ':' + e.message + ' '; } });
           // 다시 켰을 때 남아 있는지 보려고 메모를 하나 저장한다 (smoke 전용 프로필)
           out.notesAtStart = D.store.state.notes.length;
@@ -324,6 +356,14 @@ app.on('before-quit', () => { isQuitting = true; });
 app.whenReady().then(() => {
   keystore = keystoreMod.create(app.getPath('userData'), safeStorage);
   if (!CHECK_RUN) ai.setSavedKey(keystore.read());
+  if (!CHECK_RUN) {
+    const fetchFn = (u, init) => net.fetch(u, init);
+    googleAuth = googleAuthMod.create({ userDataDir: app.getPath('userData'), safeStorage, fetch: fetchFn,
+      openExternal: (u) => shell.openExternal(u), env: envGoogleClient,
+      onStatus: (st) => { if (mainWindow) mainWindow.webContents.send('google:changed', st); },
+      onFocusApp: showMain });
+    gcalSvc = gcalMod.create({ auth: googleAuth, fetch: fetchFn });
+  }
   createWindow();
   if (!CHECK_RUN) {
     try { createTray(); } catch (e) { console.log('tray failed: ' + e.message); tray = null; }

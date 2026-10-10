@@ -149,6 +149,23 @@
   }
 
   var MEMO_KINDS = { memo: 1, idea: 1, link: 1 };
+
+  // 빠른 입력 제목 다듬기 (데모가 실제 AI 처럼 짧은 제목을 주게): "2시~4시"·걸리는 시간 표현을 떼고,
+  //   시각은 다른 칸(일정 start · 할 일 do_at)에 담은 때만(withTime) 뗀다 — 정보를 잃지 않게. 다 떼고 비면 원래 제목.
+  function tidyTitle(title, withTime) {
+    var s = String(title || '');
+    s = s.replace(/(?:\d{1,2}\s*(?:시|:\d{2})?\s*)?[~\-–]\s*\d{1,2}\s*시(?!간)/, ' ');
+    var tm = V.timeMatch ? V.timeMatch(s) : null;
+    if (tm && withTime) {
+      s = s.slice(0, tm.index) + ' ' + s.slice(tm.index + tm.text.length).replace(/^\s*(?:에|부터|까지)(?=[\s,.]|$)/, '');
+    }
+    (V.durationMentions ? V.durationMentions(s) : []).reverse().forEach(function (d) {
+      var rest = s.slice(d.index + d.text.length).replace(/^\s*(?:간|동안)?\s*(?:정도\s*)?(?:걸리는|걸릴\s*듯|걸림|걸려요?|걸릴)?(?=[\s,.]|$)/, '');
+      s = s.slice(0, d.index) + ' ' + rest;
+    });
+    s = s.replace(/\s+/g, ' ').replace(/^[\s,.]+|[\s,.]+$/g, '').replace(/^(?:에|까지|부터)(?:\s+|$)/, '').trim();
+    return s || String(title || '');
+  }
   function classifyCapture(input, body, tasks, events, ref) {
     // 사용자가 전에 고친 방식 (데모가 '한 번 고치면 다음엔 그쪽으로' 를 보이게)
     var learned = input.learned || [];
@@ -206,6 +223,22 @@
         t.title = t.title.replace(REL, ' ').replace(/^\s*(오늘|내일)?\s*(일정에|할 일에|캘린더에)?\s*/, '').replace(/\s+/g, ' ').trim() || t.title;
         t.due = { text: null, date: null, time: null };
       }
+      // "내일 오후 3시 치과", "오후 3시에 보고서 쓰기" — 오전·오후가 분명한 시각이 (날짜 표현과 이어져) 있으면 할 시각으로 (규칙 G)
+      //   "까지" 가 붙은 시각(마감)·오전 오후를 모르는 시각·날짜와 떨어진 시각은 그대로 둔다(제목에도 남는다)
+      var timed = false;
+      if (!rm) {
+        var q = t.evidence && t.evidence.quote || '';
+        var tq = V.timeMatch ? V.timeMatch(q) : null;
+        if (tq && tq.candidates.length === 1 && !/^\s*까지/.test(q.slice(tq.index + tq.text.length))) {
+          var dt = t.due && t.due.text ? t.due : null;
+          var joined = dt ? dt.text + ' ' + tq.text : tq.text;
+          if (q.indexOf(joined) !== -1) {
+            t.do_at = { text: joined, date: dt ? dt.date : null, time: tq.candidates[0] };
+            t.due = { text: null, date: null, time: null };
+            timed = true;
+          }
+        }
+      }
       if (!t.project_hint) t.project_hint = ph;
       var large = LARGE_RE.test(t.title);
       t.size = large ? 'large' : 'small';
@@ -219,7 +252,9 @@
       t.context = null;
       var dm = V.durationMentions ? V.durationMentions(t.evidence && t.evidence.quote || '') : [];
       t.sched = { focus: null, energy: null, prefer: null, splittable: null, minutes: dm.length ? dm[0].minutes : null };
+      t.title = tidyTitle(t.title, timed);
     });
+    events.forEach(function (e) { e.title = tidyTitle(e.title, true); });
     // 완료 보고: "샤워 완료", "견적서 보냈음" — 열린 할 일 제목과 핵심 낱말(2자 이상)이 겹치면 그 일
     var DONE_RE = /(완료|끝냈|끝났|끝남|다 했|다했|했음|마쳤|보냈음|보냈다|제출함)/;
     var done = [];

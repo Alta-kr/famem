@@ -1,1 +1,69 @@
-/* placeholder — owned by W2-gcal */
+/* Google 캘린더 — 설정 카드(.gcal-*)와 Google 일정 정보 팝오버(.ext-pop). 새 색 토큰 없이 기존 토큰만 쓴다.
+   캘린더 색은 데이터 값이라 요소에 --gc 로만 넣는다 (el.style.setProperty). */
+
+/* ---------------------------------------------------------------- 설정 카드 */
+.gcal-card { min-width: 0; }
+.gcal-card .help { overflow-wrap: anywhere; }
+.gcal-actions { display: flex; flex-wrap: wrap; gap: 8px; align-items: center; margin-top: 8px; }
+.gcal-alert { margin: 8px 0; }
+.gcal-alert .gcal-actions { margin-top: 6px; }
+.gcal-group { margin-top: 4px; }
+.gcal-setup .help { margin: 6px 0; }
+.gcal-form { display: flex; flex-direction: column; gap: 10px; margin-top: 10px; max-width: 520px; }
+.gcal-form .input { width: 100%; min-width: 0; }
+.gcal-form .link-btn { align-self: flex-start; }
+.gcal-json { font-family: var(--mono); font-size: 12px; resize: vertical; min-height: 96px; }
+
+.gcal-account { display: flex; gap: 10px; align-items: center; margin: 6px 0 4px; min-width: 0; }
+.gcal-account-text { display: flex; flex-direction: column; min-width: 0; }
+.gcal-account-text > * { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.gcal-avatar { width: 32px; height: 32px; border-radius: 50%; flex: 0 0 32px; object-fit: cover; }
+.gcal-avatar.is-letter { display: inline-flex; align-items: center; justify-content: center; background: var(--primary-soft);
+  color: var(--primary-ink); font-weight: 600; font-size: 14px; }
+
+.gcal-cal-list { list-style: none; margin: 4px 0 0; padding: 0; display: flex; flex-direction: column; gap: 2px; }
+.gcal-cal .check-row { padding: 5px 0; min-width: 0; }
+.gcal-cal.is-disabled .check-row { color: var(--text-tertiary); }
+.gcal-cal-name { min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; flex: 0 1 auto; }
+.gcal-dot { width: 10px; height: 10px; border-radius: 50%; flex: 0 0 10px; background: var(--gc, var(--text-tertiary)); }
+.gcal-sub-rows { display: flex; flex-direction: column; gap: 6px; margin: 6px 0 2px 26px; }
+.gcal-card > .check-row, .gcal-group > .check-row { padding: 4px 0; }
+.gcal-sync-line { margin-top: 2px; }
+.gcal-scope { margin-top: 12px; line-height: 1.6; }
+.gcal-adv .gcal-actions { margin: 4px 0 6px; }
+
+.gcal-steps { margin: 0; padding-left: 20px; display: flex; flex-direction: column; gap: 8px; font-size: 14px; line-height: 1.55; }
+.gcal-steps li b { display: block; }
+.gcal-steps li span { color: var(--text-secondary); }
+
+/* ---------------------------------------------------------------- 정보 팝오버 */
+.menu.ext-pop { width: 320px; max-width: calc(100vw - 16px); padding: 12px 14px 10px; }
+.ext-pop-anchor { position: fixed; top: 25vh; left: 50%; width: 0; height: 0; pointer-events: none; }
+.ext-pop-body { display: flex; flex-direction: column; gap: 6px; min-width: 0; }
+.ext-pop-kicker { font-size: 12px; color: var(--text-tertiary); font-weight: 500; }
+.ext-pop-title { font-size: 15px; font-weight: 600; color: var(--text-primary); overflow-wrap: anywhere; line-height: 1.4; }
+.ext-pop-row { display: flex; gap: 8px; align-items: center; font-size: 13px; color: var(--text-secondary); min-width: 0; }
+.ext-pop-row > span { min-width: 0; overflow-wrap: anywhere; }
+.ext-pop-row svg { width: 14px; height: 14px; flex: 0 0 14px; color: var(--text-tertiary); }
+.ext-pop-row .gcal-dot { margin: 0 2px; }
+.ext-pop-row.is-muted { color: var(--text-tertiary); }
+.ext-pop-note { margin: 2px 0 0; font-size: 12px; color: var(--text-tertiary); line-height: 1.5; }
+.ext-pop-actions { display: flex; gap: 6px; justify-content: flex-end; margin-top: 4px; flex-wrap: wrap; }
+/* .menu button 의 메뉴 줄 모양을 덮어 진짜 버튼처럼 */
+.menu.ext-pop .ext-pop-actions button { width: auto; display: inline-flex; align-items: center; gap: 6px; padding: 6px 12px; font-size: 13px;
+  border: 1px solid var(--border-control); background: var(--surface); color: var(--text-primary); border-radius: var(--r-control); }
+.menu.ext-pop .ext-pop-actions button:hover { background: var(--surface-hover); }
+.menu.ext-pop .ext-pop-actions button:focus-visible { outline: none; box-shadow: 0 0 0 3px var(--focus-ring); }
+.menu.ext-pop .ext-pop-actions button.ext-open { background: var(--primary-fill); border-color: var(--primary-fill); color: var(--on-primary); }
+.menu.ext-pop .ext-pop-actions button.ext-open:hover { background: var(--primary-fill-hover); }
+.menu.ext-pop .ext-pop-actions button.ext-open svg { color: currentColor; width: 14px; height: 14px; }
+
+/* ---------------------------------------------------------------- 폰 */
+@media (max-width: 640px) {
+  .gcal-form { max-width: none; }
+  .gcal-actions .btn { min-height: 40px; }
+  .gcal-cal .check-row { min-height: 40px; }
+  .gcal-sub-rows { margin-left: 18px; }
+  .menu.ext-pop { width: calc(100vw - 16px); }
+  .menu.ext-pop .ext-pop-actions button { min-height: 40px; }
+}

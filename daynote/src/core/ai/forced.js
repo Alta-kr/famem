@@ -128,7 +128,13 @@
         }
       }
     } else if (due) { out.dueDate = due.dueDate; used.push(dueRange); }
-    out.title = clip(cut(line, used) || fallback);
+    var title = cut(line, used);
+    // 날짜·시각을 뗀 뒤 맨 앞에 남은 걸어 둔 상태 말('내일 퇴근하고 우유 사기')도 뗀다
+    if (!atMode && ST && title) {
+      var ex2 = ST.extractAtMode(title);
+      if (ex2) { out.atMode = { mode: ex2.mode, phrase: ex2.phrase }; title = ex2.title; }
+    }
+    out.title = clip(title || fallback);
     return out;
   }
 
@@ -220,8 +226,16 @@
 
     if (kind === 'task' && item && ref.kind === 'task') {
       var t = item, patch = {};
+      var titleEx = null;
       if (ai) {
         var title = okv(af, 'title');
+        // AI 가 제목에 #태그·맨 앞의 걸어 둔 상태 말을 남겼으면 뗀다 (만들 때 rulesItem 이 뗀 것과 같게)
+        if (title !== undefined && ST) {
+          var tg = ST.extractContextTag(title, ST.profile(state.prefs));
+          if (tg && tg.text) title = tg.text;
+          titleEx = ai.kind === 'task' ? ST.extractAtMode(title) : null;
+          if (titleEx) title = titleEx.title;
+        }
         if (title !== undefined && t.title === base.title && title !== t.title) { patch.title = title; mark('title'); }
         if (ai.kind === 'task') {
           var dd = okv(af, 'dueDate'), dt = okv(af, 'dueTime');
@@ -239,6 +253,7 @@
         if (ai.kind === 'task') {
           if (ai.context && t.context == null && t.contextSource !== 'user') { t.context = ai.context; t.contextSource = 'ai'; }
           if (ai.atMode && ai.atMode.mode && t.atMode == null) { t.atMode = ai.atMode.mode; t.atModeSource = 'ai'; }
+          else if (titleEx && patch.title && t.atMode == null) { t.atMode = titleEx.mode; t.atModeSource = 'rule'; }
           applySched(t, ai.sched, now);
           // 큰 일: 단계 초안을 보관만 한다
           var ex = ai.extra;

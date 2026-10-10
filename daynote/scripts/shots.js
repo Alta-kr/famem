@@ -127,7 +127,22 @@ const STEPS = [
   ['16-작은창-1280x800', `
     Daynote.store.mutate(null, s => { s.prefs.theme = 'light'; }, { silent: true });
     Daynote.app.applyPrefs();
-    Daynote.app.go('today');`, { width: 1280, height: 800 }]
+    Daynote.app.go('today');`, { width: 1280, height: 800 }],
+  // 17 — 상태 선언('퇴근')을 채팅에 보낸 뒤의 홈 (STATUS #160). 샘플 데이터를 다시 불러와 같은 모습으로 찍는다.
+  ['17-퇴근후-홈', `
+    document.querySelectorAll('.overlay').forEach(o => o.remove());
+    clearToasts();
+    Daynote.app.loadSample();
+    Daynote.app.go('today');
+    new Promise(r => setTimeout(r, 300)).then(() => {
+      if (Daynote.assistant && Daynote.assistant.send) Daynote.assistant.send('퇴근');
+      return new Promise(r => setTimeout(r, 700));
+    }).then(clearToasts);`, { width: 1440, height: 900 }],
+  // 18 — 캘린더 월간 보기 (CAL §8)
+  ['18-캘린더-월간', `
+    Daynote.app.loadSample();
+    Daynote.app.go('calendar');
+    new Promise(r => setTimeout(r, 300)).then(clearToasts);`]
 ];
 
 // 모든 단계 앞에 붙는 도우미: 알림 지우기

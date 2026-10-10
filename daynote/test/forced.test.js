@@ -437,6 +437,31 @@ test('다듬기: AI 맥락·걸어 둔 상태는 빈칸일 때만, 사용자 #�
   assert.deepEqual([t2.context, t2.contextSource], ['home', 'user']);
 });
 
+test('규칙: 날짜를 뗀 뒤 맨 앞에 남은 걸어 둔 상태 말도 뗀다 (‘내일 퇴근하고 우유 사기’)', () => {
+  const r = F.rulesItem('내일 퇴근하고 우유 사기', 'task', NOW);
+  assert.equal(r.title, '우유 사기');
+  assert.equal(r.dueDate, '2026-10-06');
+  assert.deepEqual(r.atMode, { mode: 'off', phrase: '퇴근하고' });
+  // 일정은 걸어 둔 상태를 보지 않는다
+  assert.equal(F.rulesItem('내일 퇴근하고 저녁 약속', 'event', NOW).atMode, undefined);
+});
+
+test('다듬기: AI 제목에 남은 #태그·걸어 둔 상태 말은 떼고 쓴다', () => {
+  const st = setup();
+  const note = forced(st, '우유 사기', 'task');
+  const t = taskOf(st, note);
+  refine(st, note, out({ tasks: [aiTask('퇴근하고 #장보기 우유 사오기', '우유 사기', 1)] }));
+  assert.equal(t.title, '우유 사오기');
+  assert.deepEqual([t.atMode, t.atModeSource], ['off', 'rule']);
+  assert.ok(note.capture.command.refined.includes('title'));
+  // 이미 걸어 둔 상태가 있으면 그대로 (제목만 다듬는다)
+  const note2 = forced(st, '가는 길에 택배 부치기', 'task');
+  const t2 = taskOf(st, note2);
+  refine(st, note2, out({ tasks: [aiTask('퇴근하고 택배 보내기', '가는 길에 택배 부치기', 1)] }));
+  assert.equal(t2.title, '택배 보내기');
+  assert.deepEqual([t2.atMode, t2.atModeSource], ['out', 'rule']);
+});
+
 test('pickAiItem: 할 일·일정이 정확히 하나일 때만', () => {
   assert.equal(F.pickAiItem({ items: [] }), null);
   assert.equal(F.pickAiItem({ items: [{ kind: 'task' }, { kind: 'event' }] }), null);
