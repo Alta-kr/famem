@@ -908,7 +908,7 @@
     pushCapped(S.est.seenR, task.id, STATS.SEEN_MAX);
     var hi = act.how === 'started' ? STATS.STARTED_CLAMP : STATS.SAMPLE_CLAMP[1];
     var ratio = Math.min(hi, Math.max(STATS.SAMPLE_CLAMP[0], act.minutes / est));
-    var item = [Math.round(Math.log(ratio) * 1e4) / 1e4, doneMs];
+    var item = [Math.round(Math.log(ratio) * 1e4) / 1e4, doneMs, task.id];
     pushCapped(S.est.ratios, item, STATS.EST_MAX);
     if (task.projectId) pushKeyed(S.est.byProject, String(task.projectId), item.slice());
     if (task.context) pushKeyed(S.est.byContext, String(task.context), item.slice());
@@ -917,7 +917,7 @@
   }
 
   // 완료를 취소할 때 부른다 (reopenTask 바로 앞, completedAt 이 남아 있을 때). observeDone 이 남긴 시각·비율 하나를 뺀다.
-  // 기록에는 할 일 id 가 없으므로 완료 시각(ms)으로 찾는다. → { hours: bool, ratio: bool } | null
+  // 비율 기록은 할 일 id 로 찾고, id 가 없는 예전 기록만 완료 시각(ms)으로 찾는다. → { hours: bool, ratio: bool } | null
   function unobserveDone(state, taskOrId, now) {
     var nowMs = toMs(now);
     if (!state || !state.learned || !isObj(state.learned.stats) || !isFinite(nowMs)) return null;
@@ -926,7 +926,9 @@
     var doneMs = toMs(task.completedAt);
     var S = ensureStats(state), out = { hours: false, ratio: false };
     function drop(list) {
-      for (var i = list.length - 1; i >= 0; i--) if (list[i][1] === doneMs) { list.splice(i, 1); return true; }
+      var i;
+      for (i = list.length - 1; i >= 0; i--) if (list[i][2] === task.id) { list.splice(i, 1); return true; }
+      for (i = list.length - 1; i >= 0; i--) if (list[i][2] == null && list[i][1] === doneMs) { list.splice(i, 1); return true; }
       return false;
     }
     var hi = S.est.seen.indexOf(task.id);

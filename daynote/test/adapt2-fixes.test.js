@@ -214,3 +214,21 @@ test('10. statsSummary: 새벽 1–5시는 ‘새벽’ 으로 쓴다', () => {
   seed(t, 20, 1, { doneAt: () => L(5, 4, 30) });
   assert.match(AD.statsSummary(t, NOW).hours, /^할 일은 주로 새벽 4시–오전 6시에/);
 });
+
+test('8. unobserveDone: 같은 시각에 끝낸 두 일 중 취소한 일의 비율만 뺀다 (할 일 id 로 찾는다)', () => {
+  const s = fresh();
+  const done = plus(NOW, -1);
+  const mk = (title, ratio) => {
+    const t = M.addTask(s, { title, estimateMinutes: 30, startedAt: plus(done, -30 * ratio).toISOString() }, plus(done, -120));
+    M.completeTask(s, t.id, done);
+    AD.observeDone(s, t, done);
+    return t;
+  };
+  const a = mk('a', 1);
+  mk('b', 2);
+  assert.equal(s.learned.stats.est.ratios.length, 2);
+  AD.unobserveDone(s, a.id, NOW);
+  const left = s.learned.stats.est.ratios;
+  assert.equal(left.length, 1);
+  assert.ok(Math.abs(left[0][0] - Math.log(2)) < 0.01, '남은 표본은 b(2배)');
+});
