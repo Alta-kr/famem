@@ -722,7 +722,8 @@
     var task = taskOf(state, taskId);
     if (!task || task.status === 'done') return null;
     var o = {};
-    Object.keys(opts).forEach(function (k) { if (k !== 'minutes') o[k] = opts[k]; });
+    // 조각 길이(L)는 이미 정한 길이라 다시 보정하지 않는다 (adaptMinutes 를 넘기지 않음)
+    Object.keys(opts).forEach(function (k) { if (k !== 'minutes' && k !== 'adaptMinutes') o[k] = opts[k]; });
     var len = lengthOf(state, task, opts);
     if (!len) return null;
     var h = hintsOf(task);

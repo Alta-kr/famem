@@ -143,7 +143,9 @@
     var T = ctx.availableMinutes;
     var est = t.estimateMinutes;
     var nextName = cal.next ? '‘' + blockTitle(state, cal.next) + '’' : '';
-    var timeLead = ctx.source === 'user' || ctx.source === 'status'
+    var timeLead = ctx.source === 'status' && ctx.capped
+      ? '‘' + ctx.capLabel + '’일 때는 ' + D.duration(T) + '까지만 보고'
+      : ctx.source === 'user' || ctx.source === 'status'
       ? '지금 쓸 수 있는 시간이 ' + D.duration(T) + '이고'
       : ctx.source === 'calendar' && ctx.until === 'work_end' ? '근무 종료(' + ctx.workHours.end + ')까지 ' + D.duration(T) + '이 있고'
       : ctx.source === 'calendar' ? '다음 일정 ' + nextName + '까지 ' + D.duration(T) + '이 있고' : '';
@@ -186,6 +188,8 @@
 
   function tooLongOrder(a, b) { return a.urgency - b.urgency || a.prio - b.prio || a.slack - b.slack; }
 
+  function statusName(sv) { return sv.overlay && sv.overlay.label ? sv.overlay.label : sv.label; }
+
   // 결과에 돌려주는 상태 요약 (화면이 '지금: 퇴근 · 내 시간' 같은 줄을 그릴 때 쓴다)
   function statusSummary(sv) {
     return { id: sv.id || null, label: sv.label || '', guessed: !!sv.guessed, category: sv.category || null, overlay: sv.overlay || null };
@@ -216,7 +220,11 @@
     if (userT != null && userT > 0) ctx = { availableMinutes: userT, source: 'user' };
     else if (quiet) ctx = { availableMinutes: null, source: 'none' };
     // 덧씌움이 1분도 안 남았으면(remainMinutes 0) 남은 시간으로 고르지 않는다 — "0분 안에" 같은 결과가 나오지 않게 캘린더 규칙으로 간다
-    else if (sv && typeof sv.remainMinutes === 'number' && sv.remainMinutes > 0) ctx = { availableMinutes: sv.remainMinutes, source: 'status', until: 'status_end' };
+    // remainCapped: 남은 시간이 아니라 상태의 추천 최대 분(recMax)이 정한 값 — 이유 문장이 '남은 시간'이라고 하지 않는다
+    else if (sv && typeof sv.remainMinutes === 'number' && sv.remainMinutes > 0) {
+      ctx = { availableMinutes: sv.remainMinutes, source: 'status', until: 'status_end' };
+      if (sv.remainCapped) { ctx.capped = true; ctx.capLabel = statusName(sv); }
+    }
     else if (!cal.busyWith && !offHours && cal.minutesToNext != null) {
       var toEnd = capEnd && capEnd.getTime() > now.getTime() ? D.minutesBetween(now, capEnd) : null;
       ctx = toEnd != null && cal.minutesToNext > toEnd
@@ -288,8 +296,9 @@
         item.ctx = (lv && lv.ctx) || null;
         if (lv && lv.sentence) addStatusReason(item, lv.sentence);
         else if (ctx.source === 'status' && (fit.fit === 'fits' || fit.fit === 'step_fits')) {
-          var name = sv.overlay && sv.overlay.label ? sv.overlay.label : sv.label;
-          addStatusReason(item, '‘' + name + '’ 남은 시간(' + ctx.availableMinutes + '분) 안에 끝나는 일을 골랐어요.');
+          addStatusReason(item, ctx.capped
+            ? '‘' + ctx.capLabel + '’일 때는 ' + ctx.availableMinutes + '분 안에 끝나는 일만 골랐어요.'
+            : '‘' + statusName(sv) + '’ 남은 시간(' + ctx.availableMinutes + '분) 안에 끝나는 일을 골랐어요.');
         }
       }
       if (fit.fit === 'too_long') tooLong.push(item); else ranked.push(item);

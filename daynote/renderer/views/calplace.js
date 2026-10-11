@@ -179,13 +179,16 @@
     if (!t || t.status === 'done') { ui.toast('이미 끝낸 일이에요.'); return Promise.resolve(false); }
     if (ymd < D.ymd(now())) { ui.toast('지난 날짜에는 넣을 수 없어요.'); return Promise.resolve(false); }
     if (!PL()) { A().scheduleTask(taskId, { start: D.parseYmd(ymd, '09:00') }); return Promise.resolve(false); }
+    // adapt: 길이를 사용자가 고르지 않고 lengthFor(남은 분·예상)로 잡았으면 planner 가 소요 시간 비율로 보정한다
+    var fromLength = opts.minutes == null;
     var minutes = opts.minutes != null ? opts.minutes : lengthFor(t);
-    var ask = minutes == null ? askDuration(anchorFor(anchorEl, ymd), t) : Promise.resolve({ minutes: minutes, save: !!opts.save });
+    var ask = minutes == null ? askDuration(anchorFor(anchorEl, ymd), t)
+      : Promise.resolve({ minutes: minutes, save: !!opts.save, adapt: fromLength || undefined });
     return ask.then(function (d) {
       if (!d) return false;
       t = liveTask(taskId);
       if (!t || t.status === 'done') { ui.toast('이미 끝낸 일이에요.'); return false; }
-      var r = PL().placeOnDay(S.state, t.id, ymd, planOpts({ minutes: d.minutes }));
+      var r = PL().placeOnDay(S.state, t.id, ymd, planOpts({ minutes: d.minutes, adaptMinutes: d.adapt }));
       if (r.ok) { commitBlock(t, r.block, { minutes: d.minutes, save: d.save, other: true }); return true; }
       if (r.reason === 'after_due') afterDuePopover(t, ymd, r, anchorFor(anchorEl, ymd), d);
       else failPopover(t, ymd, r, anchorFor(anchorEl, ymd), d);
@@ -195,7 +198,7 @@
 
   // 가까운 날(또는 마감 전 날)로 다시 계산해 넣는다
   function placeAlt(t, alt, d, allowAfterDue) {
-    var r = PL().placeOnDay(S.state, t.id, alt.ymd, planOpts({ minutes: d.minutes, allowAfterDue: allowAfterDue || undefined }));
+    var r = PL().placeOnDay(S.state, t.id, alt.ymd, planOpts({ minutes: d.minutes, adaptMinutes: d.adapt, allowAfterDue: allowAfterDue || undefined }));
     if (r.ok) commitBlock(t, r.block, { minutes: d.minutes, save: d.save, other: true });
     else ui.toast(r.message);
   }
@@ -210,7 +213,7 @@
         '가장 가까운 날로 · ' + fmtDay(alt.ymd) + ' ' + D.hm(alt.candidate.start)) : null,
       split ? h('button.btn.btn-sm', { type: 'button', onclick: function () {
         p.close(false);
-        var sp = PL().splitPlan(S.state, t.id, ymd, planOpts({ minutes: d.minutes })) || split;
+        var sp = PL().splitPlan(S.state, t.id, ymd, planOpts({ minutes: d.minutes, adaptMinutes: d.adapt })) || split;
         commitBlock(t, { start: sp.first.startIso, end: sp.first.endIso }, {
           minutes: d.minutes, save: d.save, other: true,
           tail: ' 나머지 ' + ui.josa(D.duration(sp.restMinutes), '는/은') + ' 왼쪽 목록에 남아 있어요.'
@@ -238,7 +241,7 @@
           '마감 전 가장 가까운 날로 · ' + fmtDay(alt.ymd) + ' ' + D.hm(alt.candidate.start)) : null,
         h('button.btn.btn-sm', { type: 'button', onclick: function () {
           p.close(false);
-          var r2 = PL().placeOnDay(S.state, t.id, ymd, planOpts({ minutes: d.minutes, allowAfterDue: true }));
+          var r2 = PL().placeOnDay(S.state, t.id, ymd, planOpts({ minutes: d.minutes, adaptMinutes: d.adapt, allowAfterDue: true }));
           if (r2.ok) commitBlock(t, r2.block, { minutes: d.minutes, save: d.save, other: true });
           else failPopover(t, ymd, r2, anchorFor(anchor, ymd), d);
         } }, '그래도 이 날에 넣기'),

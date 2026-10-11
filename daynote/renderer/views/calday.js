@@ -80,6 +80,8 @@
     if (!sub || !PL()) return [];
     var o = { now: now(), workHours: S.state.prefs.workHours, limit: 3, minutes: sub.minutes != null ? sub.minutes : 30 };
     if (sub.block) o.ignoreBlockId = sub.block.id;
+    // 할 일의 길이는 lengthFor(남은 분·예상)로 잡은 기본 길이라 소요 시간 비율로 보정한다 (블록은 그 길이를 지킨다)
+    else if (sub.minutes != null) o.adaptMinutes = true;
     return PL().suggestSlots(S.state, sub.task.id, ymd, o);
   }
   function allowedWindows(sub, ymd) {

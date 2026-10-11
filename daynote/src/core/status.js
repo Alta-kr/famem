@@ -839,7 +839,12 @@
     var r;
     if (e.id && pf.statuses[e.id]) r = to(e.id);
     else if (role === 'work_start') r = to(pf.roleMap.work_start || 'work');
-    else if (role === 'work_end') r = e.home && useGuess && guess(pf, now).id === 'day_off' ? to('day_off') : to(endId);
+    else if (role === 'work_end') {
+      r = e.home && useGuess && guess(pf, now).id === 'day_off' ? to('day_off') : to(endId);
+      // 귀가 말('집 도착'·'귀가')의 라벨 '집'은 기본 도착 상태(off)에만 붙인다. 프리셋 roleMap 이 다른 상태로 보냈으면
+      // (육아·살림 → 혼자 시간) 그 상태 이름을 보인다 — '집'이 '혼자 시간'을 가리지 않게
+      if (r && e.home && r.id === endId && endId !== SW.ROLE_STATUS.work_end) r.label = pf.statuses[endId].label;
+    }
     else if (role === 'half_day') {
       r = to(pf.roleMap.half_day || 'off', { label: e.label || '반차' });
       if (r && now) {
