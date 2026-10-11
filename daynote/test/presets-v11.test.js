@@ -109,7 +109,7 @@ const DETECT = [
   ['home', '육퇴', { id: 'off', label: '내 시간' }],
   ['home', '애들 재웠어', { id: 'off', label: '내 시간' }],
   ['home', '하원 시간 확인', null],
-  ['home', '애들 하원 시켜야 함', { id: 'kids', tier: 'maybe' }],
+  ['home', '애들 하원 시켜야 함', null],   // '…해야 함' 꼴은 할 일이지 지금 상태가 아니다
   // 다른 프리셋에서는 상태가 아니다 (신호로만 센다)
   ['office', '공강', null],
   ['office', '육퇴', null],
