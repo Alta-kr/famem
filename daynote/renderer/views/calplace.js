@@ -309,6 +309,8 @@
     // 이미 지난 시각(그 15분 칸이 다 지남)에는 할 일을 넣지 않는다 — 날짜 칸의 '지난 날짜' 규칙과 같게
     if (D.addMinutes(s, SNAP) <= now()) { ui.toast('지난 시간에는 넣을 수 없어요.'); return Promise.resolve(false); }
     var minutes = lengthFor(t);
+    // 계산한 기본 길이면 배운 소요 시간 비율로 보정한다 — 날짜 칸에 놓을 때(dropOnDay)와 같은 길이가 되게
+    if (minutes != null && PL() && PL().lengthInfo) minutes = PL().lengthInfo(S.state, t, planOpts({ minutes: minutes, adaptMinutes: true })).minutes || minutes;
     var ask = minutes == null ? askDuration(anchorFor(anchorEl, D.ymd(s)), t) : Promise.resolve({ minutes: minutes, save: false });
     return ask.then(function (d) {
       if (!d) return false;
