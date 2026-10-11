@@ -415,9 +415,67 @@
             });
           }
         }, ui.icon('download'), '전체 백업 내보내기'),
+        S.host.importFile
+          ? h('button.btn.btn-sm', { type: 'button', 'data-act': 'import-backup', onclick: importBackup }, uploadIcon(), '백업 가져오기')
+          : null,
         st.meta.sampleLoaded
           ? h('button.btn.btn-sm.btn-danger', { type: 'button', onclick: function () { A().clearSample(); } }, '샘플 지우기')
           : h('button.btn.btn-sm', { type: 'button', onclick: function () { A().loadSample(); } }, '샘플 불러오기')));
+  }
+
+  // 백업 가져오기 — 파일 고르기 → 검사(M.validateBackup) → 덮어쓰기 확인 카드 → 바꾸고 [되돌리기] 알림
+  // ui 아이콘 목록에 '올리기' 가 없어 여기서 그린다 (download 와 같은 선 굵기·모양)
+  function uploadIcon() {
+    var span = document.createElement('span');
+    span.innerHTML = '<svg class="ico" viewBox="0 0 24 24" aria-hidden="true"><path d="M12 15V4M7 9l5-5 5 5M5 20h14"/></svg>';
+    return span.firstChild;
+  }
+  function countLine(c) { return '메모 ' + c.memos + '개 · 할 일 ' + c.tasks + '개 · 프로젝트 ' + c.projects + '개'; }
+  function importBackup() {
+    S.host.importFile().then(function (res) {
+      if (!res || res.canceled) return;
+      if (res.ok === false) { ui.toast('백업 파일을 열지 못했어요.' + (res.error ? ' ' + res.error : ''), { error: true }); return; }
+      var v = M.validateBackup(res.content);
+      if (!v.ok) { ui.toast(v.error, { error: true, duration: 6000 }); return; }
+      confirmImport(v, res.name);
+    }, function (e) { console.error(e); ui.toast('백업 파일을 열지 못했어요.', { error: true }); });
+  }
+  function confirmImport(v, name) {
+    var now = M.backupCounts(S.state);
+    var madeAt = v.state.meta && v.state.meta.createdAt ? new Date(v.state.meta.createdAt) : null;
+    var made = madeAt && !isNaN(madeAt.getTime()) ? D.ymd(madeAt) : null;
+    var body = h('div.import-confirm',
+      h('p.import-lead', '지금 이 기기에 있는 데이터를 백업 파일 내용으로 바꿔요. 바꾼 직후에는 [되돌리기]로 돌아올 수 있어요.'),
+      h('dl.import-counts',
+        h('div.import-row', h('dt', '백업 파일'), h('dd', h('b', countLine(v.counts)))),
+        h('div.import-row', h('dt', '지금'), h('dd', countLine(now)))),
+      name ? h('p.help.import-file', name + (made ? ' · ' + made + '부터 쓴 데이터' : '')) : null,
+      v.stripped ? h('p.help', '로그인 정보로 보이는 값 ' + v.stripped + '개는 가져오지 않아요.') : null,
+      S.host.kind !== 'browser' ? h('p.help', 'Google 로그인은 그대로예요. 연결돼 있으면 가져온 뒤 캘린더를 처음부터 다시 맞춰요.') : null);
+    ui.modal({
+      title: '지금 데이터를 덮어써요',
+      body: body,
+      actions: [
+        { label: '취소' },
+        { label: '덮어쓰기', danger: true, onClick: function () { applyImport(v); } }
+      ]
+    });
+  }
+  function applyImport(v) {
+    S.flush();
+    try { S.importBackup(v.state); }
+    catch (e) { console.error(e); ui.toast('백업을 가져오지 못했어요.', { error: true }); return; }
+    var entry = S.peekUndo();
+    function done() { ui.toast('백업을 가져왔어요. ' + countLine(v.counts), { action: ui.undoAction(), duration: 12000 }); }
+    // 브라우저(폰 미리보기)는 저장 공간(localStorage)이 몇 MB 뿐이다 — 바로 써 보고, 안 써지면 가져오기 전으로 돌린다.
+    //   (그대로 두면 화면에는 가져온 데이터가 보이지만 새로 고치면 옛 데이터가 돌아온다)
+    if (S.host.kind !== 'browser') { done(); return; }
+    S.flush().then(function (ok) {
+      if (ok) { done(); return; }
+      if (S.peekUndo() === entry) S.undo();
+      S.flush();
+      ui.toast('이 브라우저에는 저장 공간이 모자라 백업을 가져오지 못했어요. 지금 데이터는 그대로예요.', { error: true, duration: 8000 });
+    });
   }
 
   // ---------------------------------------------------------------- 화면

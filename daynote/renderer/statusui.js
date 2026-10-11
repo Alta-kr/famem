@@ -385,8 +385,9 @@
     }
     if (!stillWork || mem.otClosed === key) return null;
     var offId = pf.statuses.off ? 'off' : null;
+    var sl = pf.schedule.label || '근무 시간';   // 프리셋 이름 (영업 시간이 지났어요)
     var line = h('div.status-nudge', { role: 'status' },
-      h('span', '근무 시간이 지났어요'), h('span', { 'aria-hidden': 'true' }, '·'),
+      h('span', sl + jo(sl, '가/이') + ' 지났어요'), h('span', { 'aria-hidden': 'true' }, '·'),
       offId ? h('button.link-btn', { type: 'button', onclick: function () { mem.otClosed = key; set({ id: offId }, { source: 'menu' }); } },
         q(pf.statuses.off.label) + jo(pf.statuses.off.label, '로/으로') + ' 바꾸기') : null,
       h('span', { 'aria-hidden': 'true' }, '·'),
@@ -410,7 +411,7 @@
     }
     var label = eff.label + (eff.guessed ? ' · 시간표 기준' : '');
     return { cls: eff.guessed ? 'is-guess' : '', cat: eff.category || 'none', label: label,
-      title: eff.guessed ? '근무 시간으로 짐작한 상태예요. 눌러서 정할 수 있어요.' : null,
+      title: eff.guessed ? (pf.schedule.label || '근무 시간') + jo(pf.schedule.label || '근무 시간', '로/으로') + ' 짐작한 상태예요. 눌러서 정할 수 있어요.' : null,
       aria: '지금 상태: ' + label + ' — 바꾸기', icon: (pf.statuses[eff.id] || {}).icon };
   }
   function chip(where) {
@@ -523,6 +524,13 @@
     return live ? { ended: false } : { ended: true, at: null };
   }
 
+  // '출근하면' — 프리셋마다 일 시작 상태 이름으로 ('‘영업 중’으로 바꾸면', '‘알바 중’으로 바꾸면')
+  function whenBackToWork(pf) {
+    if (pf.preset === 'office' || pf.preset === 'shift') return '출근하면';
+    var d = pf.statuses[pf.roleMap.work_start || 'work'] || pf.statuses.work;
+    if (!d || d.id === 'work') return '출근하면';
+    return q(d.label) + jo(d.label, '로/으로') + ' 바꾸면';
+  }
   function statusCard(m, st, n) {
     var pf = profile(), eff = effective(n), v = view(n);
     var to = m.to || {}, def = to.id ? pf.statuses[to.id] : null, label = to.label || (def && def.label) || '';
@@ -559,9 +567,10 @@
     } else if (cat === 'life' || cat === 'rest') {
       var outPlace = def && def.place === 'out';
       var listed = {};   // 위 줄에 이미 적은 할 일은 '지금 하기 좋은 일'로 다시 적지 않는다
-      var thanks = to.id === 'off' ? '수고했어요. ' : '';
+      // 프리셋이 정한 첫 줄이 있으면 그 말투로 ('오늘도 수고했어요. 남은 집안일은 내일 해도 괜찮아요.')
+      var thanks = def && def.say ? def.say + ' ' : to.id === 'off' ? '수고했어요. ' : '';
       if (cat === 'rest') line('오늘은 쉬는 날로 둘게요.' + (hid ? ' ' + hid + jo(hid, '는/은') + ' 접어 뒀어요.' : ''));
-      else if (hid) line(thanks + hid + jo(hid, '는/은') + ' 출근하면 다시 보여 드릴게요.');
+      else if (hid) line(thanks + hid + jo(hid, '는/은') + ' ' + whenBackToWork(pf) + ' 다시 보여 드릴게요.');
       else if (thanks) line(thanks.trim());
       if (outPlace) {
         var outs = anchoredTasks(v).concat(levelTasks(v, function (l) { return l.level === 'up' && l.ctx === 'errand'; }));
@@ -576,7 +585,7 @@
         line(q(bt.title) + jo(bt.title, '는/은') + ' ' + D().relDay(bt.dueDate, n) + (bt.dueTime ? ' ' + D().hm(due) : '') + ' 마감이라 남겨 뒀어요.');
       }
       var parked = (m.parked || []).map(liveTask).filter(function (t) { return t && t.status === 'in_progress'; });
-      if (parked.length) line('하던 ' + q(parked[0].title) + jo(parked[0].title, '는/은') + ' 출근하면 맨 위에 둘게요.');
+      if (parked.length) line('하던 ' + q(parked[0].title) + jo(parked[0].title, '는/은') + ' ' + whenBackToWork(pf) + ' 맨 위에 둘게요.');
       if (!outPlace) {
         var anc = anchoredTasks(v);
         if (anc.length) line(SW().ATMODE_HEAD[anc[0].atMode] + ': ' + titles(anc.filter(function (t) { return t.atMode === anc[0].atMode; })));

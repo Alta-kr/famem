@@ -128,6 +128,37 @@
     return s;
   }
 
+  // 소요 시간·완료 시각 (2단계 통계, ADAPT §6.1) — 숫자 집계만 이 기기에 두고 AI에 보내지 않는다
+  function statsText(AD, st) {
+    if (!AD.statsSummary) return null;
+    try { return AD.statsSummary(st, now()); } catch (e) { console.error(e); return null; }
+  }
+  function statsBlock(AD, st) {
+    var sm = statsText(AD, st);
+    if (!sm) return h('div');
+    var wrap = h('div.learn-stats#set-learn-stats', { style: { marginTop: '12px' } });
+    wrap.appendChild(h('h4.learn-group', '소요 시간'));
+    wrap.appendChild(h('p.help#set-learn-dur', { style: { lineHeight: 1.6 } }, sm.duration));
+    if (sm.hours) wrap.appendChild(h('p.help#set-learn-hours', { style: { lineHeight: 1.6 } }, sm.hours));
+    wrap.appendChild(h('p.help', { style: { lineHeight: 1.6 } },
+      '작업 시간 안에 끝냈거나 같은 날 시작해서 끝낸 일만 세요. 적어 둔 예상 시간은 바꾸지 않고, 캘린더에 넣을 때와 지금 할 일을 고를 때만 참고해요. 이 숫자는 AI에 보내지 않아요.'));
+    if (sm.hasDuration || sm.hasHours) {
+      wrap.appendChild(h('div.settings-actions',
+        h('button.btn.btn-sm.btn-ghost#set-learn-stats-reset', {
+          type: 'button',
+          onclick: function () {
+            ui().confirm('소요 시간 기록을 지울까요?', '끝낸 일에서 모은 소요 시간과 시간대 기록을 지워요. 할 일과 규칙은 그대로예요.', '지우기').then(function (ok) {
+              if (!ok) return;
+              setRefocus({ head: true });
+              S().mutate('소요 시간 기록 지우기', function (s) { AD.resetStats(s); }, { source: 'learn' });
+              ui().undoToast('소요 시간 기록을 지웠어요.');
+            });
+          }
+        }, '소요 시간 기록 지우기')));
+    }
+    return wrap;
+  }
+
   function render(ctx) {
     var AD = DN.adapt;
     var section = h('section.card.settings-card#set-learn', { 'aria-labelledby': 'set-learn-h' });
@@ -153,6 +184,8 @@
         S().mutate(null, function (s) { if (v) delete s.prefs.learning; else s.prefs.learning = false; }, { silent: true, source: 'learn' });
         offNote.hidden = v;
         sum.textContent = summary(S().state, AD.list(S().state, now()));
+        var sm = statsText(AD, S().state), dur = section.querySelector('#set-learn-dur');
+        if (sm && dur) dur.textContent = sm.duration;   // 껐으면 '캘린더에 반영하지 않아요' 로 바뀐다
       }
     });
     section.appendChild(h('label.check-row', { for: 'set-learn-on' }, box, '고친 것에서 배우기'));
@@ -183,22 +216,27 @@
       }
     });
 
+    section.appendChild(statsBlock(AD, st));
+
     section.appendChild(h('details.settings-adv',
       h('summary', ui().icon('chevronDown'), '어떻게 배우나요?'),
       h('p.help', { style: { lineHeight: 1.6, marginTop: '6px' } },
         '한 번 고치면 AI에 참고로 알려 줘요. 같은 표현을 두 번 이상 같은 쪽으로 고치면 AI 결과도 그쪽으로 바꾸고 카드에 ‘배운 대로’라고 표시해요. ',
         '직접 정한 종류·프로젝트·날짜와 명령어로 적은 글은 바꾸지 않아요. 오래 쓰지 않은 규칙은 점점 약해지고, 300개까지 기억해요.')));
 
+    var smAll = statsText(AD, st), hasStats = !!(smAll && (smAll.hasDuration || smAll.hasHours));
     section.appendChild(h('div.settings-actions',
       h('button.btn.btn-sm.btn-danger', {
-        type: 'button', disabled: !rules.length,
+        type: 'button', disabled: !rules.length && !hasStats,
         onclick: function () {
-          var n = AD.list(S().state, now()).length;
-          if (!n) return;
-          ui().confirm('배운 것을 모두 지울까요?', '규칙 ' + n + '개를 지워요. 메모와 할 일은 그대로예요.', '모두 지우기').then(function (ok) {
+          var n = AD.list(S().state, now()).length, sm2 = statsText(AD, S().state);
+          var withStats = !!(AD.resetStats && sm2 && (sm2.hasDuration || sm2.hasHours));
+          if (!n && !withStats) return;
+          var what = n && withStats ? '규칙 ' + n + '개와 소요 시간 기록을' : n ? '규칙 ' + n + '개를' : '소요 시간 기록을';
+          ui().confirm('배운 것을 모두 지울까요?', what + ' 지워요. 메모와 할 일은 그대로예요.', '모두 지우기').then(function (ok) {
             if (!ok) return;
             setRefocus({ head: true });
-            S().mutate('배운 것 모두 지우기', function (s) { AD.reset(s); }, { source: 'learn' });
+            S().mutate('배운 것 모두 지우기', function (s) { AD.reset(s); if (withStats) AD.resetStats(s); }, { source: 'learn' });
             ui().undoToast('배운 것을 모두 지웠어요.');
           });
         }
@@ -221,6 +259,8 @@
     var st = S().state, rules = AD.list(st, now());
     if (sigOf(rules) === L.sig || L.section.contains(document.activeElement)) {
       L.sum.textContent = summary(st, rules);   // 목록은 그대로 두고 요약만(포커스·자리 유지)
+      var sm = statsText(AD, st), dur = L.section.querySelector('#set-learn-dur');
+      if (sm && dur) dur.textContent = sm.duration;
       return false;
     }
     var fresh = null;

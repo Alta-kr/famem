@@ -42,12 +42,13 @@
 
 (function (factory) {
   var deps = (typeof module !== 'undefined' && module.exports)
-    ? { dates: require('./dates'), model: require('./model'), slots: require('./slots') }
-    : { dates: window.Daynote.dates, model: window.Daynote.model, slots: window.Daynote.slots };
-  var api = factory(deps.dates, deps.model, deps.slots);
+    ? { dates: require('./dates'), model: require('./model'), slots: require('./slots'), adapt: optAdapt() }
+    : { dates: window.Daynote.dates, model: window.Daynote.model, slots: window.Daynote.slots, adapt: window.Daynote.adapt || null };
+  function optAdapt() { try { return require('./adapt'); } catch (e) { return null; } }
+  var api = factory(deps.dates, deps.model, deps.slots, deps.adapt);
   if (typeof module !== 'undefined' && module.exports) module.exports = api;
   if (typeof window !== 'undefined') { window.Daynote = window.Daynote || {}; window.Daynote.recommend = api; }
-})(function (D, M, SL) {
+})(function (D, M, SL, AD) {
   var PRIORITY_RANK = { high: 0, normal: 1, low: 2 };
   var MAX_ALTERNATIVES = 2;
 
@@ -125,9 +126,10 @@
     return null;
   }
 
-  function fitOf(t, T) {
-    var est = t.estimateMinutes;
-    if (T == null) return { fit: 'open', used: est };
+  // adj: 소요 시간 비율(adapt 2단계 통계)로 보정한 예상 — 확실할 때만 적합도에 쓴다. estimateMinutes 는 바꾸지 않는다
+  function fitOf(t, T, adj) {
+    if (T == null) return { fit: 'open', used: t.estimateMinutes };   // 쓸 시간이 없으면 보정 추정은 고르는 데 쓰지 않는다
+    var est = adj && adj.adjusted ? adj.minutes : t.estimateMinutes;
     if (est == null) return { fit: 'unknown', used: null };
     if (est <= T) return { fit: 'fits', used: est };
     var steps = (t.steps || []).filter(function (s) { return !s.done && s.estimateMinutes != null && s.estimateMinutes <= T; });
@@ -250,7 +252,10 @@
       var lv = sv && Object.prototype.hasOwnProperty.call(levels, t.id) ? levels[t.id] : null;
       if (lv && lv.level === 'hide') { excluded.hidden++; hiddenIds.push(t.id); openCount++; return; }
       openCount++;
-      var fit = fitOf(t, ctx.availableMinutes);
+      var adj = AD && AD.adjustMinutes && t.estimateMinutes != null && opts.noAdapt !== true
+        ? AD.adjustMinutes(state, t, t.estimateMinutes, now) : null;
+      if (adj && !adj.adjusted) adj = null;
+      var fit = fitOf(t, ctx.availableMinutes, adj);
       var due = dueInfo(t, now);
       var item = {
         taskId: t.id, fit: fit.fit, step: fit.step || null,
@@ -268,6 +273,14 @@
         estimateIsGuess: t.estimateSource === 'ai',
         reasons: reasonsFor(state, t, fit, due, ctx, cal, now)
       };
+      if (adj && ctx.availableMinutes != null && (fit.fit === 'fits' || fit.fit === 'too_long')) {
+        // 보정 추정이 적합도를 정했을 때만 밝힌다. 마감·진행 중 이유 뒤에 둔다 (화면은 앞의 두 문장만 보인다)
+        item.estimateAdjusted = adj.minutes;
+        var at = 1 + (due.text ? 1 : 0) + (t.status === 'in_progress' || cal.workingNow.indexOf(t.id) !== -1 ? 1 : 0);
+        item.reasons.splice(Math.min(at, item.reasons.length), 0, adj.factor > 1
+          ? '평소 예상보다 ' + adj.factor + '배 걸려서 약 ' + D.duration(adj.minutes) + '으로 보고 골랐어요.'
+          : '평소 예상보다 빨리 끝내서 약 ' + D.duration(adj.minutes) + '으로 보고 골랐어요.');
+      }
       if (sv) {
         var level = lv && LEVEL_RANK[lv.level] != null ? lv.level : 'normal';
         item.levelRank = LEVEL_RANK[level];

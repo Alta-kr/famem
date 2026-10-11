@@ -255,7 +255,9 @@
       { role: 'work_end', id: 'me', sure: ['등원 완료', '등원시켰어', '어린이집 보냄'] },
       { role: 'work_start', id: 'kids', sure: ['하원', '하원 완료', '애들 왔어'] },
       { role: 'break', id: 'nap', sure: ['아기 낮잠', '낮잠 재웠어'] },
-      { role: 'work_end', id: 'me', sure: ['애들 재웠어', '재웠다', '육퇴'], label: '내 시간' }
+      // 육퇴는 '내 시간'(off) — 혼자 시간(me)과 달리 집안일은 내리고 개인 일을 띄운다
+      // 그냥 '집 도착'·'귀가'는 roleMap.work_end(혼자 시간)로 간다 — 하루 끝 상태는 이 말들로만
+      { role: 'work_end', id: 'off', sure: ['애들 재웠어', '재웠다', '육퇴'], label: '내 시간' }
     ],
     creator: [
       { role: 'meeting', sure: ['스탠드업', '라이브 시작'] },
@@ -265,8 +267,13 @@
   };
 
   // ------------------------------------------------------------------ 프리셋 (§12.1·§12.2)
-  // statuses: 이 프리셋 전용 상태 정의, 또는 기본 상태의 라벨·기본 분 고침
+  // statuses: 이 프리셋 전용 상태 정의, 또는 기본 상태의 라벨·기본 분·rec·recMax·say 고침
+  //   recMax: 이 상태에서 추천할 일의 최대 분 · say: 상태 카드 첫 줄 · pause: '쉬는 시간에' 걸어 둔 일이 맞는 덧씌움
   // matrix: 공식(§7.3) 결과와 다른 칸만. 'after' = afterWork 값
+  // overlayMatrix: 덧씌움일 때 바탕 행 위에 덮는 칸 · notes: 띄운 칸의 이유 문장 바꾸기
+  // contextWords: 이 프리셋에서 더하는 맥락 단어 · overtime: false 면 근무 끝 줄을 쓰지 않는다
+  // schedule: { mode, locked(설정에서 켤 수 없음), label(근무 시간 카드 이름), work/workLabel(그 안 짐작), rest(그 밖 짐작), before, after }
+  // atModes: 프리셋 전용 상태가 맞는 '걸어 둔 때'(출근하면·퇴근하고·밖에서·쉴 때). 없으면 범주로 본다
   var PRESETS = {
     office: {
       label: '직장인', stage: 'v1', primary: ['work'],
@@ -286,58 +293,76 @@
       schedule: { mode: 'off' }, afterWork: 'down', contextLabels: {}
     },
     student: {
-      label: '학생', stage: 'v1.1', primary: ['study'],
+      label: '학생', stage: 'v1', primary: ['study'],
       desc: '수업 중에는 추천과 알림을 쉬고, 공부할 때는 공부를, 알바할 때는 알바 일을 먼저 보여 줘요.',
-      menu: ['class', 'study', 'break', 'to_work', 'part_time', 'off', 'sleep'],
+      menu: ['class', 'study', 'free_period', 'break', 'to_work', 'part_time', 'off', 'sleep'],
       roleMap: { work_start: 'part_time' },
       statuses: {
-        study: { label: '공부 중', category: 'work', place: null, icon: 'book' },
-        part_time: { label: '알바 중', category: 'work', place: 'out', icon: 'briefcase' },
-        free_period: { label: '공강', category: 'overlay', minutes: 60, rec: 'normal', icon: 'coffee' },
+        study: { label: '공부 중', category: 'work', place: null, icon: 'book', atModes: [] },
+        part_time: { label: '알바 중', category: 'work', place: 'out', icon: 'briefcase', atModes: ['work'] },
+        free_period: { label: '공강', category: 'overlay', minutes: 60, rec: 'normal', icon: 'coffee', pause: true },
         to_work: { label: '이동 중' }, off: { label: '집·자유' }, break: { label: '쉬는 시간' }
       },
       matrix: {
         study: { work: 'hide' },
         part_time: { work: 'up', study: 'down' },
-        off: { study: 'normal', work: 'hide' },
-        day_off: { study: 'normal', work: 'hide' },
+        off: { study: 'normal', work: 'after' },
+        day_off: { study: 'normal', work: 'after' },
         to_home: { work: 'after', errand: 'up' }
       },
-      schedule: { mode: 'guess' }, afterWork: 'hide', contextLabels: { work: '알바' }
+      // 덧씌움이 바탕 행 위에 덮는 칸 (§12.2 '공강은 공부를 띄움')
+      overlayMatrix: { free_period: { study: 'up' } },
+      // 근무 시간 카드를 '수업 시간'으로 부른다. 그 안은 '공부 중'(공부 시간)으로 짐작한다
+      // — 짐작한 상태는 추천·알림이 켜진 공부라 '수업 시간'이라고 부르지 않는다 (수업 중은 class 덧씌움)
+      schedule: { mode: 'guess', label: '수업 시간', work: 'study', workLabel: '공부 시간', before: '수업 전', after: '수업 끝' },
+      overtime: false,
+      // '퇴근하면 … 할 일은' 선택이 다루는 맥락 (학생은 공부가 아니라 알바)
+      afterWork: 'hide', afterWorkCtx: ['work'], contextLabels: { work: '알바' }
     },
     shift: {
-      label: '교대 근무', stage: 'v1.1', primary: ['work'],
+      label: '교대 근무', stage: 'v1', primary: ['work'],
       desc: '근무표대로 일하는 사람을 위한 리듬이에요. 자정을 넘는 근무도 그대로 두고, 오프 날에는 밖 볼일을 먼저 보여 줘요.',
       menu: ['work', 'break', 'off', 'day_off', 'sleep'],
       roleMap: {},
-      statuses: { work: { label: '근무 중' }, break: { label: '휴게' }, day_off: { label: '오프' } },
+      statuses: { work: { label: '근무 중' }, break: { label: '휴게' }, off: { label: '퇴근' }, day_off: { label: '오프' } },
       matrix: { to_home: { work: 'after', errand: 'up' } },
-      schedule: { mode: 'off' }, afterWork: 'hide', contextLabels: { work: '근무' }
+      // 평일 오프면 밖 볼일 이유를 바꾼다 (§12.2)
+      notes: { day_off: { errand: { text: '평일 오프라 은행·관공서 가기 좋은 날이에요.', weekday: true } } },
+      // 근무표는 v2 — 시간으로 짐작하지 않는다 (설정에서도 켤 수 없다)
+      schedule: { mode: 'off', locked: true, label: '근무 시간' },
+      overtime: false,
+      afterWork: 'hide', contextLabels: { work: '근무' }
     },
     shop: {
-      label: '자영업', stage: 'v1.1', primary: ['work'],
+      label: '자영업', stage: 'v1', primary: ['work'],
       desc: '영업 중에는 짧은 일만 고르고, 영업이 끝나면 가게 일은 접어 둬요. 휴무일에도 가게 일은 아래에 남겨 둬요.',
-      menu: ['shop_prep', 'shop_open', 'break', 'shop_close', 'off', 'day_off'],
+      menu: ['shop_prep', 'shop_open', 'busy', 'break', 'shop_close', 'off', 'day_off'],
       roleMap: { work_start: 'shop_open' },
       statuses: {
-        shop_prep: { label: '오픈 준비', category: 'work', place: 'office', icon: 'bag' },
-        shop_open: { label: '영업 중', category: 'work', place: 'office', nudges: false, icon: 'briefcase' },
-        shop_close: { label: '마감 정리', category: 'work', place: 'office', icon: 'briefcase' },
-        busy: { label: '바빠', category: 'overlay', minutes: 30, rec: 'none', busy: true, icon: 'coffee' },
+        shop_prep: { label: '오픈 준비', category: 'work', place: 'office', icon: 'bag', atModes: ['work'] },
+        shop_open: { label: '영업 중', category: 'work', place: 'office', rec: 'short', recMax: 10, nudges: false, icon: 'briefcase', atModes: ['work'] },
+        shop_close: { label: '마감 정리', category: 'work', place: 'office', icon: 'briefcase', atModes: ['work'] },
+        busy: { label: '바쁜 시간', category: 'overlay', minutes: 30, rec: 'none', busy: true, icon: 'coffee' },
         break: { label: '브레이크' }, off: { label: '영업 끝' }, day_off: { label: '휴무' }
       },
       matrix: { shop_prep: { errand: 'up' }, day_off: { work: 'down' }, to_home: { work: 'after', errand: 'up' } },
-      schedule: { mode: 'guess' }, afterWork: 'hide', contextLabels: { work: '가게 일' }
+      // 가게 일 단어를 업무 강(3)으로 더한다 (§12.2)
+      contextWords: { work: { strong: ['발주', '재고', '도매', '리뷰 답글', '배달앱'] } },
+      schedule: { mode: 'guess', label: '영업 시간', work: 'shop_open', workLabel: '영업 시간', before: '오픈 전', after: '영업 끝' },
+      afterWork: 'hide', contextLabels: { work: '가게 일' }
     },
     home: {
-      label: '육아·살림', stage: 'v1.1', primary: ['home', 'family'],
+      label: '육아·살림', stage: 'v1', primary: ['home', 'family'],
       desc: '아이와 함께일 때는 짧은 일만, 혼자 시간에는 집안일과 밖 볼일을 먼저 보여 줘요. 부업 일은 늘 보통으로 둬요.',
-      menu: ['kids', 'me', 'nap', 'out', 'break', 'sleep'],
-      roleMap: {},
+      menu: ['kids', 'me', 'nap', 'out', 'break', 'off', 'sleep'],
+      // 그냥 '집 도착'·'귀가'·'퇴근'은 혼자 시간으로 (하루 끝 '내 시간'은 육퇴·애들 재웠어로만)
+      roleMap: { work_end: 'me' },
       statuses: {
-        kids: { label: '아이와 함께', category: 'life', place: 'home', rec: 'short', nudges: false, icon: 'heart' },
-        me: { label: '혼자 시간', category: 'life', place: 'home', icon: 'user' },
-        nap: { label: '아기 낮잠', category: 'overlay', minutes: 60, rec: 'short', icon: 'moon' }
+        kids: { label: '아이와 함께', category: 'life', place: 'home', rec: 'short', recMax: 10, nudges: false, icon: 'heart', atModes: [] },
+        me: { label: '혼자 시간', category: 'life', place: 'home', icon: 'user', atModes: ['off'] },
+        nap: { label: '아기 낮잠', category: 'overlay', minutes: 60, rec: 'short', recMax: 40, icon: 'moon', pause: true },
+        out: { label: '장보기·외출' }, break: { label: '쉬는 중' },
+        off: { label: '내 시간', say: '오늘도 수고했어요. 남은 집안일은 내일 해도 괜찮아요.' }
       },
       matrix: {
         kids: { family: 'up', home: 'normal', personal: 'normal', work: 'normal' },
@@ -347,7 +372,11 @@
         to_work: { work: 'normal' }, to_home: { work: 'normal', errand: 'up' }, out: { work: 'normal' },
         day_off: { work: 'normal' }
       },
-      schedule: { mode: 'off' }, afterWork: 'down', contextLabels: { work: '부업' }
+      overlayMatrix: { nap: { home: 'up', personal: 'up' } },
+      // 근무 시간 카드를 '등원–하원'으로 부른다. 켜면 그 사이를 '혼자 시간'으로, 밖을 '아이와 함께'로 짐작한다
+      schedule: { mode: 'off', label: '등원–하원', work: 'me', workLabel: '혼자 시간', rest: 'kids', before: '등원 전', after: '하원 후' },
+      overtime: false,
+      afterWork: 'down', contextLabels: { work: '부업' }
     },
     creator: {
       label: '크리에이터', stage: 'v2', primary: ['work'],

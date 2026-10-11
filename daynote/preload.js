@@ -14,6 +14,8 @@ contextBridge.exposeInMainWorld('daynoteHost', {
   revealData: () => ipcRenderer.invoke('store:reveal'),
   copyText: (text) => ipcRenderer.invoke('clipboard:write', text),
   exportFile: (name, content) => ipcRenderer.invoke('file:export', name, content),
+  // 백업 가져오기 — 사용자가 고른 JSON 파일 하나의 글자만 돌려받는다 (경로·파일 시스템은 열지 않는다)
+  importFile: () => ipcRenderer.invoke('file:import'),
   ai: {
     status: () => ipcRenderer.invoke('ai:status'),
     organizeNote: (input) => ipcRenderer.invoke('ai:organizeNote', input),

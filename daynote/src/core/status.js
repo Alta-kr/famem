@@ -246,7 +246,9 @@
       id: id, label: src.label || id, category: cat, place: src.place !== undefined ? src.place : null, overlay: overlay,
       minutes: overlay ? (src.minutes || 30) : null,
       rec: src.rec || 'normal', nudges: src.nudges !== undefined ? src.nudges : !overlay, busy: !!src.busy,
-      icon: src.icon || null, stale: src.stale || categoryStale(cat, src.place), words: [], wordsOff: [], menu: false, custom: false
+      icon: src.icon || null, stale: src.stale || categoryStale(cat, src.place), words: [], wordsOff: [], menu: false, custom: false,
+      recMax: typeof src.recMax === 'number' && src.recMax > 0 ? src.recMax : null, say: src.say || null, pause: !!src.pause,
+      atModes: Array.isArray(src.atModes) ? src.atModes.slice() : null
     };
   }
 
@@ -260,8 +262,14 @@
     Object.keys(pre.statuses || {}).forEach(function (id) {
       var o = pre.statuses[id];
       if (statuses[id]) {
-        if (o.label) statuses[id].label = o.label;
-        if (o.minutes && statuses[id].overlay) statuses[id].minutes = o.minutes;
+        var d0 = statuses[id];
+        if (o.label) d0.label = o.label;
+        if (o.minutes && d0.overlay) d0.minutes = o.minutes;
+        if (has(['normal', 'short', 'none'], o.rec)) d0.rec = o.rec;
+        if (typeof o.nudges === 'boolean') d0.nudges = o.nudges;
+        if (typeof o.recMax === 'number' && o.recMax > 0) d0.recMax = o.recMax;
+        if (o.say) d0.say = o.say;
+        if (o.pause) d0.pause = true;
       } else { statuses[id] = makeDef(id, o); statusIds.push(id); }
     });
     var menuOverride = {}, customN = 0, taken = {};
@@ -305,6 +313,16 @@
           if (!has(off, tight(w).toLowerCase())) words.push({ w: w, weight: SW.WORD_WEIGHT[tier] });
         });
       });
+      // 프리셋이 더하는 단어 — 같은 단어가 있으면 프리셋 무게로 바꾼다 (자영업: 재고·도매 → 강)
+      var pcw = pre.contextWords && own(pre.contextWords, c.id) ? pre.contextWords[c.id] : null;
+      if (pcw) ['strong', 'mid', 'weak'].forEach(function (tier) {
+        (pcw[tier] || []).forEach(function (w) {
+          var k = tight(w).toLowerCase();
+          if (has(off, k)) return;
+          words = words.filter(function (x) { return tight(x.w).toLowerCase() !== k; });
+          words.push({ w: w, weight: SW.WORD_WEIGHT[tier], preset: true });
+        });
+      });
       cleanWords(u.words).forEach(function (w) {
         var k = tight(w).toLowerCase();
         words = words.filter(function (x) { return tight(x.w).toLowerCase() !== k; });
@@ -330,12 +348,21 @@
     else if (Array.isArray(as.lunch) && parseHm(as.lunch[0]) != null && parseHm(as.lunch[1]) != null && parseHm(as.lunch[0]) < parseHm(as.lunch[1])) lunch = [as.lunch[0], as.lunch[1]];
     var ds = parseHm(as.dayStart);
     if (ds == null || ds > 12 * 60) ds = 4 * 60;
+    var ps = pre.schedule || {};
+    var locked = !!ps.locked;
     var schedule = {
-      mode: as.mode === 'off' || as.mode === 'guess' ? as.mode : (pre.schedule && pre.schedule.mode) || 'guess',
+      mode: locked ? 'off' : as.mode === 'off' || as.mode === 'guess' ? as.mode : ps.mode || 'guess',
+      locked: locked, label: ps.label || '근무 시간',
       hideOnGuess: as.hideOnGuess === true,
       workHours: normalizeWorkHours(whRaw),
       lunch: lunch, dayStart: fmtHm(ds), dayStartMin: ds,
-      overtimeLine: as.overtimeLine !== false
+      overtimeLine: as.overtimeLine !== false && pre.overtime !== false,
+      overtimeAllowed: pre.overtime !== false,
+      // 시간표 짐작이 고르는 상태 (§4.3 — 프리셋이 바꾼다)
+      guessWork: ps.work && statuses[ps.work] && !statuses[ps.work].overlay ? ps.work : 'work',
+      guessWorkLabel: ps.workLabel || null,
+      guessRest: ps.rest && statuses[ps.rest] && !statuses[ps.rest].overlay ? ps.rest : 'off',
+      guessBefore: ps.before || GUESS_LABEL.before, guessAfter: ps.after || GUESS_LABEL.after
     };
     var afterWork = sp.afterWork === 'hide' || sp.afterWork === 'down' ? sp.afterWork : (pre.afterWork || 'hide');
     var urgentHours = typeof sp.urgentHours === 'number' && sp.urgentHours >= 0 && sp.urgentHours <= 48 ? sp.urgentHours : 3;
@@ -363,6 +390,24 @@
       });
     });
 
+    // 덧씌움 칸 (바탕 행 위에 덮는다) · 띄운 칸 이유 문장
+    var overlayMatrix = dict();
+    Object.keys(pre.overlayMatrix || {}).forEach(function (oid) {
+      if (!statuses[oid] || !statuses[oid].overlay) return;
+      var row = dict();
+      Object.keys(pre.overlayMatrix[oid]).forEach(function (c) {
+        var v = pre.overlayMatrix[oid][c];
+        if ((contexts[c] || c === '_none') && own(LEVEL_RANK, v)) row[c] = v;
+      });
+      overlayMatrix[oid] = row;
+    });
+    var notes = dict();
+    Object.keys(pre.notes || {}).forEach(function (sid) {
+      if (!statuses[sid]) return;
+      notes[sid] = dict();
+      Object.keys(pre.notes[sid]).forEach(function (c) { if (contexts[c]) notes[sid][c] = pre.notes[sid][c]; });
+    });
+
     var roleMap = {};
     Object.keys(SW.ROLE_STATUS).forEach(function (r) { roleMap[r] = SW.ROLE_STATUS[r]; });
     Object.keys(pre.roleMap || {}).forEach(function (r) { if (statuses[pre.roleMap[r]]) roleMap[r] = pre.roleMap[r]; });
@@ -370,7 +415,9 @@
     var pf = {
       preset: presetId, presetLabel: pre.label, enabled: sp.enabled !== false,
       statuses: statuses, statusIds: statusIds, menu: menu, contexts: contexts, contextIds: contextIds,
-      matrix: matrix, rawMatrix: rawMatrix, primary: primary, afterWork: afterWork, urgentHours: urgentHours,
+      matrix: matrix, rawMatrix: rawMatrix, overlayMatrix: overlayMatrix, notes: notes,
+      primary: primary, afterWork: afterWork, urgentHours: urgentHours,
+      afterWorkCtx: (pre.afterWorkCtx || primary).filter(function (c) { return contexts[c]; }),
       schedule: schedule, roleMap: roleMap
     };
     pf.words = buildWordIndex(pf, presetId);
@@ -532,10 +579,11 @@
     var dStart = atMin(d, ds), nStart = atMin(D.addDays(d, 1), ds);
     var win = workWindowOn(d, wh);
     function seg(id, label, s, e) { return { id: id, label: label, segment: { start: iso(s), end: iso(e) } }; }
+    var sc = pf.schedule, wid = sc.guessWork || 'work', rid = sc.guessRest || 'off';
     if (!win) return seg('day_off', pf.statuses.day_off.label, dStart, nStart);
-    if (now.getTime() < win.start.getTime()) return seg('off', GUESS_LABEL.before, dStart, win.start);
-    if (now.getTime() < win.end.getTime()) return seg('work', pf.statuses.work.label, win.start, win.end);
-    return seg('off', GUESS_LABEL.after, win.end, nStart);
+    if (now.getTime() < win.start.getTime()) return seg(rid, sc.guessBefore || GUESS_LABEL.before, dStart, win.start);
+    if (now.getTime() < win.end.getTime()) return seg(wid, sc.guessWorkLabel || pf.statuses[wid].label, win.start, win.end);
+    return seg(rid, sc.guessAfter || GUESS_LABEL.after, win.end, nStart);
   }
   function timeline(pf, from, days) {
     var out = [], t = toDate(from), end = t.getTime() + (days || 1) * DAY, guard = 0;
@@ -578,6 +626,9 @@
     var src = overlay ? pf.statuses[overlay.id] : pf.statuses[b.id];
     b.overlay = overlay ? { id: overlay.id, label: overlay.label || src.label, until: isFinite(timeOf(overlay.until)) ? overlay.until : null, rec: src.rec } : null;
     b.rec = src.rec; b.busy = src.busy; b.nudges = src.nudges;
+    // 추천 최대 분: 덧씌움이면 덧씌움 것만, 아니면 바탕 (아이와 함께 10분 · 낮잠 40분 · 영업 중 10분)
+    // — 영업 중 위의 브레이크·점심은 바탕의 10분에 묶이지 않는다
+    b.recMax = (overlay ? src.recMax : pf.statuses[b.id].recMax) || null;
     return b;
   }
   function explicitIdOf(eff) { return !eff ? null : eff.overlay ? eff.overlay.id : eff.guessed ? null : eff.id; }
@@ -756,14 +807,31 @@
       if (!d) return null;
       return Object.assign({ id: id, label: e.label || d.label }, extra || {});
     }
-    function toGuessTarget() { return { id: null, label: now ? guess(pf, now).label : null, guess: true }; }
+    // 시간표로 짐작해도 되나: 교대 근무(잠금)는 절대 아니다. 짐작이 꺼져 있어도 기본 시간표(업무/쉼)인 프리셋은
+    // 복귀·도착 판단에만 근무 시간을 본다 (§4.4). 프리셋이 짐작 상태를 바꿨으면(학생·자영업·육아) 짐작이 켜져 있을 때만
+    var sch = pf.schedule;
+    var useGuess = !!now && !sch.locked && (sch.mode === 'guess' || (sch.guessWork === 'work' && sch.guessRest === 'off'));
+    var endId = pf.roleMap.work_end || 'off';
+    function toGuessTarget() {
+      if (!now) return { id: null, label: null, guess: true };
+      return { id: null, label: sch.mode === 'guess' && !sch.locked ? guess(pf, now).label : pf.statuses.none.label, guess: true };
+    }
+    function plain(id) { return to(id, { label: pf.statuses[id].label }); }
+    // 외출·현장에서 돌아오면: 짐작이 되면 시간표의 그 칸 상태로, 아니면 '일 끝'(roleMap.work_end)으로
+    function backFromOut() {
+      if (!useGuess) return plain(endId);
+      var g = guess(pf, now);
+      if (g.id === 'day_off') return plain('day_off');
+      if (g.id === sch.guessWork) return plain(sch.guessWork === 'work' ? pf.roleMap.work_start || 'work' : sch.guessWork);
+      return plain(sch.guessRest === 'off' ? endId : sch.guessRest);
+    }
     function back() {
       if (!eff) return null;
       // 덧씌움 아래 바탕: 명시(낡지 않은 returnTo)면 그 상태로, 짐작이면 시간표대로. eff 만 보므로 current 가 없어도(/상태 복귀) 맞다
       if (eff.overlay) return eff.guessed ? toGuessTarget() : { id: eff.id, label: eff.label };
       if (!eff.guessed && (eff.id === 'out' || eff.id === 'field')) {
         if (!now) return null;
-        return guess(pf, now).id === 'work' ? to(pf.roleMap.work_start || 'work', { label: pf.statuses[pf.roleMap.work_start || 'work'].label }) : to('off', { label: pf.statuses.off.label });
+        return backFromOut();
       }
       if (eff.category === 'work') return { id: eff.id, label: eff.label, same: true };
       return null;
@@ -771,7 +839,7 @@
     var r;
     if (e.id && pf.statuses[e.id]) r = to(e.id);
     else if (role === 'work_start') r = to(pf.roleMap.work_start || 'work');
-    else if (role === 'work_end') r = e.home && now && guess(pf, now).id === 'day_off' ? to('day_off') : to(pf.roleMap.work_end || 'off');
+    else if (role === 'work_end') r = e.home && useGuess && guess(pf, now).id === 'day_off' ? to('day_off') : to(endId);
     else if (role === 'half_day') {
       r = to(pf.roleMap.half_day || 'off', { label: e.label || '반차' });
       if (r && now) {
@@ -786,7 +854,7 @@
     else if (role === 'arrive') {
       if (!eff || eff.guessed) return null;
       r = eff.id === 'to_work' ? to(pf.roleMap.work_start || 'work', { label: pf.statuses[pf.roleMap.work_start || 'work'].label })
-        : eff.id === 'to_home' ? to('off', { label: pf.statuses.off.label }) : eff.id === 'out' ? back() : null;
+        : eff.id === 'to_home' ? plain(endId) : eff.id === 'out' ? back() : null;
     }
     else if (role === 'wake') {
       if (!cur || cur.id !== 'sleep') return null;
@@ -933,7 +1001,10 @@
     if (!has(SW.ATMODES, mode) || !statusId) return false;
     if (has(SW.ATMODE_STATUS[mode], statusId)) return true;
     var d = pf && pf.statuses[statusId];
-    if (!d || !d.custom) return false;
+    if (!d || (!d.custom && own(SW.STATUSES, statusId))) return false;
+    // 프리셋 전용 상태는 그 프리셋이 정한 때만 (아이와 함께는 '퇴근하고'가 아니고, 공부 중은 '출근하면'(알바)이 아니다)
+    if (Array.isArray(d.atModes)) return has(d.atModes, mode);
+    // 사용자 상태는 범주로 본다
     var c = d.category;
     if (mode === 'work') return c === 'work';
     if (mode === 'off') return (c === 'life' && d.place !== 'out') || c === 'rest';
@@ -1185,6 +1256,13 @@
       if (lvl === 'up') lvl = 'normal';
       else if (lvl === 'hide' && !pf.schedule.hideOnGuess) lvl = 'down';
     }
+    // 덧씌움 칸 (공강 → 공부 띄움 · 낮잠 → 집안일·개인 띄움). 덧씌움은 늘 명시라 짐작 완화를 받지 않는다
+    var ovRow = eff.overlay && own(pf.overlayMatrix, eff.overlay.id) ? pf.overlayMatrix[eff.overlay.id] : null;
+    var byOverlay = false;
+    if (ovRow) {
+      var ok = ctxR.value && own(ovRow, ctxR.value) ? ctxR.value : (!ctxR.value && own(ovRow, '_none') ? '_none' : null);
+      if (ok) { lvl = ovRow[ok]; byOverlay = true; }
+    }
     if (ctxR.source === 'hint' && lvl === 'hide') lvl = 'down';
     if (!eff.guessed && task.atMode && task.atMode !== 'pause' && atModeMatches(task.atMode, eff.id, pf)) { lvl = 'up'; reason = 'when'; }
     else if (eff.category === 'moving' && lvl !== 'hide' && onPhone(task)) { lvl = 'up'; reason = 'phone'; }
@@ -1206,11 +1284,13 @@
         if (reason === 'due' || reason === 'due_soon') bt = { dueAt: iso(dueAt), soon: reason === 'due_soon' };
       }
     }
-    return { level: lvl, reason: reason, breakthrough: bt };
+    var res = { level: lvl, reason: reason, breakthrough: bt };
+    if (byOverlay && reason === 'policy') res.overlay = true;
+    return res;
   }
 
   // 이유 문장 (C21) — recommend 는 이 문장을 그대로 맨 앞에 쓴다
-  function sentenceFor(task, o, eff, now) {
+  function sentenceFor(task, o, eff, now, pf) {
     if (o.reason === 'when') return '‘' + atModePhrase(task.atMode) + '’ 하기로 한 일이에요.';
     if (o.reason === 'phone') return '이동 중에 폰으로 할 수 있는 일이에요.';
     if (o.breakthrough) {
@@ -1218,6 +1298,14 @@
       // 마감 시각이 없으면 '23:59' 대신 '오늘'
       if (o.breakthrough.soon) return '‘' + o.ctxLabel + '’ 할 일이지만 ' + (task.dueTime ? D.hm(due) : D.relDay(task.dueDate, now)) + ' 마감이라 골랐어요.';
       return '‘' + o.ctxLabel + '’ 할 일이지만 ' + D.relDay(task.dueDate, now) + (task.dueTime ? ' ' + task.dueTime : '') + ' 마감이라 남겨 뒀어요.';
+    }
+    if (o.level === 'up' && o.reason === 'policy' && o.overlayUp && eff.overlay && o.ctx) {
+      return '지금은 ‘' + eff.overlay.label + '’' + iraJosa(eff.overlay.label) + ' ‘' + o.ctxLabel + '’ 일을 먼저 골랐어요.';
+    }
+    var note = pf && o.ctx && !eff.guessed && !eff.overlay && own(pf.notes, eff.id) && own(pf.notes[eff.id], o.ctx) ? pf.notes[eff.id][o.ctx] : null;
+    if (note && o.level === 'up' && o.reason === 'policy') {
+      var wd = toDate(now).getDay();
+      if (!note.weekday || (wd >= 1 && wd <= 5)) return note.text;
     }
     if (o.level === 'up' && o.reason === 'policy' && !eff.guessed && o.ctx) {
       return '지금은 ‘' + eff.label + '’' + iraJosa(eff.label) + ' ‘' + o.ctxLabel + '’ 일을 먼저 골랐어요.';
@@ -1229,7 +1317,8 @@
     var lv = levelOf(state, task, ctxR, eff, pf, now, idx);
     var o = { level: lv.level, reason: lv.reason, ctx: ctxR.value, ctxSource: ctxR.source, ctxLabel: contextLabel(pf, ctxR.value),
       evidence: ctxR.evidence, breakthrough: lv.breakthrough, sentence: null };
-    o.sentence = sentenceFor(task, o, eff, now);
+    if (lv.overlay) o.overlayUp = true;
+    o.sentence = sentenceFor(task, o, eff, now, pf);
     return o;
   }
   function applyStatusPolicy(state, tasks, eff, pf, now) {
@@ -1264,7 +1353,7 @@
   }
   function isAnchored(t, eff, pf) {
     if (!t.atMode) return false;
-    if (t.atMode === 'pause') return !!eff.overlay && has(SW.ATMODE_STATUS.pause, eff.overlay.id);
+    if (t.atMode === 'pause') return !!eff.overlay && (has(SW.ATMODE_STATUS.pause, eff.overlay.id) || !!(pf.statuses[eff.overlay.id] || {}).pause);
     return !eff.guessed && atModeMatches(t.atMode, eff.id, pf);
   }
 
@@ -1294,10 +1383,14 @@
     var inWin = !!win && now.getTime() >= win.start.getTime() && now.getTime() < win.end.getTime();
     var remain = null;
     if (eff.overlay && eff.overlay.until && eff.rec === 'short') remain = Math.max(0, Math.floor((timeOf(eff.overlay.until) - now.getTime()) / MIN));
+    // 프리셋 상태의 추천 최대 분 (아이와 함께·영업 중 10분, 낮잠 40분)
+    // remainCapped: 남은 시간이 아니라 이 상태의 추천 최대 분이 정한 값 (추천 문장이 '남은 시간'이라고 하지 않게)
+    var capped = false;
+    if (eff.recMax && eff.rec !== 'none' && (remain == null || eff.recMax < remain)) { remain = eff.recMax; capped = true; }
     return {
       active: true, id: eff.id, label: eff.label, category: eff.category, guessed: eff.guessed, since: eff.since,
-      overlay: eff.overlay, rec: eff.rec, busy: eff.busy, nudges: eff.nudges,
-      remainMinutes: remain,
+      overlay: eff.overlay, rec: eff.rec, busy: eff.busy, nudges: eff.nudges, recMax: eff.recMax || null,
+      remainMinutes: remain, remainCapped: capped,
       offHours: eff.guessed ? !inWin : eff.category !== 'work',
       workWindow: eff.category === 'work' && inWin ? { start: iso(win.start), end: iso(win.end) } : null,
       levels: levels, hiddenIds: hiddenIds, anchored: anchored, summary: summary, at: iso(now)
@@ -1551,7 +1644,8 @@
     if (!eff || eff.guessed || eff.overlay || eff.category !== 'work') return false;
     var p = pres(state);
     if ((p.hints.overtimeDismiss || 0) >= 2 || !budgetOk(state, pf, now)) return false;
-    if (guess(pf, now).id === 'work') return false;
+    if (pf.schedule.locked || !pf.schedule.overtimeAllowed) return false;
+    if (guess(pf, now).id === pf.schedule.guessWork) return false;
     var win = workWindowOn(logicalDay(now, pf), pf.schedule.workHours);
     if (!win || now.getTime() - win.end.getTime() < OVERTIME_MIN * MIN) return false;
     var cur = p.current;

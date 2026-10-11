@@ -50,6 +50,31 @@
       document.body.appendChild(a); a.click(); a.remove();
       return Promise.resolve({ ok: true, path: name });
     },
+    // 백업 가져오기 — 숨긴 파일 입력으로 고르게 하고 글자로 읽어 돌려준다 (폰 브라우저에서도 동작)
+    //   → { ok:true, name, content } | { ok:false, canceled:true } | { ok:false, error }
+    importFile: function () {
+      return new Promise(function (resolve) {
+        var done = false;
+        function finish(r) { if (done) return; done = true; try { input.remove(); } catch (e) {} resolve(r); }
+        var input = document.createElement('input');
+        input.type = 'file';
+        input.accept = 'application/json,.json';
+        input.style.display = 'none';
+        input.addEventListener('cancel', function () { finish({ ok: false, canceled: true }); });
+        input.addEventListener('change', function () {
+          var f = input.files && input.files[0];
+          if (!f) { finish({ ok: false, canceled: true }); return; }
+          // 브라우저 저장 공간(localStorage)은 몇 MB 뿐이다 — 크게 넘는 파일은 읽기 전에 막는다 (실제로 써지는지는 가져온 뒤 바로 확인)
+          if (f.size > 10 * 1024 * 1024) { finish({ ok: false, error: '파일이 너무 커요. 브라우저에서는 10MB까지 가져올 수 있어요.' }); return; }
+          var rd = new FileReader();
+          rd.onload = function () { finish({ ok: true, name: f.name, content: String(rd.result || '') }); };
+          rd.onerror = function () { finish({ ok: false, error: '파일을 읽지 못했어요.' }); };
+          rd.readAsText(f, 'utf-8');
+        });
+        document.body.appendChild(input);
+        input.click();
+      });
+    },
     // 브라우저 미리보기에는 메인 프로세스가 없으므로 실제 AI 를 부를 수 없다.
     // 주소에 ?fakeai 를 붙이면 가짜 AI(규칙 기반, 화면에 표시됨)로 흐름만 확인할 수 있다.
     ai: {
@@ -136,6 +161,17 @@
     });
   }
 
+  // 백업 가져오기·그 되돌리기 뒤 — Google 캘린더 커서(syncToken)를 비워 다음 동기화를 전체 회차로 만든다.
+  //   옛 커서로 증분 pull 을 하면 그 뒤에 지운 일정이 'cancelled' 로 돌아와, 링크가 살아 있는 블록을 지워 버린다.
+  //   전체 목록에는 지운 일정이 오지 않으므로 Google 에 없는 링크 블록은 지우지 않고 다시 올린다.
+  function resetSyncCursors(st) {
+    var g = st && st.gcal;
+    if (!g || !Array.isArray(g.calendars)) return;
+    g.calendars.forEach(function (c) {
+      if (c && typeof c === 'object') { c.syncToken = null; c.windowStart = null; c.windowEnd = null; c.fullSyncAt = null; c.nextPullAt = null; }
+    });
+  }
+
   function carryChat(curChat) {
     if (!Array.isArray(state.chat)) state.chat = [];
     var have = {}, notes = {}, tasks = {};
@@ -200,6 +236,16 @@
     undo: function () {
       var last = undoStack.pop();
       if (!last) return null;
+      // 백업 가져오기 — 가져오기 전 상태 전체(prefs·gcal 포함)로 통째로 돌아간다. 현재 상태(presence)만 지금 값을 둔다
+      if (last.full) {
+        var pres = state.presence;
+        state = last.snapshot;
+        if (pres !== undefined) state.presence = pres;
+        resetSyncCursors(state);
+        scheduleSave();
+        emit({ type: 'load', label: last.label, source: 'import-undo' });
+        return last.label;
+      }
       // 화면 설정(prefs: 사이드바·모션 줄이기·홈 분할 비율 등), 현재 상태(presence), Google 동기화(gcal)는
       // 되돌리기 대상이 아니다 — 지금 값(같은 객체)을 그대로 유지한다
       var keep = {};
@@ -220,7 +266,26 @@
 
     flush: flush,
     retrySave: function () { dirty = true; return flush(); },
-    replaceAll: function (next) { state = M.normalize(next); undoStack = []; scheduleSave(); emit({ type: 'load' }); }
+    replaceAll: function (next) { state = M.normalize(next); undoStack = []; scheduleSave(); emit({ type: 'load' }); },
+
+    // 백업 가져오기 — next 는 M.validateBackup 을 거친 상태. 지금 데이터를 통째로 바꾸되,
+    // 가져오기 전 상태 전체를 되돌리기 항목 하나로 남긴다 (Ctrl+Z·알림의 [되돌리기] 한 번으로 돌아간다).
+    // 그 전 되돌리기 항목은 지운다 — 가져온 데이터 위에 옛 스냅숏을 덮으면 섞인다.
+    // 현재 상태(presence)는 이 기기에서만 사는 값이라 가져오지 않고 지금 값을 둔다.
+    importBackup: function (next, label) {
+      label = label || '백업 가져오기';
+      var before = clone(state);
+      var pres = state.presence;
+      state = M.normalize(next);
+      if (pres !== undefined) state.presence = pres;
+      resetSyncCursors(state);
+      // 백업 때 보내려던 목록은 지금과 맞지 않는다 — 비우면 동기화가 블록과 링크를 비교해 새로 만든다
+      if (state.gcal) state.gcal.outbox = [];
+      undoStack = [{ label: label, snapshot: before, at: Date.now(), full: true }];
+      scheduleSave();
+      emit({ type: 'load', label: label, source: 'import' });
+      return label;
+    }
   };
 
   // 창을 닫기 전에 남은 저장을 끝낸다

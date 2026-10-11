@@ -100,17 +100,31 @@
             '이전 프리셋으로 (' + presetLabel(mem.prevPreset) + ')') : null));
       }
 
-      // 시간표 짐작
-      section.appendChild(checkRow('st-guess', '근무 시간으로 상태 짐작하기 (내리기만 해요)', pf.schedule.mode === 'guess', function (on) {
+      // 시간표 짐작 — 프리셋마다 근무 시간 카드를 부르는 이름이 다르다 (수업 시간 · 영업 시간 · 등원–하원)
+      var schedLabel = pf.schedule.label || '근무 시간';
+      var guessRow = checkRow('st-guess', schedLabel + jo(schedLabel, '로/으로') + ' 상태 짐작하기 (내리기만 해요)', pf.schedule.mode === 'guess', function (on) {
         save(function (x) { x.autoSchedule = Object.assign({}, x.autoSchedule || {}, { mode: on ? 'guess' : 'off' }); });
         notify();
-      }));
-      section.appendChild(h('p.help.st-indent', '근무 시간은 위 ‘근무 시간’ 카드를 따라요. 짐작한 상태는 칩에 점선으로 보이고, 할 일을 숨기지는 않아요.',
-        h('br'), h('span.st-workhours', '근무 시간: ' + workHoursText()),
-        ' ', h('button.link-btn', { type: 'button', onclick: function () { scrollToCard('set-work'); } }, '바꾸기')));
+      });
+      if (pf.schedule.locked) {
+        guessRow.classList.add('is-locked');
+        var gcb = guessRow.querySelector('input');
+        if (gcb) { gcb.disabled = true; gcb.checked = false; }
+      }
+      section.appendChild(guessRow);
+      if (pf.schedule.locked) {
+        section.appendChild(h('p.help.st-indent', q(pf.presetLabel) + ' 리듬은 근무표가 날마다 달라서 시간으로 짐작하지 않아요. 적거나 칩으로 고른 상태만 써요.'));
+      } else {
+        section.appendChild(h('p.help.st-indent',
+          (schedLabel === '근무 시간' ? '근무 시간은 위 ‘근무 시간’ 카드를 따라요.' : q(schedLabel) + jo(schedLabel, '는/은') + ' 위 ‘근무 시간’ 카드의 시간을 써요.') +
+          ' 짐작한 상태는 칩에 점선으로 보이고, 할 일을 숨기지는 않아요.',
+          h('br'), h('span.st-workhours', schedLabel + ': ' + workHoursText()),
+          ' ', h('button.link-btn', { type: 'button', onclick: function () { scrollToCard('set-work'); } }, '바꾸기')));
+      }
 
-      // 퇴근하면
-      var seg = h('div.seg', { role: 'group', 'aria-label': '퇴근하면 업무 할 일은' });
+      // 퇴근하면 (프리셋의 '퇴근' 이름과 주 맥락 이름으로 — '영업 끝이면 가게 일 할 일은')
+      var afterQ = afterWorkLabel(pf);
+      var seg = h('div.seg', { role: 'group', 'aria-label': afterQ });
       [['hide', '숨기기'], ['down', '아래로 내리기']].forEach(function (o) {
         seg.appendChild(h('button', { type: 'button', 'data-key': 'st-after-' + o[0], 'aria-pressed': pf.afterWork === o[0] ? 'true' : 'false', onclick: function (e) {
           var me = e.currentTarget;
@@ -120,15 +134,18 @@
           notify();
         } }, o[1]));
       });
-      section.appendChild(h('div.settings-row', h('span.lbl', '퇴근하면 업무 할 일은'), seg));
+      section.appendChild(h('div.settings-row', h('span.lbl', afterQ), seg));
 
       section.appendChild(checkRow('st-urgent', '마감이 3시간 안이면 숨기지 않고 보여 주기', pf.urgentHours > 0, function (on) {
         save(function (x) { x.urgentHours = on ? 3 : 0; });
         notify();
       }));
-      section.appendChild(checkRow('st-overtime', '근무 시간이 한참 지나도 ‘업무 중’이면 한 번 알려 주기', pf.schedule.overtimeLine, function (on) {
-        save(function (x) { x.autoSchedule = Object.assign({}, x.autoSchedule || {}, { overtimeLine: !!on }); });
-      }));
+      if (pf.schedule.overtimeAllowed !== false) {
+        var workL = (pf.statuses[pf.roleMap.work_start || 'work'] || pf.statuses.work).label;
+        section.appendChild(checkRow('st-overtime', schedLabel + jo(schedLabel, '가/이') + ' 한참 지나도 ' + q(workL) + jo(workL, '면/이면') + ' 한 번 알려 주기', pf.schedule.overtimeLine, function (on) {
+          save(function (x) { x.autoSchedule = Object.assign({}, x.autoSchedule || {}, { overtimeLine: !!on }); });
+        }));
+      }
 
       // 더 고치기
       var adv = h('details.settings-adv.st-adv', { open: mem.advOpen },
@@ -156,6 +173,13 @@
       S().mutate(null, function () {}, { source: 'status' });
     }
 
+    // '퇴근하면 업무 할 일은' — 프리셋의 '퇴근' 이름과 주 맥락으로
+    function afterWorkLabel(pf) {
+      var offL = pf.statuses.off ? pf.statuses.off.label : '퇴근';
+      var ctxL = (pf.afterWorkCtx || pf.primary).filter(function (c) { return pf.contexts[c]; }).map(function (c) { return pf.contexts[c].label; }).join('·');
+      if (/^퇴근/.test(offL)) return '퇴근하면 ' + ctxL + ' 할 일은';
+      return q(offL) + jo(offL, '면/이면') + ' ' + ctxL + ' 할 일은';
+    }
     function presetLabel(id) {
       var x = ST().presetList().filter(function (pr) { return pr.id === id; })[0];
       return x ? x.label : id;
@@ -170,8 +194,10 @@
       var menuA = before.menu.map(function (m) { return before.statuses[m].label; }).join(' · ');
       var menuB = after.menu.map(function (m) { return after.statuses[m].label; }).join(' · ');
       if (menuA !== menuB) lines.push('칩 메뉴: ' + menuB);
-      if (before.schedule.mode !== after.schedule.mode) lines.push('근무 시간으로 짐작하기: ' + (after.schedule.mode === 'guess' ? '켬' : '끔'));
-      if (before.afterWork !== after.afterWork) lines.push('퇴근하면 업무 할 일: ' + (after.afterWork === 'hide' ? '숨기기' : '아래로 내리기'));
+      if (before.schedule.mode !== after.schedule.mode) lines.push((after.schedule.label || '근무 시간') + jo(after.schedule.label || '근무 시간', '로/으로') + ' 짐작하기: ' + (after.schedule.mode === 'guess' ? '켬' : after.schedule.locked ? '끔 (근무표대로 일해서 짐작하지 않아요)' : '끔'));
+      if (before.afterWork !== after.afterWork) lines.push(afterWorkLabel(after).replace(/은$/, '') + ': ' + (after.afterWork === 'hide' ? '숨기기' : '아래로 내리기'));
+      var ctxChanged = after.contextIds.filter(function (c) { return before.contexts[c] && before.contexts[c].label !== after.contexts[c].label; });
+      if (ctxChanged.length && lines.length < 3) lines.push('맥락 이름: ' + ctxChanged.map(function (c) { return before.contexts[c].label + ' → ' + after.contexts[c].label; }).join(' · '));
       if (!lines.length) lines.push('보이는 차이는 크지 않아요.');
       mem.prevPreset = back ? null : before.preset;
       mem.presetNote = { to: id, lines: lines.slice(0, 3) };

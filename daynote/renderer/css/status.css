@@ -69,6 +69,9 @@
 .st-settings .st-check { margin: 6px 0; align-items: flex-start; }
 .st-settings .st-check input { margin-top: 3px; }
 .st-settings .st-indent { margin: -2px 0 10px 26px; line-height: 1.6; }
+/* 프리셋이 막아 둔 설정 (교대 근무의 시간표 짐작) */
+.st-settings .st-check.is-locked { color: var(--text-tertiary); cursor: default; }
+.st-settings .st-check.is-locked input { cursor: default; }
 .st-settings .st-preset { width: auto; min-width: 180px; }
 .st-settings .st-preset-desc { margin: -6px 0 10px; }
 .st-preset-note { margin: 0 0 12px; padding: 8px 12px; border-radius: var(--r-control); background: var(--surface-subtle); font-size: 13px; }

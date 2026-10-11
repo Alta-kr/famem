@@ -161,6 +161,27 @@ ipcMain.handle('file:export', async (_e, suggestedName, content) => {
   }
 });
 
+// 백업 가져오기 — 사용자가 고른 JSON 파일 하나만 읽어 글자로 돌려준다. 검사·적용은 화면 쪽(model.validateBackup)이 한다
+const IMPORT_MAX_BYTES = 50 * 1024 * 1024;
+ipcMain.handle('file:import', async () => {
+  const res = await dialog.showOpenDialog(mainWindow, {
+    title: '백업 가져오기',
+    properties: ['openFile'],
+    filters: [{ name: 'Daynote 백업 (JSON)', extensions: ['json'] }]
+  });
+  if (res.canceled || !res.filePaths || !res.filePaths[0]) return { ok: false, canceled: true };
+  const file = res.filePaths[0];
+  try {
+    const st = await fs.stat(file);
+    if (st.size > IMPORT_MAX_BYTES) return { ok: false, error: '파일이 너무 커요. 50MB까지 가져올 수 있어요.' };
+    const content = await fs.readFile(file, 'utf8');
+    return { ok: true, name: path.basename(file), content };
+  } catch (e) {
+    console.error('[file:import]', e && e.message);
+    return { ok: false, error: '파일을 읽지 못했어요.' };
+  }
+});
+
 // ---------------------------------------------------------------- 창
 function createWindow() {
   mainWindow = new BrowserWindow({

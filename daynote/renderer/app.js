@@ -175,10 +175,13 @@
     var t = M.byId(S.state.tasks, id);
     if (!t) return;
     if (t.status === 'done') {
-      S.mutate('완료 취소', function (s) { M.reopenTask(s, id, now()); });
+      S.mutate('완료 취소', function (s) { if (DN.adapt && DN.adapt.unobserveDone) DN.adapt.unobserveDone(s, id, now()); M.reopenTask(s, id, now()); });
       ui.undoToast('‘' + t.title + '’ 완료를 취소했습니다. 이전 완료 기록은 히스토리에 ‘취소됨’으로 남습니다.');
     } else {
-      S.mutate('완료', function (s) { M.completeTask(s, id, now()); });
+      S.mutate('완료', function (s) {
+        var r = M.completeTask(s, id, now());
+        if (r && DN.adapt && DN.adapt.observeDone) DN.adapt.observeDone(s, r.task, now(), { prevStatus: r.prevStatus });   // 소요 시간·완료 시각 통계 (기기 안에만)
+      });
       ui.undoToast('‘' + t.title + '’ 완료 · 프로젝트 히스토리에 기록했습니다.');
     }
   }

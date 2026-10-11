@@ -51,8 +51,8 @@ test('#145 PRESETS 무결성: 메뉴 id 정의 · 정책표가 모든 맥락을 
   // 공통 상태 사전도 정의돼 있다
   SW.PHRASES.forEach((g) => assert.ok(SW.ROLES.includes(g.role), g.role));
   SW.STATUS_ORDER.forEach((id) => assert.ok(SW.CATEGORIES.includes(SW.STATUSES[id].category), id));
-  // v1 은 직장인·프리랜서만
-  assert.deepEqual(ST.presetList().filter((p) => p.stage === 'v1').map((p) => p.id), ['office', 'freelance']);
+  // v1.1 프리셋(학생·교대 근무·자영업·육아·살림)이 켜졌다. 크리에이터만 v2 (준비 중)
+  assert.deepEqual(ST.presetList().filter((p) => p.stage === 'v1').map((p) => p.id), ['office', 'freelance', 'student', 'shift', 'shop', 'home']);
   assert.deepEqual(Object.keys(ST.presetList()[0]).sort(), ['desc', 'id', 'label', 'stage']);
 });
 
@@ -106,10 +106,10 @@ test('#147 프리셋 제안: 14일 안 3번이면 제안. 프리셋마다 평생
   ST.notePresetSignal(w.s, 'freelance', at(16, 10));
   assert.equal(w.s.presence.hints.presetSeen.freelance.length, 2);
   assert.equal(ST.presetOfferDue(w.s, w.pf, at(16, 10)), null);
-  // v1.1 프리셋(학생)은 세어 두기만 하고 아직 제안하지 않는다
+  // 아직 준비 중인 프리셋(크리에이터, v2)은 세어 두기만 하고 제안하지 않는다
   const x = world();
-  [1, 2, 3].forEach((h) => ST.notePresetSignal(x.s, 'student', at(5, h)));
-  assert.equal(x.s.presence.hints.presetSeen.student.length, 3);
+  [1, 2, 3].forEach((h) => ST.notePresetSignal(x.s, 'creator', at(5, h)));
+  assert.equal(x.s.presence.hints.presetSeen.creator.length, 3);
   assert.equal(ST.presetOfferDue(x.s, x.pf, at(5, 10)), null);
   // 씨앗: 처음 켜는 순간 guessPreset 결과를 1번 센다
   const y = world();

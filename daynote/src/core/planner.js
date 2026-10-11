@@ -13,18 +13,20 @@
 //   · 규칙으로 짐작한 배치 힌트는 저장하지 않는다(hintsOf 가 읽을 때 계산한다).
 //
 // ── 의존성 ───────────────────────────────────────────────────────
-//   dates·model·slots 필수. status 선택(없으면 맥락 null, 고정 표). adapt 는 직접 쓰지 않는다
+//   dates·model·slots 필수. status 선택(없으면 맥락 null, 고정 표). adapt 선택 — 소요 시간 비율(2단계 통계)만 쓴다:
+//   완료 8개 이상으로 확실할 때 길이를 "보정 추정"으로 잡는다(opts.noAdapt 로 끈다. estimateMinutes 는 바꾸지 않는다).
 //   (배운 맥락은 ST.contextOf 를 거쳐 들어오고, "평소 이 시간대"는 지난 작업 블록 기록으로 계산한다).
 (function (factory) {
   var node = typeof module !== 'undefined' && module.exports;
   var opt = function (name) { try { return require('./' + name); } catch (e) { return null; } };
   var deps = node
-    ? { dates: require('./dates'), model: require('./model'), slots: require('./slots'), status: opt('status') }
-    : { dates: window.Daynote.dates, model: window.Daynote.model, slots: window.Daynote.slots, status: window.Daynote.statusCore || null };
-  var api = factory(deps.dates, deps.model, deps.slots, deps.status);
+    ? { dates: require('./dates'), model: require('./model'), slots: require('./slots'), status: opt('status'), adapt: opt('adapt') }
+    : { dates: window.Daynote.dates, model: window.Daynote.model, slots: window.Daynote.slots, status: window.Daynote.statusCore || null,
+        adapt: window.Daynote.adapt || null };
+  var api = factory(deps.dates, deps.model, deps.slots, deps.status, deps.adapt);
   if (node) module.exports = api;
   if (typeof window !== 'undefined') { window.Daynote = window.Daynote || {}; window.Daynote.planner = api; }
-})(function (D, M, SL, ST) {
+})(function (D, M, SL, ST, AD) {
   var STEP_MIN = 15, MIN_CHUNK = 30, COMMUTE_MIN = 30, EVENING_END = '22:30', DAY_OFF_CORE = ['09:00', '21:00'];
   var MINUTE = 60000, HOUR = 3600000;
   var DEFAULT_LIMIT = 5, DEFAULT_HISTORY_DAYS = 28, DEFAULT_NEAREST_DAYS = 14, DEFAULT_MAX_TASKS = 6, DEFAULT_MAX_MINUTES = 480;
@@ -217,21 +219,64 @@
     var r = Math.round(Number(task.estimateMinutes) - used);
     return r < 0 ? 0 : r;
   }
+  // 소요 시간 비율로 보정한 예상(분) → { minutes, base, factor, n, adjusted } | null (예상이 없으면)
+  function adjustedEstimate(state, task, opts) {
+    if (!task || task.estimateMinutes == null || !isNum(Number(task.estimateMinutes)) || Number(task.estimateMinutes) <= 0) return null;
+    var base = Number(task.estimateMinutes);
+    if (!AD || !AD.adjustMinutes || (opts && opts.noAdapt === true)) return { minutes: base, base: base, factor: 1, n: 0, adjusted: false };
+    return AD.adjustMinutes(state, task, base, opts && opts.now);
+  }
   function lengthOf(state, task, opts) {
-    if (isNum(opts.minutes) && opts.minutes > 0) return Math.round(opts.minutes);
+    return lengthInfo(state, task, opts).minutes;
+  }
+  // → { minutes, adjust: null | { base, minutes, factor, n } } — adjust 는 보정 추정으로 길이를 잡았을 때만
+  function lengthInfo(state, task, opts) {
+    var none = { minutes: null, adjust: null };
+    if (isNum(opts.minutes) && opts.minutes > 0) {
+      // adaptMinutes: 부르는 쪽이 계산한 "기본 길이"(남은 분·예상)를 넘긴 것 — 사용자가 직접 고른 길이가 아니므로 보정한다
+      if (opts.adaptMinutes === true && opts.ignoreBlockId == null && task && task.estimateMinutes != null) {
+        var ca = adjustedEstimate(state, Object.assign({}, task, { estimateMinutes: opts.minutes }), opts);
+        if (ca && ca.adjusted) return { minutes: ca.minutes, adjust: { base: Math.round(opts.minutes), minutes: ca.minutes, factor: ca.factor, n: ca.n } };
+      }
+      return { minutes: Math.round(opts.minutes), adjust: null };
+    }
     // 이 할 일의 작업 블록을 옮길 때(ignoreBlockId)는 그 블록의 길이를 지킨다.
     // (남은 분은 옮기는 블록 자신을 이미 빼고 세므로 첫 조각을 옮기면 나머지 길이가 되고, 소요 시간이 없으면 후보가 없어진다)
     if (opts.ignoreBlockId != null) {
       var mb = M.byId((state && state.blocks) || [], opts.ignoreBlockId);
       if (mb && mb.taskId === task.id && isWorkBlock(mb)) {
         var bl = (msOf(mb.end) - msOf(mb.start)) / MINUTE;
-        if (isNum(bl) && bl > 0) return Math.round(bl);
+        if (isNum(bl) && bl > 0) return { minutes: Math.round(bl), adjust: null };
       }
     }
+    var adj = adjustedEstimate(state, task, opts);
     var rem = remainingMinutes(state, task, opts.now);
-    if (rem != null && rem > 0) return rem;
+    if (adj && adj.adjusted && rem != null) {
+      if (rem > 0) {
+        // 앞으로 잡힌 작업 블록 몫은 그대로 빼고, 남은 몫만 보정한다
+        var used = Number(task.estimateMinutes) - rem;
+        var remAdj = Math.max(0, Math.round(adj.minutes - Math.max(0, used)));
+        if (remAdj > 0 && remAdj !== rem) return { minutes: remAdj, adjust: { base: rem, minutes: remAdj, factor: adj.factor, n: adj.n } };
+      } else {
+        // 예상 전부가 이미 잡혀 있으면 보정하지 않은 길과 똑같이 예상 전체를 넣는다 — 그 예상을 보정해서
+        return { minutes: adj.minutes, adjust: { base: Math.round(adj.base), minutes: adj.minutes, factor: adj.factor, n: adj.n } };
+      }
+    }
+    if (rem != null && rem > 0) return { minutes: rem, adjust: null };
     var est = task.estimateMinutes;
-    return isNum(est) && est > 0 ? Math.round(est) : null;
+    return isNum(est) && est > 0 ? { minutes: Math.round(est), adjust: null } : none;
+  }
+  function adjustReason(adj) {
+    var why = adj.factor > 1 ? '평소 예상보다 ' + adj.factor + '배 걸려서 ' : '평소 예상보다 빨리 끝내서(' + adj.factor + '배) ';
+    return why + D.duration(adj.base) + ' 대신 ' + D.duration(adj.minutes) + '으로 잡았어요.';
+  }
+  // 보정 추정으로 길이를 잡았으면 후보에 알리고 이유에 밝힌다 (이유는 3개까지 — 마지막 자리에 둔다)
+  function withAdjust(cand, adj) {
+    if (!adj || !cand) return cand;
+    cand.adjusted = { base: adj.base, minutes: adj.minutes, factor: adj.factor, n: adj.n };
+    var why = adjustReason(adj);
+    if (cand.reasons.indexOf(why) === -1) cand.reasons = cand.reasons.slice(0, 2).concat([why]);
+    return cand;
   }
 
   // ------------------------------------------------------------------ 맥락 · 프로필
@@ -621,11 +666,11 @@
     opts = prep(state, opts);
     var task = taskOf(state, taskId);
     if (!task || task.status === 'done') return [];
-    var len = lengthOf(state, task, opts);
+    var info = lengthInfo(state, task, opts), len = info.minutes;
     if (!len) return [];
     var r = analyze(state, task, ymd, opts, len);
     var limit = isNum(opts.limit) && opts.limit >= 1 ? Math.floor(opts.limit) : DEFAULT_LIMIT;
-    return diversify(r.scored, limit).map(function (c, i) { return publish(c, i, r.mode, opts); });
+    return diversify(r.scored, limit).map(function (c, i) { return withAdjust(publish(c, i, r.mode, opts), info.adjust); });
   }
 
   // ------------------------------------------------------------------ 가까운 날 · 나누기 (§5.10–5.11)
@@ -704,7 +749,7 @@
     var task = taskOf(state, taskId);
     if (!task) return fail('missing', '할 일을 찾지 못했어요.');
     if (task.status === 'done') return fail('done', '이미 끝낸 일이에요.');
-    var len = lengthOf(state, task, opts);
+    var info = lengthInfo(state, task, opts), len = info.minutes;
     if (!len) return fail('no_estimate', '소요 시간을 먼저 정해 주세요.');
     var withAlt = function (r) {
       var alt = r.reason === 'after_due' ? backFromDue(state, task, opts) : nearestDay(state, taskId, ymd, opts);
@@ -753,10 +798,10 @@
       return withAlt(fail('no_slot', shortDay(ymd) + '에는 ' + D.duration(len) + ' 빈 시간이 없어요.', detail));
     }
     var limit = 3;
-    var list = diversify(r.scored, limit).map(function (x, i) { return publish(x, i, r.mode, opts); });
+    var list = diversify(r.scored, limit).map(function (x, i) { return withAdjust(publish(x, i, r.mode, opts), info.adjust); });
     var best = list[0];
     return {
-      ok: true, candidate: best,
+      ok: true, candidate: best, adjusted: best.adjusted || null,
       block: { taskId: task.id, kind: 'work', start: best.startIso, end: best.endIso },
       reasons: best.reasons, alternatives: list.slice(1, 3)
     };
@@ -826,7 +871,8 @@
   return {
     STEP_MIN: STEP_MIN, MIN_CHUNK: MIN_CHUNK, COMMUTE_MIN: COMMUTE_MIN, EVENING_END: EVENING_END,
     DAY_OFF_CORE: Object.freeze(DAY_OFF_CORE.slice()), WEIGHTS: WEIGHTS,
-    ruleHints: ruleHints, hintsOf: hintsOf, remainingMinutes: remainingMinutes, taskMode: taskMode,
+    ruleHints: ruleHints, hintsOf: hintsOf, remainingMinutes: remainingMinutes,
+    lengthInfo: function (state, task, opts) { return lengthInfo(state, task, opts || {}); }, taskMode: taskMode,
     dayBands: dayBands, windowsFor: windowsFor, suggestSlots: suggestSlots, placeOnDay: placeOnDay,
     nearestDay: nearestDay, arrangeDay: arrangeDay, splitPlan: splitPlan, fmtDay: fmtDay, fmtRange: fmtRange
   };

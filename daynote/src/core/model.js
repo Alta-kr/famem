@@ -88,6 +88,8 @@
     // 적응
     if (!Array.isArray(s.learned.rules)) s.learned.rules = [];
     s.learned.metrics = Object.assign({}, E.learned.metrics, isPlainObject(s.learned.metrics) ? s.learned.metrics : {});
+    // 2단계 통계(숫자 집계, adapt.ensureStats 가 안쪽을 채운다) — 객체가 아니면 버린다
+    if (s.learned.stats !== undefined && !isPlainObject(s.learned.stats)) delete s.learned.stats;
     // Google 캘린더
     s.gcal.settings = Object.assign({}, E.gcal.settings, isPlainObject(s.gcal.settings) ? s.gcal.settings : {});
     ['calendars', 'events', 'outbox'].forEach(function (k) { if (!Array.isArray(s.gcal[k])) s.gcal[k] = []; });
@@ -602,6 +604,80 @@
     return state;
   }
 
+  // ---------------------------------------------------------------- 백업 가져오기
+  // 사용자가 고른 JSON(문자열 또는 이미 읽은 객체)이 Daynote 백업인지 확인하고, normalize 를 거친 새 상태를 돌려준다.
+  //   { ok:true, state, counts:{memos,tasks,projects}, version, stripped }  |  { ok:false, code, error }
+  //   code: parse(JSON 아님) · shape(Daynote 모양 아님) · newer(더 새 버전) · items(깨진 항목)
+  // 입력은 바꾸지 않는다(깊은 복제). 로그인 토큰·비밀값처럼 보이는 키는 어디에 있든 버린다 — 가져오지 않는다.
+  //   (Google syncToken 은 로그인 정보가 아니라 동기화 위치라 여기서는 둔다. 덮어쓸 때 store.importBackup 이 비워 전체 회차로 다시 맞춘다)
+  var BACKUP_SECRET_KEY = /(access|refresh|id|auth|bearer|oauth)_?tokens?$|secret|password|passwd|credential|api_?key|authorization/i;
+  var BACKUP_BARE_TOKEN = /^(tokens?|auth|oauth|google_?auth)$/i;   // 사용자 글이 아닌 곳(gcal·emailConnection·prefs·meta)에서만 본다
+  var BACKUP_REQUIRED = ['projects', 'notes', 'tasks'];
+  // id 가 꼭 있어야 하는 목록(사용자 데이터) — 메시지에 쓰는 한국어 이름
+  var BACKUP_ITEM_KEYS = { projects: '프로젝트', notes: '메모', tasks: '할 일', blocks: '일정' };
+  // 그 밖의 목록 — 항목이 객체이기만 하면 된다 (null·글자 하나가 섞이면 화면이 열리다 멈춘다)
+  var BACKUP_LIST_LABELS = { history: '기록', suggestions: '제안', emails: '메일', reports: '보고서',
+    aiRuns: 'AI 실행 기록', proposals: 'AI 초안', noteDigests: '메모 요약', chat: '대화' };
+  var BACKUP_TASK_ARRAYS = ['steps', 'sources', 'blockedBy'];
+  function backupLabel(k) { return BACKUP_ITEM_KEYS[k] || BACKUP_LIST_LABELS[k] || '목록'; }
+
+  function stripSecrets(o, depth, bare) {
+    var n = 0;
+    if (!o || typeof o !== 'object' || depth > 40) return 0;
+    if (Array.isArray(o)) { o.forEach(function (x) { n += stripSecrets(x, depth + 1, bare); }); return n; }
+    Object.keys(o).forEach(function (k) {
+      if (BACKUP_SECRET_KEY.test(k) || (bare && BACKUP_BARE_TOKEN.test(k))) { delete o[k]; n++; }
+      else n += stripSecrets(o[k], depth + 1, bare);
+    });
+    return n;
+  }
+
+  function backupCounts(state) {
+    if (!state || !Array.isArray(state.notes) || !Array.isArray(state.tasks) || !Array.isArray(state.projects)) return { memos: 0, tasks: 0, projects: 0 };
+    return { memos: liveNotes(state).length, tasks: liveTasks(state).length, projects: liveProjects(state).length };
+  }
+
+  function validateBackup(input) {
+    function fail(code, error) { return { ok: false, code: code, error: error }; }
+    var raw = input;
+    if (typeof input === 'string') {
+      try { raw = JSON.parse(input.replace(/^﻿/, '')); }
+      catch (e) { return fail('parse', 'JSON 파일이 아니에요. 설정에서 내보낸 백업 파일을 골라 주세요.'); }
+    }
+    if (!isPlainObject(raw)) return fail('shape', '이 파일은 Daynote 백업이 아니에요.');
+    var v = raw.version;
+    if (typeof v !== 'number' || v % 1 !== 0 || v < 1) return fail('shape', '이 파일은 Daynote 백업이 아니에요. (버전 정보가 없어요)');
+    if (v > SCHEMA_VERSION) return fail('newer', '더 새 버전의 Daynote에서 만든 백업이에요. 앱을 업데이트한 뒤 가져와 주세요.');
+    for (var i = 0; i < BACKUP_REQUIRED.length; i++) {
+      if (!Array.isArray(raw[BACKUP_REQUIRED[i]])) return fail('shape', '이 파일은 Daynote 백업이 아니에요. (' + backupLabel(BACKUP_REQUIRED[i]) + ' 목록이 없어요)');
+    }
+    // 목록이어야 하는 키가 다른 모양이면 망가진 파일이다 — 조용히 비우지 않고 알린다
+    var E = emptyState();
+    var badKey = Object.keys(E).filter(function (k) { return Array.isArray(E[k]) && raw[k] !== undefined && raw[k] !== null && !Array.isArray(raw[k]); })[0];
+    if (badKey) return fail('shape', '백업 파일이 망가졌어요. (' + backupLabel(badKey) + ' 목록 모양이 이상해요)');
+    var listKeys = Object.keys(E).filter(function (k) { return Array.isArray(E[k]); });
+    for (var j = 0; j < listKeys.length; j++) {
+      var key = listKeys[j], list = raw[key], needId = !!BACKUP_ITEM_KEYS[key];
+      if (!Array.isArray(list)) continue;
+      for (var x = 0; x < list.length; x++) {
+        var it = list[x];
+        var bad = !isPlainObject(it) || (needId && (typeof it.id !== 'string' || !it.id));
+        // 할 일 안의 목록 칸(단계·출처·선행 할 일)이 목록이 아니면 화면이 그리다 멈춘다
+        if (!bad && key === 'tasks') bad = BACKUP_TASK_ARRAYS.some(function (f) { return it[f] !== undefined && !Array.isArray(it[f]); });
+        if (bad) return fail('items', '백업 파일이 망가졌어요. (' + backupLabel(key) + ' ' + (x + 1) + '번째 항목)');
+      }
+    }
+    var copy;
+    try { copy = JSON.parse(JSON.stringify(raw)); } catch (e2) { return fail('shape', '백업 파일을 읽지 못했어요.'); }
+    var stripped = 0;
+    Object.keys(copy).forEach(function (k) {
+      stripped += stripSecrets(copy[k], 1, ['gcal', 'emailConnection', 'prefs', 'meta'].indexOf(k) >= 0);
+    });
+    var state;
+    try { state = normalize(copy); } catch (e3) { if (typeof console !== 'undefined') console.error(e3); return fail('shape', '백업 파일을 읽지 못했어요.'); }
+    return { ok: true, state: state, counts: backupCounts(state), version: v, stripped: stripped };
+  }
+
   return {
     SCHEMA_VERSION: SCHEMA_VERSION, TASK_STATUS: TASK_STATUS, PRIORITY: PRIORITY,
     HISTORY_TYPES: HISTORY_TYPES, MANUAL_HISTORY_TYPES: MANUAL_HISTORY_TYPES,
@@ -618,6 +694,7 @@
     addHistory: addHistory, updateHistory: updateHistory, deleteHistory: deleteHistory,
     mergeSuggestions: mergeSuggestions, acceptSuggestion: acceptSuggestion,
     dismissSuggestion: dismissSuggestion, restoreSuggestion: restoreSuggestion,
-    reportFor: reportFor, saveReport: saveReport, clearSample: clearSample
+    reportFor: reportFor, saveReport: saveReport, clearSample: clearSample,
+    validateBackup: validateBackup, backupCounts: backupCounts
   };
 });

@@ -33,6 +33,18 @@
 .learn-why { max-width: 360px; padding: 8px 10px; }
 .learn-why .btn { width: auto; display: inline-flex; }
 
+/* 백업 가져오기 — 덮어쓰기 확인 카드 */
+.import-confirm { display: flex; flex-direction: column; gap: 10px; }
+.import-lead { margin: 0; line-height: 1.6; }
+.import-counts { margin: 0; border: 1px solid var(--border-deco); border-radius: 8px; overflow: hidden; }
+.import-row { display: flex; gap: 12px; padding: 8px 12px; align-items: baseline; }
+.import-row + .import-row { border-top: 1px solid var(--border-deco); }
+.import-row dt { flex: 0 0 72px; font-size: 13px; color: var(--text-secondary); }
+.import-row dd { margin: 0; min-width: 0; overflow-wrap: anywhere; }
+.import-confirm .help { margin: 0; }
+.import-file { overflow-wrap: anywhere; }
+#set-data .sug-actions { flex-wrap: wrap; }
+
 @media (max-width: 640px) {
   /* 폰에서 .main 이 내용 높이만큼 늘어나 스크롤되지 않는 것을 설정 화면에서만 막는다 (전체 수정은 styles.css 담당에게 REQUEST) */
   .main:has(#set-ai) { min-height: 0; }

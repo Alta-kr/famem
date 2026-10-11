@@ -738,11 +738,344 @@
     return learnedN;
   }
 
+  // ------------------------------------------------------------------ 2단계 통계 (ADAPT §6.1) — 소요 시간 비율 · 완료 시각 분포
+  // learned.stats 에는 숫자 집계만 둔다(제목·글은 두지 않는다). 기기 밖으로 보내지 않는다 — hints() 는 stats 를 읽지 않는다.
+  //   est.ratios    [[log(실제/예상), 완료 시각 ms], …] 최근 EST_MAX 개
+  //   est.byProject { 프로젝트 id: 같은 꼴, 최근 EST_KEY_MAX 개 } · est.byContext { 맥락 id: … }
+  //   est.seen      완료 시각을 센 할 일 id · est.seenR 비율을 센 할 일 id (완료 → 취소 → 다시 완료를 두 번 세지 않게.
+  //                 비율은 실제로 잰 때만 seenR 에 넣는다 — 못 잰 첫 완료가 나중에 잴 수 있는 완료를 막지 않게)
+  //   hours.done    7×24 감쇠 카운트(월 0시 … 일 23시, 현지 시각) · hours.at 마지막으로 감쇠한 시각 · hours.n 센 횟수
+  // "실제" 로 인정하는 것 (a) 이 할 일의 작업 블록 안(끝난 뒤 GRACE 분까지)에서 완료 → 완료 시각까지의 블록 길이 합
+  //                          단, 블록 끝 무렵(끝 5분 전 ~ 끝+GRACE)에 끝냈는데 블록 길이 합이 예상과 다르면(보정·직접 늘림) 세지 않는다
+  //                          — 일이 아니라 블록 길이를 잰 것이라 비율이 제 출력을 되먹게 된다
+  //                      (b) 같은 날 시작(startedAt) → 완료. 다른 일로 바꿨다 돌아와도 startedAt 은 처음 값이라
+  //                          max(예상×3, 120분) 안일 때만, 비율은 STARTED_CLAMP 까지만 센다. 진행 중이 아니던 일이면 세지 않는다
+  // 사용자의 비율 = exp(Σw·log / (Σw + SHRINK_K)) — 표본이 적으면 1.0 쪽으로 당긴다. 완료 MIN_N 개 이상일 때만 쓴다.
+  // estimateMinutes 는 절대 덮어쓰지 않는다. 배치·추천이 읽을 때만 "보정 추정" 을 쓴다.
+  var STATS = {
+    EST_MAX: 40, EST_KEY_MAX: 20, MAX_KEYS: 30, SEEN_MAX: 60,
+    MIN_N: 8, SHRINK_K: 5, HALF_LIFE: 90, HOURS_HALF_LIFE: 60, HOURS_MIN: 14,
+    CLAMP: [0.5, 2.5], SAMPLE_CLAMP: [0.2, 5], NOTICE: 0.1,
+    GRACE_MIN: 30, SAME_DAY_MAX_MIN: 480, MIN_ACTUAL: 1,
+    END_WINDOW_MIN: 5, PLANNED_TOL_MIN: 5, STARTED_MAX_X: 3, STARTED_MAX_MIN: 120, STARTED_CLAMP: 3
+  };
+  var HOURS_CELLS = 7 * 24;
+  var DAY_NAMES = ['월', '화', '수', '목', '금', '토', '일'];
+
+  function zeros(n) { var a = []; for (var i = 0; i < n; i++) a.push(0); return a; }
+  function isObj(x) { return !!x && typeof x === 'object' && !Array.isArray(x); }
+  function validEntry(e) { return Array.isArray(e) && e.length >= 2 && typeof e[0] === 'number' && isFinite(e[0]) && typeof e[1] === 'number' && isFinite(e[1]); }
+  function cleanIds(a) { return (Array.isArray(a) ? a : []).filter(function (x) { return typeof x === 'string' && !!x; }).slice(-STATS.SEEN_MAX); }
+  function cleanList(a, max) { return (Array.isArray(a) ? a : []).filter(validEntry).slice(-max); }
+  function cleanMap(m, max) {
+    var out = {};
+    if (!isObj(m)) return out;
+    Object.keys(m).forEach(function (k) {
+      if (!k || k.length > TO_MAX) return;
+      var l = cleanList(m[k], max);
+      if (l.length) out[k] = l;
+    });
+    return out;
+  }
+  function freshStats() {
+    return { v: 1, est: { ratios: [], byProject: {}, byContext: {}, seen: [], seenR: [] }, hours: { done: zeros(HOURS_CELLS), at: null, n: 0 } };
+  }
+
+  // learned.stats 를 채워 돌려준다 (모양이 틀리면 고친다). 상태를 바꾼다 — 쓸 때만 부른다
+  function ensureStats(state) {
+    var L = ensure(state), S = L.stats;
+    if (!isObj(S)) S = L.stats = freshStats();
+    if (!S.v) S.v = 1;
+    if (!isObj(S.est)) S.est = freshStats().est;
+    S.est.ratios = cleanList(S.est.ratios, STATS.EST_MAX);
+    S.est.byProject = cleanMap(S.est.byProject, STATS.EST_KEY_MAX);
+    S.est.byContext = cleanMap(S.est.byContext, STATS.EST_KEY_MAX);
+    S.est.seen = cleanIds(S.est.seen);
+    S.est.seenR = cleanIds(S.est.seenR);
+    if (!isObj(S.hours)) S.hours = freshStats().hours;
+    var g = S.hours.done;
+    if (!Array.isArray(g) || g.length !== HOURS_CELLS) g = S.hours.done = zeros(HOURS_CELLS);
+    for (var i = 0; i < HOURS_CELLS; i++) { var v = Number(g[i]); g[i] = isFinite(v) && v > 0 ? v : 0; }
+    if (!isFinite(Date.parse(S.hours.at))) S.hours.at = null;
+    var n = Number(S.hours.n); S.hours.n = isFinite(n) && n > 0 ? Math.floor(n) : 0;
+    return S;
+  }
+
+  // 읽기 전용 — 상태를 바꾸지 않는다
+  function statsOf(state) {
+    var L = state && state.learned, S = L && isObj(L.stats) ? L.stats : null;
+    return S;
+  }
+
+  // 이 할 일이 실제로 얼마나 걸렸나 → { minutes, how: 'block' | 'started' } | null
+  // opts.prevStatus: 완료 직전 상태(completeTask 가 돌려준다) — 'in_progress' 가 아니면 시작 시각으로 재지 않는다
+  function actualMinutes(state, task, doneAt, opts) {
+    opts = opts || {};
+    var doneMs = toMs(doneAt != null ? doneAt : task && task.completedAt);
+    if (!task || !isFinite(doneMs)) return null;
+    var blocks = ((state && Array.isArray(state.blocks)) ? state.blocks : []).filter(function (b) {
+      return b && b.taskId === task.id && (b.kind === 'work' || !b.kind);
+    }).map(function (b) { return { s: toMs(b.start), e: toMs(b.end) }; })
+      .filter(function (b) { return isFinite(b.s) && isFinite(b.e) && b.e > b.s && b.s < doneMs; })
+      .sort(function (a, b) { return a.s - b.s; });
+    var graceMs = STATS.GRACE_MIN * 60000;
+    var inside = blocks.some(function (b) { return b.s <= doneMs && doneMs <= b.e + graceMs; });
+    if (inside) {
+      // 완료가 든 블록(여럿이면 마지막) 끝 무렵에 끝냈고, 잡아 둔 블록 길이가 예상과 다르면 블록을 잰 것이다
+      var host = null;
+      blocks.forEach(function (b) { if (b.s <= doneMs && doneMs <= b.e + graceMs) host = b; });
+      var est = Number(task.estimateMinutes);
+      if (host && doneMs >= host.e - STATS.END_WINDOW_MIN * 60000 && isFinite(est) && est > 0) {
+        var planned = 0, cur = -Infinity;
+        blocks.forEach(function (b) {
+          if (b.s > host.e) return;
+          var ps = Math.max(b.s, cur), pe = Math.min(b.e, host.e);
+          if (pe > ps) planned += pe - ps;
+          cur = Math.max(cur, b.e);
+        });
+        if (Math.abs(planned / 60000 - est) > STATS.PLANNED_TOL_MIN) return null;
+      }
+      var sum = 0, lastEnd = -Infinity, cursor = -Infinity;
+      blocks.forEach(function (b) {
+        var s = Math.max(b.s, cursor), e = Math.min(b.e, doneMs);   // 겹친 블록은 한 번만 센다
+        if (e > s) sum += e - s;
+        cursor = Math.max(cursor, b.e);
+        lastEnd = Math.max(lastEnd, b.e);
+      });
+      if (doneMs > lastEnd && doneMs - lastEnd <= graceMs) sum += doneMs - lastEnd;   // 블록이 끝난 뒤 조금 더 한 것
+      var m = sum / 60000;
+      if (m >= STATS.MIN_ACTUAL) return { minutes: m, how: 'block' };
+    }
+    var st = toMs(task.startedAt);
+    if (opts.prevStatus != null && opts.prevStatus !== 'in_progress') return null;
+    if (isFinite(st) && st < doneMs && D.ymd(new Date(st)) === D.ymd(new Date(doneMs))) {
+      var m2 = (doneMs - st) / 60000, e2 = Number(task.estimateMinutes);
+      var cap = Math.min(STATS.SAME_DAY_MAX_MIN, isFinite(e2) && e2 > 0 ? Math.max(e2 * STATS.STARTED_MAX_X, STATS.STARTED_MAX_MIN) : STATS.SAME_DAY_MAX_MIN);
+      if (m2 >= STATS.MIN_ACTUAL && m2 <= cap) return { minutes: m2, how: 'started' };
+    }
+    return null;
+  }
+
+  function decayGrid(H, nowMs) {
+    var at = Date.parse(H.at);
+    if (isFinite(at) && nowMs > at) {
+      var f = Math.pow(2, -(nowMs - at) / (STATS.HOURS_HALF_LIFE * D.DAY));
+      for (var i = 0; i < HOURS_CELLS; i++) H.done[i] *= f;
+    }
+    if (!isFinite(at) || nowMs > at) H.at = isoOf(nowMs);
+  }
+  function cellOf(ms) { var d = new Date(ms); return ((d.getDay() + 6) % 7) * 24 + d.getHours(); }
+
+  function pushCapped(list, item, max) { list.push(item); while (list.length > max) list.shift(); }
+  function pushKeyed(map, key, item) {
+    if (!key || typeof key !== 'string' || key.length > TO_MAX) return;
+    if (!has(map, key)) {
+      var keys = Object.keys(map);
+      if (keys.length >= STATS.MAX_KEYS) {   // 가장 오래 안 쓴 칸을 버린다
+        keys.sort(function (a, b) { return map[a][map[a].length - 1][1] - map[b][map[b].length - 1][1] || (a < b ? -1 : 1); });
+        delete map[keys[0]];
+      }
+      map[key] = [];
+    }
+    pushCapped(map[key], item, STATS.EST_KEY_MAX);
+  }
+
+  // 할 일을 끝냈을 때 부른다 (completeTask 바로 뒤, 같은 mutate 안에서). 배우기를 껐거나 예제 데이터면 세지 않는다.
+  // opts.prevStatus: completeTask 가 돌려준 완료 직전 상태 (있으면 시작 시각으로 잴지 정하는 데 쓴다)
+  // → { hours: bool, ratio: number | null, actual, estimate, how } | null
+  function observeDone(state, taskOrId, now, opts) {
+    var nowMs = toMs(now);
+    if (!state || !isFinite(nowMs) || !enabled(state)) return null;
+    var task = typeof taskOrId === 'string' ? M.byId(Array.isArray(state.tasks) ? state.tasks : [], taskOrId) : taskOrId;
+    if (!task || !task.id || task.sample || task.status !== 'done') return null;
+    var doneMs = toMs(task.completedAt);
+    if (!isFinite(doneMs)) doneMs = nowMs;
+    var S = ensureStats(state), out = { hours: false, ratio: null, actual: null, estimate: null, how: null };
+    // 완료 시각 분포 — 다시 연 뒤 또 끝낸 것은 한 번만 센다
+    if (S.est.seen.indexOf(task.id) === -1) {
+      pushCapped(S.est.seen, task.id, STATS.SEEN_MAX);
+      decayGrid(S.hours, nowMs);
+      S.hours.done[cellOf(doneMs)] += 1;
+      S.hours.n += 1;
+      out.hours = true;
+    }
+    // 소요 시간 비율 — 실제로 잰 때만 seenR 에 넣는다
+    if (S.est.seenR.indexOf(task.id) !== -1) return out;
+    var est = Number(task.estimateMinutes);
+    if (task.estimateMinutes == null || !isFinite(est) || est <= 0) return out;
+    var act = actualMinutes(state, task, doneMs, opts);
+    if (!act) return out;
+    pushCapped(S.est.seenR, task.id, STATS.SEEN_MAX);
+    var hi = act.how === 'started' ? STATS.STARTED_CLAMP : STATS.SAMPLE_CLAMP[1];
+    var ratio = Math.min(hi, Math.max(STATS.SAMPLE_CLAMP[0], act.minutes / est));
+    var item = [Math.round(Math.log(ratio) * 1e4) / 1e4, doneMs];
+    pushCapped(S.est.ratios, item, STATS.EST_MAX);
+    if (task.projectId) pushKeyed(S.est.byProject, String(task.projectId), item.slice());
+    if (task.context) pushKeyed(S.est.byContext, String(task.context), item.slice());
+    out.ratio = ratio; out.actual = Math.round(act.minutes); out.estimate = est; out.how = act.how;
+    return out;
+  }
+
+  // 완료를 취소할 때 부른다 (reopenTask 바로 앞, completedAt 이 남아 있을 때). observeDone 이 남긴 시각·비율 하나를 뺀다.
+  // 기록에는 할 일 id 가 없으므로 완료 시각(ms)으로 찾는다. → { hours: bool, ratio: bool } | null
+  function unobserveDone(state, taskOrId, now) {
+    var nowMs = toMs(now);
+    if (!state || !state.learned || !isObj(state.learned.stats) || !isFinite(nowMs)) return null;
+    var task = typeof taskOrId === 'string' ? M.byId(Array.isArray(state.tasks) ? state.tasks : [], taskOrId) : taskOrId;
+    if (!task || !task.id) return null;
+    var doneMs = toMs(task.completedAt);
+    var S = ensureStats(state), out = { hours: false, ratio: false };
+    function drop(list) {
+      for (var i = list.length - 1; i >= 0; i--) if (list[i][1] === doneMs) { list.splice(i, 1); return true; }
+      return false;
+    }
+    var hi = S.est.seen.indexOf(task.id);
+    if (hi !== -1) {
+      S.est.seen.splice(hi, 1);
+      if (isFinite(doneMs)) {
+        decayGrid(S.hours, nowMs);
+        var c = cellOf(doneMs), w = nowMs > doneMs ? Math.pow(2, -(nowMs - doneMs) / (STATS.HOURS_HALF_LIFE * D.DAY)) : 1;
+        S.hours.done[c] = Math.max(0, S.hours.done[c] - w);
+        S.hours.n = Math.max(0, S.hours.n - 1);
+        out.hours = true;
+      }
+    }
+    var ri = S.est.seenR.indexOf(task.id);
+    if (ri !== -1) {
+      S.est.seenR.splice(ri, 1);
+      if (isFinite(doneMs) && drop(S.est.ratios)) {
+        out.ratio = true;
+        [[S.est.byProject, task.projectId], [S.est.byContext, task.context]].forEach(function (x) {
+          var k = x[1] != null ? String(x[1]) : null;
+          if (k && has(x[0], k)) { drop(x[0][k]); if (!x[0][k].length) delete x[0][k]; }
+        });
+      }
+    }
+    return out;
+  }
+
+  function clampF(f) { return Math.min(STATS.CLAMP[1], Math.max(STATS.CLAMP[0], f)); }
+  // 목록 하나 → { n, w, sum(Σw·log), raw(가중 평균 비율) }
+  function agg(list, nowMs) {
+    var w = 0, sum = 0;
+    list.forEach(function (e) {
+      var age = Math.max(0, nowMs - e[1]), wi = Math.pow(2, -age / (STATS.HALF_LIFE * D.DAY));
+      w += wi; sum += wi * e[0];
+    });
+    return { n: list.length, w: w, sum: sum, raw: w > 0 ? Math.exp(sum / w) : 1 };
+  }
+
+  // 소요 시간 비율. opts = { projectId?, context? } — 그 칸에 MIN_N 개 이상 있으면 전체 쪽으로 당겨서 쓴다.
+  // → { n, factor, raw, confident, scope: 'all'|'project'|'context' }. 읽기 전용
+  function durationStats(state, now, opts) {
+    var nowMs = toMs(now), S = statsOf(state);
+    var none = { n: 0, factor: 1, raw: 1, confident: false, scope: 'all' };
+    if (!isFinite(nowMs) || !S || !isObj(S.est)) return none;
+    var all = agg(cleanList(S.est.ratios, STATS.EST_MAX), nowMs);
+    if (!all.n) return none;
+    var baseLog = all.sum / (all.w + STATS.SHRINK_K);
+    var res = { n: all.n, factor: clampF(Math.exp(baseLog)), raw: all.raw, confident: all.n >= STATS.MIN_N, scope: 'all' };
+    opts = opts || {};
+    var pick = null;
+    [['project', 'byProject', opts.projectId], ['context', 'byContext', opts.context]].some(function (x) {
+      if (!x[2] || !isObj(S.est[x[1]]) || !has(S.est[x[1]], x[2])) return false;
+      var a = agg(cleanList(S.est[x[1]][x[2]], STATS.EST_KEY_MAX), nowMs);
+      if (a.n < STATS.MIN_N) return false;
+      pick = { scope: x[0], a: a };
+      return true;
+    });
+    if (pick && res.confident) {
+      // 그 칸의 평균을 전체 비율 쪽으로 당긴다
+      var lg = (pick.a.sum + STATS.SHRINK_K * baseLog) / (pick.a.w + STATS.SHRINK_K);
+      res = { n: pick.a.n, factor: clampF(Math.exp(lg)), raw: pick.a.raw, confident: true, scope: pick.scope };
+    }
+    return res;
+  }
+
+  // 배치·추천이 쓰는 보정 추정 (분). 확실하지 않거나 차이가 작으면 그대로 돌려준다. estimateMinutes 는 바꾸지 않는다.
+  // → { minutes, base, factor, n, adjusted }
+  function adjustMinutes(state, task, minutes, now) {
+    var base = Number(minutes);
+    var out = { minutes: base, base: base, factor: 1, n: 0, adjusted: false };
+    if (!state || !task || !isFinite(base) || base <= 0 || !enabled(state)) return out;
+    var ds = durationStats(state, now, { projectId: task.projectId || null, context: task.context || null });
+    out.n = ds.n;
+    if (!ds.confident || Math.abs(ds.factor - 1) < STATS.NOTICE) return out;
+    var m = Math.max(5, Math.round(base * ds.factor / 5) * 5);
+    if (m === Math.round(base)) return out;
+    out.minutes = m; out.factor = Math.round(ds.factor * 10) / 10; out.adjusted = true;
+    return out;
+  }
+
+  // 완료 시각 분포 (화면 표시용). → { n, total, grid: number[168], peakHours: [from, to] | null, peakDay: 0–6 | null, enough }
+  function hourStats(state, now) {
+    var nowMs = toMs(now), S = statsOf(state);
+    var out = { n: 0, total: 0, grid: zeros(HOURS_CELLS), peakHours: null, peakDay: null, enough: false };
+    if (!S || !isObj(S.hours) || !Array.isArray(S.hours.done) || S.hours.done.length !== HOURS_CELLS) return out;
+    var at = Date.parse(S.hours.at), f = isFinite(at) && isFinite(nowMs) && nowMs > at ? Math.pow(2, -(nowMs - at) / (STATS.HOURS_HALF_LIFE * D.DAY)) : 1;
+    for (var i = 0; i < HOURS_CELLS; i++) { var v = Number(S.hours.done[i]); out.grid[i] = isFinite(v) && v > 0 ? v * f : 0; out.total += out.grid[i]; }
+    out.n = Math.max(0, Math.floor(Number(S.hours.n) || 0));
+    out.enough = out.n >= STATS.HOURS_MIN && out.total > 0;
+    if (!out.total) return out;
+    var byHour = zeros(24), byDay = zeros(7);
+    for (var c = 0; c < HOURS_CELLS; c++) { byHour[c % 24] += out.grid[c]; byDay[Math.floor(c / 24)] += out.grid[c]; }
+    // 가장 많이 끝낸 연속 2시간
+    var best = -1, bh = 0;
+    for (var hr = 0; hr < 23; hr++) {   // 같으면 첫 시간이 더 많은 쪽 (9시에만 끝냈으면 8–10시가 아니라 9–11시)
+      var s2 = byHour[hr] + byHour[hr + 1];
+      if (s2 > best + EPS || (Math.abs(s2 - best) <= EPS && byHour[hr] > byHour[bh] + EPS)) { best = s2; bh = hr; }
+    }
+    out.peakHours = [bh, bh + 2];
+    var bd = 0;
+    for (var d = 1; d < 7; d++) if (byDay[d] > byDay[bd] + EPS) bd = d;
+    out.peakDay = bd;
+    return out;
+  }
+
+  function hourText(h) { return h === 0 ? '밤 12시' : h <= 5 ? '새벽 ' + h + '시' : h < 12 ? '오전 ' + h + '시' : h === 12 ? '낮 12시' : h < 18 ? '오후 ' + (h - 12) + '시' : h < 24 ? '저녁 ' + (h - 12) + '시' : '밤 12시'; }
+
+  // '오후 2시–4시' · '오전 11시–오후 1시'
+  function rangeText(a, b) {
+    var ta = hourText(a), tb = hourText(b), pa = ta.split(' ')[0], pb = tb.split(' ')[0];
+    return ta + '–' + (pa === pb ? tb.slice(pb.length + 1) : tb);
+  }
+
+  // 설정 카드 문장. → { duration: string, hours: string|null, hasDuration, hasHours }
+  function statsSummary(state, now) {
+    var ds = durationStats(state, now), hs = hourStats(state, now), dur;
+    if (ds.n < STATS.MIN_N) {
+      dur = '예상 시간을 적은 일을 캘린더 작업 시간 안에서 끝내거나 ‘지금 시작’을 누르고 끝내면 세요. ' +
+        STATS.MIN_N + '개가 쌓이면 실제로 얼마나 걸리는지 알려 드릴게요' + (ds.n ? ' (지금 ' + ds.n + '개)' : '') + '.';
+    } else {
+      var f = Math.round(ds.factor * 10) / 10, head = '최근 완료한 ' + ds.n + '개 기준으로 ';
+      var off = enabled(state) ? null : ' 배우기를 꺼서 지금은 캘린더에 반영하지 않아요.';
+      if (Math.abs(ds.factor - 1) < STATS.NOTICE) dur = head + '대체로 예상한 만큼 걸렸어요.';
+      else if (ds.factor > 1) dur = head + '예상보다 ' + f + '배 걸렸어요.' + (off || ' 캘린더에 넣을 때 그만큼 넉넉히 잡아요.');
+      else dur = head + '예상의 ' + f + '배 만에 끝냈어요.' + (off || ' 캘린더에 넣을 때 그만큼 짧게 잡아요.');
+    }
+    var hrs = null;
+    if (hs.enough) {
+      hrs = '할 일은 주로 ' + rangeText(hs.peakHours[0], hs.peakHours[1]) + '에 끝냈고, 요일로는 ' + DAY_NAMES[hs.peakDay] + '요일에 가장 많이 끝냈어요.';
+    }
+    return { duration: dur, hours: hrs, hasDuration: ds.n > 0, hasHours: hs.n > 0, n: ds.n, factor: ds.factor, confident: ds.confident };
+  }
+
+  // 통계 지우기. part = 'est' | 'hours' | 생략(모두) → 지웠으면 true
+  function resetStats(state, part) {
+    if (!state || !state.learned || !isObj(state.learned.stats)) return false;
+    var S = ensureStats(state), F = freshStats();
+    if (!part || part === 'est') { var keep = S.est.seen; S.est = F.est; if (part) S.est.seen = keep; }   // 비율만 지우면 시각을 센 id 는 남긴다
+    if (!part || part === 'hours') { S.hours = F.hours; S.est.seen = []; }
+    return true;
+  }
+
   return {
-    TYPES: TYPES, LIMITS: LIMITS, DATE_WORDS: DATE_WORDS, MONTH_WORDS: MONTH_WORDS,
+    TYPES: TYPES, LIMITS: LIMITS, DATE_WORDS: DATE_WORDS, MONTH_WORDS: MONTH_WORDS, STATS: STATS,
     ensure: ensure, enabled: enabled, normKey: normKey, tokens: tokens, phrases: phrases,
     learn: learn, suggest: suggest, hints: hints, penalize: penalize, weaken: weaken,
     get: get, forget: forget, forgetRef: forgetRef, reset: reset, compact: compact, list: list, count: count,
-    encodeDate: encodeDate, resolveDate: resolveDate, says: says, bootstrap: bootstrap
+    encodeDate: encodeDate, resolveDate: resolveDate, says: says, bootstrap: bootstrap,
+    ensureStats: ensureStats, actualMinutes: actualMinutes, observeDone: observeDone, unobserveDone: unobserveDone, durationStats: durationStats,
+    adjustMinutes: adjustMinutes, hourStats: hourStats, statsSummary: statsSummary, resetStats: resetStats
   };
 });
