@@ -305,7 +305,7 @@
       },
       matrix: {
         study: { work: 'hide' },
-        part_time: { work: 'up', study: 'down' },
+        part_time: { work: 'up', study: 'down', errand: 'down', home: 'down' },
         off: { study: 'normal', work: 'after' },
         day_off: { study: 'normal', work: 'after' },
         to_home: { work: 'after', errand: 'up' }
@@ -317,7 +317,8 @@
       schedule: { mode: 'guess', label: '수업 시간', work: 'study', workLabel: '공부 시간', before: '수업 전', after: '수업 끝' },
       overtime: false,
       // '퇴근하면 … 할 일은' 선택이 다루는 맥락 (학생은 공부가 아니라 알바)
-      afterWork: 'hide', afterWorkCtx: ['work'], contextLabels: { work: '알바' }
+      afterWork: 'hide', afterWorkCtx: ['work'], contextLabels: { work: '알바' },
+      contextWords: { work: { strong: ['알바'] } }
     },
     shift: {
       label: '교대 근무', stage: 'v1', primary: ['work'],
