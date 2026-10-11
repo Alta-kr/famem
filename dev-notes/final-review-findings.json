@@ -1,0 +1,188 @@
+[
+ {
+  "title": "Undoing an AI-sorted card (or reloading mid-sort) leaves it stuck on \"정리하는 중…\" for good, with no way to retry",
+  "file": "daynote/renderer/views/chat.js",
+  "line": 284,
+  "severity": "high",
+  "evidence": "Every AI card's footer says \"AI가 정리함 · Ctrl+Z로 되돌리기\". 'AI 분류' is one labelled mutate, and its snapshot was taken after classify had already set capture.status='pending'. Undo therefore puts the note back to status 'pending' while inflight[] is empty. captureCard draws the skeleton whenever `c.status === 'pending'`, even when CP.isRunning() is false. Nothing on load (aiflow/capture) re-runs or resets pending notes, and the skeleton has no button. Seen in the browser: (a) send '내일까지 견적서 보내기', wait, click outside the input, Ctrl+Z → the card reads '정리하는 중…' and stays that way after store.flush() and a page reload, with 0 buttons. (b) Reloading within about 100ms of sending gives the same result. (c) Accepting a status hint chip ('회의 들어가요' → [바꾸기]) and then pressing Ctrl+Z undoes 'AI 분류' rather than the hint, with the same result. FEATURES §10 lists this as a known issue, but the shipped Ctrl+Z hint sends users straight into it.",
+  "fix": "In captureCard, show the skeleton only while it is really running: change line 284 to `if (!c.command && CP.isRunning(n.id)) { …skeleton… }`. Then add a stopped branch before the `no_ai` branch: `else if (c.status === 'pending') { head = h('div.cap-head', h('span', '메모로 남겨 뒀어요'), h('span.cap-head-sub', ' · 정리가 멈췄어요')); ft = h('div.cap-foot', h('button.btn.btn-xs', { type:'button', onclick: function(){ CP.classify(n.id); } }, ui.icon('refresh'), '다시 시도')); }`. This mirrors the command card's '다듬기가 멈췄어요 + [다시 다듬기]' state (FEATURES §6.8). The branch has to sit inside the `else` block before `items = CP.items(n)` is used for the summary.",
+  "repro": "node scratchpad/flows/t21.js (send → Ctrl+Z outside input → reload; then send → reload within 100ms)"
+ },
+ {
+  "title": "The home input and the Ctrl+N quick memo share one draft (state.quickDraft): text gets overwritten, lost or saved twice",
+  "file": "daynote/renderer/app.js",
+  "line": 274,
+  "severity": "medium",
+  "evidence": "chat.js:20/77/82 and app.js:272-279/307 both read and write `s.quickDraft`. Seen in the browser: (1) type '홈에서 쓰던 글' in the home box, press Ctrl+N: the modal opens already filled with the home text. Type something else and press Esc: the state draft becomes the modal text. After going to 할 일 and back to 오늘, the home box shows '빠른 메모로 쓴 다른 글', so the home text is lost. (2) Type '견적서 보내기' in the home box, press Ctrl+N, then Ctrl+Enter: the note is saved. saveQuick clears quickDraft silently, but the home box still shows '견적서 보내기'. Pressing Enter there saves it again, giving notes ['견적서 보내기','견적서 보내기'].",
+  "fix": "Give the home box its own draft. In src/core/model.js emptyState() add `homeDraft: { text: '' }` (normalize already shallow-merges unknown keys). In renderer/views/chat.js, use `st.homeDraft.text` on line 20 and write `s.homeDraft = { text: ta.value }` / `{ text: '' }` on lines 77 and 82. Leave app.js quickCapture/saveQuick on `quickDraft`. Optionally add 'homeDraft' and 'quickDraft' to KEEP_ON_UNDO in store.js so that undo does not roll back drafts either.",
+  "repro": "node scratchpad/flows/t8.js and t22.js"
+ },
+ {
+  "title": "Ctrl+Z undoes earlier data but also deletes chat messages posted after it (status cards, pure-status bubbles, help/next/rest cards), so the chat and the status chip disagree",
+  "file": "daynote/renderer/store.js",
+  "line": 184,
+  "severity": "medium",
+  "evidence": "`chat` is in every undo snapshot (only prefs, presence and gcal are kept). Seen in the browser (STATUS #153 flow): send 출근, tick a task as done, send '퇴근', then Ctrl+Z. The completion is undone and the chip stays '퇴근 · 내 시간', as the spec requires. But the '퇴근' bubble and the '‘퇴근 · 내 시간’으로 바꿨어요' card, with its [이전 상태로]/[지금 시작] buttons, disappear. The chat ends at '10:00 · 업무 중' while the chip says 퇴근. A pure status report creates no memo, so the user's words are gone. Rest-timer, help, next and breakdown cards posted after the last labelled change are wiped the same way.",
+  "fix": "In store.undo(), carry newer chat messages across the restore, except the cards tied to notes that the undo removed. Before `state = last.snapshot;` add `var curChat = state.chat || [];`. After the KEEP_ON_UNDO loop add `var have = {}; (state.chat||[]).forEach(function(m){ have[m.id]=1; }); var notes = {}; (state.notes||[]).forEach(function(n){ notes[n.id]=1; }); curChat.forEach(function(m){ if (!have[m.id] && (!m.noteId || notes[m.noteId])) state.chat.push(m); });`.",
+  "repro": "node scratchpad/flows/t16.js"
+ },
+ {
+  "title": "The cards' \"Ctrl+Z로 되돌리기\" hint does nothing right after sending, because focus goes back to the empty input",
+  "file": "daynote/renderer/app.js",
+  "line": 370,
+  "severity": "medium",
+  "evidence": "sendNow (chat.js:99) and the rec panel refocus `.chat-input textarea` after each send. onKey only undoes when `!inField`. Seen in the browser: type '내일까지 견적서 보내기', press Enter, wait for the card ('…AI가 정리함 · Ctrl+Z로 되돌리기'), press Ctrl+Z. activeElement is TEXTAREA, the textarea stays '', the task '견적서 보내기' remains, and no toast appears. The shortcut only works after the user clicks outside the input, which the UI never tells them.",
+  "fix": "Let the app undo run when the focused field is the empty home input, since a native undo has nothing to do there. In onKey, before the Ctrl+Z check, add `var emptyHome = e.target.matches && e.target.matches('textarea[data-slash]') && !e.target.value;` and change the condition to `… && (!inField || emptyHome)`."
+ },
+ {
+  "title": "Learned kind changes and manual kind changes skip the duplicate check and leave a contradictory \"…1개는 만들지 않았어요\" header",
+  "file": "daynote/src/core/ai/proposals.js",
+  "line": 849,
+  "severity": "medium",
+  "evidence": "applyCapture records `skipped:[{reason:'duplicate'}]` when the task already exists. captureSetKind → captureToTask then creates the task anyway, and done() keeps `skipped` through Object.assign. planKind/applyLearned never look at `skipped`. Seen in the browser: send '장보기 메모', change it to 할 일, and repeat 3 times. Card 2 reads '할 일로 정리했어요 · 비슷한 할 일이 이미 있어서 1개는 만들지 않았어요 … 배운 대로 1곳 고침'. The state now holds 3 identical '장보기 메모' tasks, and the 3rd was created automatically by a learned rule even though the dedupe had refused it.",
+  "fix": "(1) In captureSetKind's `done` (line 849), also reset `skipped: []` when `created.length` is greater than 0, so the header stops claiming nothing was created. (2) In planKind (line 686), add `if (((note.capture || {}).skipped || []).some(function (x) { return x.reason === 'duplicate'; })) return null;` so learned rules never re-create a task the dedupe skipped.",
+  "repro": "node scratchpad/flows/t3.js"
+ },
+ {
+  "title": "Ctrl+N with an idle phrase ('한가해', '뭐 하지') promises a recommendation but nothing happens",
+  "file": "daynote/renderer/statusui.js",
+  "line": 154,
+  "severity": "low",
+  "evidence": "On the toast surface, the idle branch only shows '메모는 만들지 않았어요. 오늘 화면에서 ‘다음 할 일’을 골라 드릴게요.' It never calls AS.next() and never navigates. STATUS §1459 says 'idle 이면 AS.next()'. Seen in the browser: on the 할 일 view, Ctrl+N, '한가해', Ctrl+Enter. The view stays 'tasks', state.chat.length stays 0, and no next card is posted.",
+  "fix": "Replace line 154 with `else if (surface === 'toast') { if (DN.app && DN.app.go) DN.app.go('today'); if (AS() && AS().next) AS().next(); if (!opts.quiet) ui().toast('메모는 만들지 않았어요. 오늘 화면에 ‘다음 할 일’을 골라 뒀어요.'); }`.",
+  "repro": "node scratchpad/flows/t30.js"
+ },
+ {
+  "title": "The \"recommendations paused\" message is ungrammatical: ‘회의 중’ 중이라 (rec panel) and ‘잘 시간’ 중이라 (chat)",
+  "file": "daynote/renderer/views/recpanel.js",
+  "line": 185,
+  "severity": "low",
+  "evidence": "Seen in the browser: with the rec panel open, '/상태 회의 중' shows '‘회의 중’ 중이라 추천은 쉬어요. 끝나면 다시 골라 드릴게요.' In chat, '자러 감' followed by [다음 할 일] posts '‘잘 시간’ 중이라 추천은 쉬어요.' assistant.js:169 only special-cases labels that end in '중', and recpanel has no special case at all. STATUS §962 uses label + '이라'.",
+  "fix": "In both places build the text as `'‘' + l + '’' + ui.josa(l, '라/이라').slice(l.length) + ' 추천은 쉬어요. 끝나면 다시 골라 드릴게요.'`. That is recpanel.js:185 with l = label(st), and assistant.js:169 with l = ql. Drop the extra ' 중'."
+ },
+ {
+  "title": "Breakdown and large-task messages hard-code the particles 를/는 (e.g. ‘분기 보고서 작성’를)",
+  "file": "daynote/renderer/views/chat.js",
+  "line": 647,
+  "severity": "low",
+  "evidence": "Seen in the browser: assistant.breakdown on '분기 보고서 작성' renders '‘분기 보고서 작성’를 이렇게 나눠 보면 어떨까요?'. The same hard-coded particle appears at chat.js:625 ('’를 N단계로 나눴어요'), assistant.js:205 ('’를 작은 단계로…'), assistant.js:215 ('’는 이미 충분히…') and assistant.js:62 ('’는 꽤 큰 일…'). Everywhere else the code uses ui.josa.",
+  "fix": "Replace each hard-coded particle with `ui.josa(title, '를/을').slice(title.length)` or `DN.ui.josa(title, '는/은').slice(title.length)`, for example chat.js:647 `'‘' + t.title + '’' + ui.josa(t.title, '를/을').slice(t.title.length) + ' 이렇게 나눠 보면 어떨까요?'`.",
+  "repro": "node scratchpad/flows/t29.js"
+ },
+ {
+  "title": "Opening a task from the home lists never highlights its row",
+  "file": "daynote/renderer/app.js",
+  "line": 155,
+  "severity": "low",
+  "evidence": "openTask and closeDetail toggle `.is-selected` only on `.task-row[data-task-id]`. Home rows are `li.home-row[data-id]`, which have their own `.home-row.is-selected` CSS (styles.css:1076). openTask does not change the store, so the home view does not re-render. Seen in the browser: clicking each home row title opens the detail, but the is-selected flags stay [false,false].",
+  "fix": "In openTask use `els.view.querySelectorAll('.task-row, .home-row')` and compare `(r.getAttribute('data-task-id') || r.getAttribute('data-id')) === id`. In closeDetail use the selector `.task-row.is-selected, .home-row.is-selected`.",
+  "repro": "node scratchpad/flows/t29.js"
+ },
+ {
+  "title": "Rec panel 'other candidates' can show \"약 2시간\" under \"30분 안에 할 만한 일\" (it shows the whole task's estimate even when only one step fits)",
+  "file": "daynote/renderer/views/recpanel.js",
+  "line": 248,
+  "severity": "low",
+  "evidence": "Sample data, panel set to 30분, then [다른 후보]: the alternatives list shows '신규 입사자 가이드 문서 개편 약 2시간 [시작]' in a panel whose header reads '30분 안에 할 만한 일 · 더 긴 일 3개는 뺐어요'. recommend() keeps it as `fit:'step_fits'` (one of its steps fits), but the alt row always prints at.estimateMinutes and never mentions the step.",
+  "fix": "In the alternatives map, if `a.fit === 'step_fits' && a.step` print `h('span.meta', '‘' + a.step.title + '’ 단계 약 ' + D.duration(a.step.estimateMinutes))`. Otherwise keep the current estimate span.",
+  "repro": "node scratchpad/flows/t6.js"
+ },
+ {
+  "title": "Day panel keeps offering to place a task after it has been placed, so one more Enter or click creates a duplicate block",
+  "file": "renderer/views/calday.js",
+  "line": 56,
+  "severity": "high",
+  "evidence": "calday.subject() returns the task for opts.taskId as long as it is alive and not done. It never checks whether the task is already scheduled. After a drop or a ①②③ placement in a panel opened by 'dwell' or 'pick', the panel repaints with the same task box. Because remainingMinutes is 0, lengthFor falls back to the estimate, so the box reads \"‘빨래 돌리기’ 넣기 · 15분\" with three new suggestions. Mouse (s5.js): dwell-open 10/13, drop at 20:00, then click ① → the task has 2 blocks [Tue 20:00, Tue 18:30] and two toasts. Keyboard (s13.js): pick → Shift+Enter → Enter on ① → after the commit, keepFocus puts focus on the new ① (\"focus after cd-sugg-btn ① 09:30–10:00\"), so a second Enter places the task twice. Clicking any empty slot or hatched band in the panel does the same thing through col.onclick → place(subject()). The hooks.onPlaced callback that was meant to handle this is a no-op (calendar.js:404), and the drop path in calendar.js onDrop never calls it.",
+  "fix": "In calday.js subject(), for the taskId (non-block) case, return null once the task no longer needs placing, using the same rule as calendar.js unscheduledTasks: `var nowIso = now().toISOString(); var future = S.state.blocks.some(function (b) { return b.taskId === t.id && b.kind === 'work' && b.end > nowIso; }); if (future) { var rem = (PL() && t.estimateMinutes != null) ? PL().remainingMinutes(S.state, t, now()) : null; if (rem == null || rem < 30) return null; }`. The task box and click-to-place then disappear after the repaint that commitBlock/repaintDay already triggers. Also change the keepFocus target in the ①②③ onclick (calday.js:119) to '.cd-head h3' when that placement fully schedules the task.",
+  "repro": "1440x900, ?fakeai, sample data, now 2026-10-10T10:00. Drag ‘빨래 돌리기’ onto the 10/13 cell and hold for 1.5s; the panel opens. Drop at 20:00 in the panel, then click ① 18:30 → two blocks for the same task."
+ },
+ {
+  "title": "‘되돌리기’ on an older placement toast undoes the newer placement",
+  "file": "renderer/views/calplace.js",
+  "line": 117,
+  "severity": "high",
+  "evidence": "commitBlock shows a 9-second toast whose 되돌리기 calls S.undo() with no target (calplace.js:122). ui.undoToast does the same (ui.js:121-124), and toast-wrap keeps two toasts on screen. S.undo() always pops the top of the stack (store.js:184). s14.js: drop ‘빨래 돌리기’ on 10/12, then ‘팀 회고 안건 정리’ on 10/13. Both toasts are visible. Clicking 되돌리기 on the FIRST toast (‘빨래 돌리기’를 10/12(월) 18:30–18:45에 넣었어요.) leaves 빨래 in place at 18:30 and removes 회고 (blocks after: {\"빨래\":[\"Mon Oct 12 2026 18:30\"],\"회고\":[]}). There is no redo, so the second placement is lost silently. Placing several tasks quickly is the main calendar workflow.",
+  "fix": "store.js: add `peekUndo: function () { return undoStack[undoStack.length - 1] || null; }`. In calplace.commitBlock (and in ui.undoToast), capture `var mark = S.peekUndo && S.peekUndo();` right after the mutate, and make the undo action `function () { if (S.peekUndo && S.peekUndo() !== mark) { ui.toast('그 뒤에 다른 변경이 있어 이 알림으로는 되돌릴 수 없어요.'); return; } S.undo(); }`. Alternatively, ui.toast can remove the undo buttons from earlier toasts whenever it appends a new toast that has an undo action."
+ },
+ {
+  "title": "Dwelling on a past date opens the day panel, and a drop there silently creates a block in the past",
+  "file": "renderer/views/calendar.js",
+  "line": 541,
+  "severity": "medium",
+  "evidence": "Dropping on a past cell is refused ('지난 날짜에는 넣을 수 없어요.'), and the cell's fit badge says '지난 날짜'. startDwell has no past check, though, and calplace.dropAtTime does not check for the past either. s27.js: drag ‘빨래 돌리기’ over 10/7 (today is 10/10) → fit '지난 날짜' → after 1.1s the panel opens ('이 날에는 알맞은 빈 시간이 없어요.') → dropping at 19:00 shows the toast ‘빨래 돌리기’를 10/7(수) 19:00–19:15에 넣었어요. A block is saved 3 days in the past. The task stays in 배치할 일 because the block is not in the future, so the user gets a junk block and a toast that says the task was scheduled.",
+  "fix": "calendar.js startDwell: add `if (ymd < D.ymd(DN.app.now())) return;` after reading ymd, so past days never open by dwell. calplace.js dropAtTime, task branch (before askDuration, about line 306): `if (D.addMinutes(s, 15) <= now()) { ui.toast('지난 시간에는 넣을 수 없어요.'); return Promise.resolve(false); }`. This keeps the week view and the panel consistent with the day-cell rule in CAL §3.6.",
+  "repro": "Drag any card over the 10/7 cell, hold for 1.2s, move into the panel and release."
+ },
+ {
+  "title": "Panel suggestion magnets and allowed bands apply to whatever task is dragged, not only the panel's task",
+  "file": "renderer/views/calendar.js",
+  "line": 613,
+  "severity": "medium",
+  "evidence": "onMove/onDrop use CD()._dragInfo() (magnets and allowed windows built for the panel subject) whenever `s.payload.kind === 'task'` (calendar.js:613-616, 637-641). They never check that the dragged task is the panel's task. s22.js: the panel is open for ‘빨래 돌리기’ (home, allowed 07:00-08:30, 12:00-13:00, 18:30-23:00). Dragging the work task ‘온보딩 설문 결과 요약’ (allowed only 09:00-18:00, per s22b.js) to 18:45 shows the ghost 'cd-ghost | 18:45–19:30' with no '추천 시간대 밖', and it drops there. In work hours the ghost would wrongly show '추천 시간대 밖', and it snaps (\"· 추천 1\") to the other task's suggestions.",
+  "fix": "calday.js _dragInfo: return `{ taskId: (subject() && !subject().block) ? subject().task.id : null, allowed: info.allowed, magnets: info.magnets }` (or store taskId in `info` inside build()). In calendar.js onMove and onDrop, after reading info, add `if (info && info.taskId !== s.payload.id) info = null;` so the ghost is plain for other tasks."
+ },
+ {
+  "title": "Phone: the horizontal 배치할 일 strip jumps back to the first card after every placement or re-render",
+  "file": "renderer/app.js",
+  "line": 131,
+  "severity": "medium",
+  "evidence": "On phones (≤640px) .cal-side-list scrolls horizontally (schedule.css phone block), but renderView saves and restores only scrollTop for [data-keep-scroll] elements (app.js:131 and 136). Every store change re-renders the calendar. s9.js: scrollLeft was 2520 (scrolled to ‘빨래 돌리기’) and was 12 after a touch-drop placement. s8 shows the same jump after '날짜 골라서 넣기': the picked card is scrolled out of view. On the phone, '넣기 → 날짜 탭' is the main flow, so every placement makes the user scroll the strip again.",
+  "fix": "app.js renderView: save `[e.getAttribute('data-keep-scroll'), e.scrollTop, e.scrollLeft]` and restore with `if (e) { e.scrollTop = p[1]; e.scrollLeft = p[2]; }`. The strip already has data-keep-scroll='cal-side' (calendar.js:178)."
+ },
+ {
+  "title": "Dropping on the ①②③ suggestion buttons in the day panel cancels the drag and closes the panel",
+  "file": "renderer/views/calday.js",
+  "line": 118,
+  "severity": "low",
+  "evidence": "The cd-task suggestion buttons are the most prominent targets in a panel opened by dwell, but they have no data-drop. The drop resolves to target null → onCancel closes the dwell panel (calendar.js:656-661). s23.js: dwell on 10/17, move onto '① 09:00–09:15', release → 'panel open after drop on suggestion? false', blocks 7 -> 7. The drag is lost with no feedback, and the screenshot s23-over-sugg.png shows no hover state on the button.",
+  "fix": "calday.js: render each `.cd-sugg-btn` with `'data-drop': 'sugg', 'data-start': c.startIso`. calendar.js onOver: for k === 'sugg', add `.is-over` (reuse the cm-day style). onDrop: add `else if (k === 'sugg' && p.kind === 'task' && CP()) { CP().dropAtTime(p.id, new Date(target.getAttribute('data-start')), target, { copy: 'day' }); }`. Add `.cd-sugg-btn.is-over { box-shadow: inset 0 0 0 2px var(--primary-line); }` to schedule.css."
+ },
+ {
+  "title": "15-minute suggestion bands and ghosts in the day panel are 12px tall and cut off the rank badge and time",
+  "file": "renderer/css/schedule.css",
+  "line": 168,
+  "severity": "low",
+  "evidence": "calday.js:159-161 sets `.cd-sugg` height = px(c.minutes), which is 12px for 15 minutes, while the content (16px `.cd-rank` plus 2px padding) needs 21px. Measured in s15.js: {h:12, scrollH:21, rankH:16} for all three bands. In s15-sugg15.png the ①/②/③ badges and '18:30–18:45' are sliced in half. The `.cd-ghost` of a 15-minute task is also 12px, so its label (time, '겹침 N건', '추천 시간대 밖', '추천 1') is unreadable (s4-ghost.png). The sample's 15-minute tasks (빨래 돌리기, 세미나 발표자 섭외 메일, 리포트 최종본 공유) all hit this.",
+  "fix": "schedule.css: add `min-height: 20px; align-items: center;` to `.cd-sugg` (line 168) and `min-height: 20px;` to `.cal-ghost.cd-ghost, .cd-ghost` (line 178). The inline height still sets the true span for longer items. Optionally set `.cd-rank` to 14px for compact bands."
+ },
+ {
+  "title": "‘이 날 자동 배치’ lists tasks skipped because of their deadline as ‘빈 시간이 없어 뺀 일’",
+  "file": "src/core/planner.js",
+  "line": 786,
+  "severity": "low",
+  "evidence": "arrangeDay has no after_due skip. A task whose (future) deadline is before ymd gets no candidates, because rawCandidates drops every e > dueAt, and it is reported as 'no_slot'. s25.js on 10/12: '멘토 배정 기준 초안 작성 due=2026-10-10 18:00 -> no_slot' and '세미나 발표자 섭외 메일 보내기 due=2026-10-11 -> no_slot'. The preview (s6.js) then says '빈 시간이 없어 뺀 일 2개', but 10/12 has more than 10 free hours. The real reason is that the deadline comes first.",
+  "fix": "planner.js arrangeDay, inside the per-task loop after the snoozed check: `if (dueBinds(t, base) && t.dueDate < ymd) { skipped.push({ taskId: id, reason: 'after_due' }); return; }`. calplace.js SKIP_TEXT (line 337): add `after_due: '마감이 이 날보다 앞이라 뺀 일'`. Add a case to test #58."
+ },
+ {
+  "title": "Phone month dots: the event dot and the deadline dot have the same colour (identical in dark mode)",
+  "file": "renderer/css/schedule.css",
+  "line": 54,
+  "severity": "low",
+  "evidence": "`.cm-dot.event` uses --kind-event and `.cm-dot.due` uses --warning. Dark tokens: --kind-event: #F0A050 and --warning: #F0A050 (styles.css:153, 163), which is the same value. Light: #D9730D vs #B45309, which are nearly the same orange. On the 390px grid (s7-gcal-390.png), 10/12 shows '● ● ● ●' and the user cannot tell an event from a deadline. On phones the dots are the only per-day signal (text items are hidden).",
+  "fix": "Give the deadline dot a different shape so no new token is needed. In schedule.css line 54: `.cm-dot.due { background: transparent; box-shadow: inset 0 0 0 1.5px var(--warning); }` (a ring), or `border-radius: 1px` (a square)."
+ },
+ {
+  "title": "Month view does not auto-scroll while dragging when the grid is taller than the window",
+  "file": "renderer/views/calendar.js",
+  "line": 264,
+  "severity": "low",
+  "evidence": "`.cal-month` is `overflow:auto`, and `.cm` has min-height 560px, but the month host has no data-autoscroll. dragplace's scroller() only matches '[data-autoscroll], .cal-scroll, .cd-body, .cal-side-list' (dragplace.js:139). s20.js at 1280x600: .cal-month scrollHeight 594 vs clientHeight 500. The 11/2–11/8 row starts at y=602, below the fold. Holding the pointer 10px above the container's bottom edge for 1.2s leaves scrollTop at 0, so the last week cannot be reached by dragging.",
+  "fix": "calendar.js:264: `monthHost = h('div.cal-month', { 'data-keep-scroll': 'cal-month', 'data-autoscroll': '' });`. Alternatively, add `.cal-month` to the selector in dragplace.js scroller()."
+ },
+ {
+  "title": "The drag ghost covers the cell's ‘HH:MM 추천’ fit badge",
+  "file": "renderer/css/schedule.css",
+  "line": 55,
+  "severity": "low",
+  "evidence": "`.cm-fit` is pinned bottom-right of the cell (right:4px; bottom:6px), and `.dp-ghost` is drawn at pointer +12px/+12px. With the pointer anywhere in the middle or lower half of a cell, the ghost sits on top of the badge. In s4-dwelling.png and s16-dark-sheet.png, '빨래 돌리기 · 15분' covers '18:30 추천' (only '18:30 추천' fragments are visible) on 10/13. The badge is the only preview of where an auto-placement will land.",
+  "fix": "Move the badge to the side away from the ghost: in schedule.css `.cm-fit` use `left: 4px; right: auto;` (bottom-left). The ghost, which is always to the right of and below the pointer, then no longer overlaps it."
+ },
+ {
+  "title": "Phone: the drag ghost runs off the right edge of the screen",
+  "file": "renderer/dragplace.js",
+  "line": 109,
+  "severity": "low",
+  "evidence": "placeGhost always uses translate3d(x+12, y+12) with max-width 240px. At 390px wide with the finger at x≈250 (inside the day sheet), the label '팀 회고 안건 정리 · 30분' is cut off at the viewport edge (s9-touchsheet.png). It is position:fixed, so there is no page scroll, but the label is truncated.",
+  "fix": "In placeGhost: `var w = cur.ghost.offsetWidth, gx = cur.s.x + 12; if (gx + w > window.innerWidth - 4) gx = Math.max(4, cur.s.x - 12 - w); cur.ghost.style.transform = 'translate3d(' + gx + 'px,' + (cur.s.y + 12) + 'px,0)';`"
+ }
+]
