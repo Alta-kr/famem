@@ -49,7 +49,8 @@
       // 홈 채팅 기록 (최근 것만 보관)
       chat: [],
       emailConnection: { status: 'disconnected', provider: null, lastSyncAt: null, error: null },
-      quickDraft: { text: '', projectId: null },
+      quickDraft: { text: '', projectId: null },   // Ctrl+N 빠른 메모 창의 초안
+      homeDraft: { text: '' },                      // 홈 입력창의 초안 (빠른 메모와 따로 둔다)
       prefs: { sidebarCollapsed: false, reduceMotion: false },
       meta: { createdAt: iso(), sampleLoaded: false },
       // 현재 상태 — 같은 기기 안에서만 산다. 되돌리기(undo) 대상이 아니다 (store.js KEEP_ON_UNDO)

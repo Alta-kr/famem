@@ -64,6 +64,14 @@
     }
     var t = liveTask(o.taskId);
     if (!t || t.status === 'done') return null;
+    // 이미 넣은 일(앞으로의 작업 블록이 있고 남은 분이 30분 미만)은 더 넣자고 하지 않는다 —
+    // 배치할 일 목록(calendar.js unscheduledTasks)과 같은 규칙. 놓은 뒤 다시 그리면 할 일 상자가 사라진다.
+    var nowIso = now().toISOString();
+    var future = S.state.blocks.some(function (b) { return b.taskId === t.id && b.kind === 'work' && b.end > nowIso; });
+    if (future) {
+      var rem = PL() && t.estimateMinutes != null ? PL().remainingMinutes(S.state, t, now()) : null;
+      if (rem == null || rem < 30) return null;
+    }
     var m = CP() ? CP()._fmt.lengthFor(t) : t.estimateMinutes;
     return { task: t, block: null, minutes: m };
   }
@@ -95,7 +103,8 @@
     var day = D.parseYmd(ymd);
     var sub = subject();
     var list = suggestions(sub, ymd);
-    info = { allowed: allowedWindows(sub, ymd), magnets: list.map(function (c, i) { return { start: c.start, rank: i + 1 }; }) };
+    info = { taskId: sub && !sub.block ? sub.task.id : null, blockId: sub && sub.block ? sub.block.id : null,
+      allowed: allowedWindows(sub, ymd), magnets: list.map(function (c, i) { return { start: c.start, rank: i + 1 }; }) };
 
     var title = (day.getMonth() + 1) + '월 ' + day.getDate() + '일 ' + D.WEEKDAYS[day.getDay()] + '요일';
     var h3 = h('h3', { tabindex: '-1' }, title);
@@ -115,7 +124,8 @@
         h('div.cd-task-title', q(sub.task.title) + verb + ' · ' + (sub.minutes != null ? D.duration(sub.minutes) : '소요 시간 미정 — 놓으면 물어봐요')),
         list.length
           ? h('ol.cd-sugg-list', { 'aria-label': '추천 시간' }, list.map(function (c, i) {
-            return h('li', h('button.cd-sugg-btn', { type: 'button', title: c.reasons.join(' '), onclick: function (e) {
+            // 끌던 그 할 일을 이 버튼에 놓아도 이 시각에 넣는다 (calendar.js onDrop 'sugg')
+            return h('li', h('button.cd-sugg-btn', { type: 'button', title: c.reasons.join(' '), 'data-drop': 'sugg', 'data-start': c.startIso, onclick: function (e) {
               focusNext('.cd-sugg-btn', i);
               place(sub, c.start, e.currentTarget);
             } },

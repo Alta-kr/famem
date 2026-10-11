@@ -822,6 +822,19 @@ test('58b. arrangeDay: 알맞지 않은(poor) 자리는 빼고, includePoor 면 
   assert.deepEqual(PL.arrangeDay(s, [w.id], '2026-10-11', { now: MON }).skipped, [{ taskId: w.id, reason: 'no_window' }]);
 });
 
+test('58c. arrangeDay: 아직 안 지난 마감이 이 날보다 앞이면 after_due 로 뺀다 (no_slot 이 아님)', () => {
+  const s = fresh();
+  const early = task(s, { title: NONE, estimateMinutes: 30, dueDate: '2026-10-06' });      // 화요일 마감 → 수요일에 넣기
+  const overdue = task(s, { title: NONE, estimateMinutes: 30, dueDate: '2026-10-02' });    // 이미 지난 마감은 묶지 않는다
+  const sameDay = task(s, { title: NONE, estimateMinutes: 30, dueDate: WED });
+  const r = PL.arrangeDay(s, [early.id, overdue.id, sameDay.id], WED, { now: MON });
+  assert.deepEqual(r.skipped, [{ taskId: early.id, reason: 'after_due' }]);
+  assert.deepEqual(r.placements.map((p) => p.taskId).sort(), [overdue.id, sameDay.id].sort());
+  // allowAfterDue 면 넣는다 (placeOnDay 와 같은 규칙)
+  const ok = PL.arrangeDay(s, [early.id], WED, { now: MON, allowAfterDue: true });
+  assert.deepEqual(ok.placements.map((p) => p.taskId), [early.id]);
+});
+
 test('59. arrangeDay: 두 번째 할 일은 첫 번째가 놓인 시간을 바쁨으로 본다', () => {
   const s = fresh();
   const a = task(s, { title: HOME, estimateMinutes: 30, priority: 'high' });

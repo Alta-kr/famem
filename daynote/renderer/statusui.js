@@ -151,7 +151,12 @@
     if (d.role === 'idle') {
       // 상태는 그대로, 바로 '다음 할 일'
       if (surface === 'chat' && AS() && AS().next) AS().next();
-      else if (surface === 'toast' && !opts.quiet) ui().toast('메모는 만들지 않았어요. 오늘 화면에서 ‘다음 할 일’을 골라 드릴게요.');
+      else if (surface === 'toast' && !opts.quiet) {
+        // 빠른 메모(Ctrl+N)에서 — 오늘 화면으로 가서 바로 골라 둔다 (STATUS: idle 이면 AS.next())
+        if (DN.app && DN.app.go) DN.app.go('today');
+        if (AS() && AS().next) AS().next();
+        ui().toast('메모는 만들지 않았어요. 오늘 화면에 ‘다음 할 일’을 골라 뒀어요.');
+      }
       return { noop: true, idle: true };
     }
     var cur = presence() && presence().current;

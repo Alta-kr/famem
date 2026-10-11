@@ -17,7 +17,7 @@
     root.textContent = '';
 
     var ta = h('textarea', { rows: 1, placeholder: '생각나는 걸 적고 Enter — Daynote가 알아서 나눠요', 'aria-label': '적어 두기 (Enter 보내기 · Shift+Enter 줄바꿈)', 'data-slash': '' });
-    ta.value = st.quickDraft.text || '';
+    ta.value = (st.homeDraft && st.homeDraft.text) || '';
 
     // ---------------------------------------------------------------- 메시지 (입력창과 따로 다시 그린다)
     var list = h('div.chat-list', { role: 'log', 'aria-live': 'polite', 'aria-label': '적은 것과 정리 결과' });
@@ -74,12 +74,12 @@
     function grow() { ta.style.height = 'auto'; ta.style.height = Math.min(ta.scrollHeight, 160) + 'px'; }
     function keep() {
       clearTimeout(t);
-      t = setTimeout(function () { S.mutate(null, function (s) { s.quickDraft = { text: ta.value, projectId: null }; }, { source: 'today' }); }, 300);
+      t = setTimeout(function () { S.mutate(null, function (s) { s.homeDraft = { text: ta.value }; }, { source: 'today' }); }, 300);
     }
     function clearNote() { if (note) { note.remove(); note = null; } }
     function clearDraft() {   // 보낸 글은 초안에서 지운다 (다시 그릴 때 입력창에 되살아나지 않게)
       clearTimeout(t);
-      S.mutate(null, function (s) { s.quickDraft = { text: '', projectId: null }; }, { source: 'today', silent: true });
+      S.mutate(null, function (s) { s.homeDraft = { text: '' }; }, { source: 'today', silent: true });
     }
     function sendNow() {
       var v = ta.value;
@@ -94,7 +94,7 @@
       }
       clearNote();
       clearDraft();
-      ta.value = ''; grow();
+      ta.value = ''; ta.removeAttribute('data-typed'); grow();
       AS.send(v, null);
       setTimeout(function () { var x = document.querySelector('.chat-input textarea'); if (x) x.focus(); }, 0);
     }
@@ -109,9 +109,9 @@
     var slash = DN.slash && DN.slash.attach ? DN.slash.attach(ta, {
       mount: inputBox, placement: 'above', idPrefix: 'slash',
       iconFor: function (n) { return ui.icon(n); },
-      onExecute: function (text) { clearNote(); clearDraft(); ta.value = ''; grow(); AS.send(text, null); }
+      onExecute: function (text) { clearNote(); clearDraft(); ta.value = ''; ta.removeAttribute('data-typed'); grow(); AS.send(text, null); }
     }) : null;
-    ta.addEventListener('input', function () { clearNote(); grow(); keep(); });
+    ta.addEventListener('input', function () { ta.setAttribute('data-typed', '1'); clearNote(); grow(); keep(); });
     ta.addEventListener('keydown', function (e) {
       // 한글 조합 중 Enter 는 글자 확정이므로 보내지 않는다
       if (e.key === 'Enter' && !e.shiftKey && !e.isComposing && e.keyCode !== 229) { e.preventDefault(); sendNow(); }
@@ -281,7 +281,7 @@
       var cc = commandCard(n, c, items, now);
       head = cc.head; ft = cc.foot;
     } else {
-      if (!c.command && (CP.isRunning(n.id) || c.status === 'pending')) {
+      if (!c.command && CP.isRunning(n.id)) {
         return bubble('assistant', h('div.cap.is-pending', { 'aria-busy': 'true' },
           h('div.cap-skel',
             h('span.cap-skel-chip', { 'aria-hidden': 'true' }),
@@ -292,7 +292,11 @@
       var settingsBtn = h('button.btn.btn-xs', { type: 'button', onclick: function () { DN.app.go('settings'); } }, ui.icon('settings'), '설정 열기');
       // AI 없이 배운 대로 바꾼 글 — 종류를 바꾸면 core 가 status 를 'done' 으로 적을 수 있어 runId 가 없는 것도 본다
       var noAiLearned = learned.length && !c.changedByUser && (c.status === 'no_ai' || (c.status === 'done' && !c.runId));
-      if (noAiLearned) {
+      if (c.status === 'pending' && !c.command) {
+        // 정리가 돌지 않는데 'pending' — 되돌리기·도중 새로고침으로 멈춘 글. 다시 시도할 수 있게 한다
+        head = h('div.cap-head', h('span', '메모로 남겨 뒀어요'), h('span.cap-head-sub', ' · 정리가 멈췄어요'));
+        ft = h('div.cap-foot', h('button.btn.btn-xs', { type: 'button', onclick: function () { CP.classify(n.id); } }, ui.icon('refresh'), '다시 시도'));
+      } else if (noAiLearned) {
         head = h('div.cap-head', h('span', summary(items, now)), h('span.cap-head-sub', ' · AI 없이 배운 대로'));
         ft = h('div.cap-foot', settingsBtn, whyBtn(n));
       } else if (c.status === 'no_ai') {
@@ -622,7 +626,7 @@
     var t = M.byId(st.tasks, m.taskId);
     if (!t) return null;
     if (m.resolved) {
-      var txt = m.resolved === 'applied' ? '‘' + t.title + '’를 ' + (m.resolvedCount || '') + '단계로 나눴어요.'
+      var txt = m.resolved === 'applied' ? '‘' + t.title + '’' + josaTail(t.title, '를/을') + ' ' + (m.resolvedCount || '') + '단계로 나눴어요.'
         : m.resolved === 'later' ? '좋아요, 나중에 다시 보여 드릴게요.' : '알겠어요. 이 할 일은 나누지 않을게요.';
       return bubble('assistant', h('div.msg-text', txt, m.resolved === 'applied' ? h('button.link-btn', { type: 'button', style: { marginLeft: '6px' }, onclick: function () { DN.app.openTask(t.id); } }, '할 일 보기') : null));
     }
@@ -644,7 +648,7 @@
     var total = draft.reduce(function (a, s) { return a + (s.minutes || 0); }, 0);
     return bubble('assistant', h('div.bd',
       m.intro ? h('div.msg-text', m.intro) : null,
-      h('div.bd-title', '‘' + t.title + '’를 이렇게 나눠 보면 어떨까요?'),
+      h('div.bd-title', '‘' + t.title + '’' + josaTail(t.title, '를/을') + ' 이렇게 나눠 보면 어떨까요?'),
       m.reason ? h('div.meta', m.reason) : null,
       rows,
       h('button.link-btn.bd-add', { type: 'button', onclick: function () { draft.push({ title: '', minutes: null }); save(); paint(); var ins = rows.querySelectorAll('input:not(.bd-min)'); if (ins.length) ins[ins.length - 1].focus(); } }, '+ 단계 추가'),

@@ -21,6 +21,7 @@
   var pending = {};   // 요청 중인 AI 작업
 
   function now() { return DN.app.now(); }
+  function jt(word, pair) { word = String(word || ''); return DN.ui.josa(word, pair).slice(word.length); }   // 받침에 맞는 조사만
 
   function post(msg) {
     var m = Object.assign({ id: M.uid('msg'), at: now().toISOString(), role: 'assistant' }, msg);
@@ -58,8 +59,8 @@
     if (!r || !r.ok || !r.capture) return;
     var large = (r.capture.largeTasks || []).map(function (id) { return M.byId(S.state.tasks, id); }).filter(Boolean);
     if (large.length) {
-      post({ kind: 'text', text: '‘' + large[0].title + '’' + (large.length > 1 ? ' 외 ' + (large.length - 1) + '개' : '') +
-        '는 꽤 큰 일 같아요. 작은 단계로 나눠 둘게요 — 잠깐 여유 있을 때 보여 드릴게요.' });
+      post({ kind: 'text', taskId: large[0].id, text: '‘' + large[0].title + '’' + (large.length > 1 ? ' 외 ' + (large.length - 1) + '개는' : jt(large[0].title, '는/은')) +
+        ' 꽤 큰 일 같아요. 작은 단계로 나눠 둘게요 — 잠깐 여유 있을 때 보여 드릴게요.' });
     }
   }
 
@@ -164,9 +165,9 @@
       return r;
     }
     if (r.empty === 'quiet' && sv) {
-      // 추천을 쉬게 한 건 덧씌운 상태(회의·운전 등)일 수 있다 — 그 이름으로 알린다. '회의 중' 뒤에 '중'을 또 붙이지 않는다
+      // 추천을 쉬게 한 건 덧씌운 상태(회의·운전 등)일 수 있다 — 그 이름으로 알린다 (‘회의 중’이라 · ‘잘 시간’이라)
       var ql = (sv.overlay && sv.overlay.rec === 'none' && sv.overlay.label) || sv.label;
-      post({ kind: 'text', text: '‘' + ql + '’' + (/중$/.test(ql) ? '이라' : ' 중이라') + ' 추천은 쉬어요. 끝나면 다시 골라 드릴게요.' });
+      post({ kind: 'text', text: '‘' + ql + '’' + DN.ui.josa(ql, '라/이라').slice(ql.length) + ' 추천은 쉬어요. 끝나면 다시 골라 드릴게요.' });
       return r;
     }
     if (r.empty === 'all_hidden' && sv) { post({ kind: 'text', text: '지금(‘' + sv.label + '’)은 할 만한 일이 없어요. 쉬어도 돼요.', actions: ['showHidden'] }); return r; }
@@ -202,7 +203,7 @@
     }
     if (pending['bd:' + t.id]) return;
     pending['bd:' + t.id] = true;
-    var wait = post({ kind: 'thinking', text: '‘' + t.title + '’를 작은 단계로 나눠 보는 중이에요…' });
+    var wait = post({ kind: 'thinking', text: '‘' + t.title + '’' + jt(t.title, '를/을') + ' 작은 단계로 나눠 보는 중이에요…' });
     var proj = t.projectId && M.byId(S.state.projects, t.projectId);
     call(AS.BREAKDOWN.buildInput(t, { today: todayStr(), projectName: proj && proj.name })).then(function (res) {
       delete pending['bd:' + t.id];
@@ -212,7 +213,7 @@
         post({ kind: 'breakdown', taskId: t.id, draft: [{ title: '', minutes: 15 }, { title: '', minutes: null }] });
         return;
       }
-      if (!v.isLarge) { update(wait.id, { kind: 'text', text: '‘' + t.title + '’는 이미 충분히 작은 일 같아요. 바로 시작해 봐도 좋겠어요.' }); return; }
+      if (!v.isLarge) { update(wait.id, { kind: 'text', text: '‘' + t.title + '’' + jt(t.title, '는/은') + ' 이미 충분히 작은 일 같아요. 바로 시작해 봐도 좋겠어요.' }); return; }
       S.mutate(null, function (s) { AS.storeBreakdown(s, t.id, v, 'button', now()); AS.markShown(s, t.id, now()); }, { source: 'chat' });
       update(wait.id, { kind: 'breakdown', taskId: t.id, intro: intro || null, reason: v.reason, draft: v.steps });
     });

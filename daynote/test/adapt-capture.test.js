@@ -378,3 +378,26 @@ test('captureSetProject: 배운 대로 붙인 프로젝트를 같은 값으로 �
   assert.equal(note.capture.learned.length, 0);
   assert.ok(rulesOf(st, 'project').some((r) => r.to === 'p2'));
 });
+
+// 최종 리뷰 #4 — 비슷한 할 일이 있어 만들지 않은 글: 직접 할 일로 바꾸면 '만들지 않았어요' 를 지우고, 배운 규칙은 다시 만들지 않는다
+test('중복이라 건너뛴 글: 직접 할 일로 바꾸면 skipped 를 비우고, 배운 규칙으로는 다시 만들지 않는다', () => {
+  const st = setup();
+  M.addTask(st, { title: '장보기' }, NOW);
+  const dup = () => ({ summary: '', sections: [], events: [], open_questions: [], entry_type: 'task', note_title: '장보기', note_project_hint: null,
+    tasks: [{ title: '장보기', evidence: { quote: '장보기', line: 1 }, due: { text: null, date: null, time: null }, project_hint: null, basis: 'explicit' }] });
+  const first = submit(st, '장보기', dup());
+  assert.equal(first.capture.skipped[0].reason, 'duplicate');
+  assert.equal(first.capture.created.length, 0);
+  P.captureSetKind(st, first.id, 'task', NOW);
+  assert.equal(first.capture.created.length, 1);
+  assert.deepEqual(first.capture.skipped, []);
+  teachTask(st, 2);   // 규칙이 확실해질 만큼 더 가르친다
+  const again = submit(st, '장보기', dup());
+  assert.equal(again.capture.skipped[0].reason, 'duplicate');
+  const before = live(st).length;
+  const plan = P.planLearned(st, again.id, NOW, { hinted: [] });
+  assert.ok(!plan || !plan.kind);
+  P.applyLearned(st, again.id, NOW, { hinted: [] });
+  assert.equal(live(st).length, before);
+  assert.equal(again.capture.created.length, 0);
+});

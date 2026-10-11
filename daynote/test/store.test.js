@@ -177,3 +177,43 @@ test('undo: 지금 상태에 없는 보존 키는 null 로 남기지 않는다',
   assert.strictEqual('gcal' in S.state, false);
   assert.ok(S.state.presence && S.state.prefs);
 });
+
+// ───────────────────────────── 최종 리뷰 #1·#2: 초안은 되돌리지 않고, 흐름 글은 되돌린 단계 뒤의 것도 남긴다 ─────────────────────────────
+test('emptyState: 홈 입력 초안(homeDraft)은 빠른 메모 초안(quickDraft)과 따로 있고, 불러올 때 채워진다', () => {
+  const e = M.emptyState();
+  assert.deepStrictEqual(e.homeDraft, { text: '' });
+  assert.notStrictEqual(e.homeDraft, e.quickDraft);
+  const n = M.normalize({ quickDraft: { text: '빠른', projectId: null } });
+  assert.deepStrictEqual(n.homeDraft, { text: '' });
+  assert.strictEqual(n.quickDraft.text, '빠른');
+  assert.strictEqual(M.normalize({ homeDraft: { text: '홈' } }).homeDraft.text, '홈');
+});
+
+test('undo: 홈·빠른 메모 초안은 되돌리지 않는다', () => {
+  const S = loadStore();
+  S.mutate(null, (s) => { s.homeDraft = { text: '쓰던 글' }; });
+  S.mutate('입력 저장', (s) => { M.addNote(s, { title: 'a' }, NOW); s.homeDraft = { text: '' }; });
+  S.mutate(null, (s) => { s.quickDraft = { text: '빠른 메모', projectId: null }; });
+  S.undo();
+  assert.strictEqual(S.state.notes.length, 0);
+  assert.strictEqual(S.state.homeDraft.text, '');
+  assert.strictEqual(S.state.quickDraft.text, '빠른 메모');
+});
+
+test('undo: 되돌린 단계 뒤에 올라온 흐름 글은 남기고, 없어진 메모·할 일에 묶인 카드만 뺀다', () => {
+  const S = loadStore();
+  S.mutate(null, (s) => { s.chat.push({ id: 'm0', role: 'user', kind: 'text', text: '장보기' }); });
+  let nid, tid;
+  S.mutate('입력 저장', (s) => { nid = M.addNote(s, { title: '장보기' }, NOW).id; });
+  S.mutate(null, (s) => { s.chat.push({ id: 'm1', kind: 'capture', noteId: nid }); });
+  S.mutate('할 일 완료', (s) => { tid = M.addTask(s, { title: 'x' }, NOW).id; });
+  S.mutate(null, (s) => {
+    s.chat.push({ id: 'm2', role: 'user', kind: 'text', text: '퇴근' });
+    s.chat.push({ id: 'm3', kind: 'status-change' });
+    s.chat.push({ id: 'm4', kind: 'breakdown', taskId: tid });
+  });
+  S.undo();   // '할 일 완료' — 할 일이 없어지므로 m4 만 빠진다
+  assert.deepStrictEqual(S.state.chat.map((m) => m.id), ['m0', 'm1', 'm2', 'm3']);
+  S.undo();   // '입력 저장' — 메모 카드 m1 이 빠진다
+  assert.deepStrictEqual(S.state.chat.map((m) => m.id), ['m0', 'm2', 'm3']);
+});

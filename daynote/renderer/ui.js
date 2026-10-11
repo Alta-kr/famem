@@ -118,9 +118,18 @@
   }
 
   // 되돌리기 알림 — store.undo 를 붙여 준다
-  function undoToast(msg) {
+  // 알림 버튼용 되돌리기 동작 — 방금(S.mutate 바로 뒤) 맨 위에 쌓인 항목을 기억해 두고,
+  // 그 뒤에 다른 변경이 쌓였으면 엉뚱한(더 새) 변경을 되돌리지 않는다
+  function undoAction() {
     var S = window.Daynote.store;
-    return toast(msg, { action: { label: '되돌리기', fn: function () { S.undo(); } } });
+    var mark = S.peekUndo ? S.peekUndo() : null;
+    return { label: '되돌리기', fn: function () {
+      if (S.peekUndo && S.peekUndo() !== mark) { toast('그 뒤에 다른 변경이 있어 이 알림으로는 되돌릴 수 없어요.'); return; }
+      S.undo();
+    } };
+  }
+  function undoToast(msg) {
+    return toast(msg, { action: undoAction() });
   }
 
   // ------------------------------------------------------------------ 대화상자
@@ -471,7 +480,7 @@
 
   window.Daynote.ui = {
     TOAST_ACTIONS: true, POPOVER_KEEP_ON_RESIZE: true,
-    h: h, icon: icon, toast: toast, undoToast: undoToast, modal: modal, confirm: confirmDialog, menu: menu, closeMenu: closeMenu, popover: popover,
+    h: h, icon: icon, toast: toast, undoToast: undoToast, undoAction: undoAction, modal: modal, confirm: confirmDialog, menu: menu, closeMenu: closeMenu, popover: popover,
     kindChip: kindChip, KIND_LABEL: KIND_LABEL, KIND_ICON: KIND_ICON, josa: josa,
     projectChip: projectChip, dueChip: dueChip, scheduleChip: scheduleChip, estimateChip: estimateChip,
     statusChips: statusChips, sourceChip: sourceChip, taskRow: taskRow, projectOptions: projectOptions, highlight: highlight

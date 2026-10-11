@@ -790,6 +790,8 @@
       if (!len) { skipped.push({ taskId: id, reason: 'no_estimate' }); return; }
       if (M.unmetBlockers(state, t).length) { skipped.push({ taskId: id, reason: 'blocked' }); return; }
       if (t.snoozedUntil && msOf(t.snoozedUntil) > endOfDay) { skipped.push({ taskId: id, reason: 'snoozed' }); return; }
+      // 마감(아직 안 지남)이 이 날보다 앞이면 자리가 있어도 넣지 않는다 — '빈 시간 없음'과 구별 (placeOnDay 와 같은 규칙)
+      if (dueBinds(t, base) && t.dueDate < ymd) { skipped.push({ taskId: id, reason: 'after_due' }); return; }
       var wins = windowsFor(state, t, ymd, base);
       var lv = 3;
       wins.forEach(function (w) { w.parts.forEach(function (p) { if (LEVEL_RANK[p.level] < lv) lv = LEVEL_RANK[p.level]; }); });

@@ -119,7 +119,7 @@
         duration: 9000,
         actions: [
           { label: '다른 시간', fn: function () { alternativesPopover(newId, D.ymd(s)); } },
-          { label: '되돌리기', fn: function () { S.undo(); } }
+          ui.undoAction ? ui.undoAction() : { label: '되돌리기', fn: function () { S.undo(); } }
         ]
       });
     } else ui.undoToast(msg);
@@ -303,6 +303,8 @@
     }
     var t = liveTask(taskId);
     if (!t || t.status === 'done') { ui.toast('이미 끝낸 일이에요.'); return Promise.resolve(false); }
+    // 이미 지난 시각(그 15분 칸이 다 지남)에는 할 일을 넣지 않는다 — 날짜 칸의 '지난 날짜' 규칙과 같게
+    if (D.addMinutes(s, SNAP) <= now()) { ui.toast('지난 시간에는 넣을 수 없어요.'); return Promise.resolve(false); }
     var minutes = lengthFor(t);
     var ask = minutes == null ? askDuration(anchorFor(anchorEl, D.ymd(s)), t) : Promise.resolve({ minutes: minutes, save: false });
     return ask.then(function (d) {
@@ -336,7 +338,7 @@
   // ------------------------------------------------------------------ 이 날 자동 배치 (§6)
   var SKIP_TEXT = {
     no_estimate: '소요 시간이 없어 뺀 일', no_slot: '빈 시간이 없어 뺀 일', no_window: '빈 시간이 없어 뺀 일',
-    poor_fit: '알맞은 시간대가 없어 뺀 일', blocked: '선행 일이 남아 뺀 일', snoozed: '미뤄 둔 일', limit: '하루에 넣기엔 많아 뺀 일', past: '지난 날짜라 뺀 일'
+    poor_fit: '알맞은 시간대가 없어 뺀 일', blocked: '선행 일이 남아 뺀 일', snoozed: '미뤄 둔 일', after_due: '마감이 이 날보다 앞이라 뺀 일', limit: '하루에 넣기엔 많아 뺀 일', past: '지난 날짜라 뺀 일'
   };
   function skipSummary(skipped) {
     var counts = {}, order = [];

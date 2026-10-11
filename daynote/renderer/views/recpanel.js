@@ -182,7 +182,8 @@
       var st = r.context && r.context.status;
       var out = [];
       if (r.empty === 'quiet') {
-        out.push(h('p.rec-empty', '‘' + label(st) + '’ 중이라 추천은 쉬어요. 끝나면 다시 골라 드릴게요.'));
+        var ql = label(st);
+        out.push(h('p.rec-empty', '‘' + ql + '’' + ui.josa(ql, '라/이라').slice(ql.length) + ' 추천은 쉬어요. 끝나면 다시 골라 드릴게요.'));
       } else if (r.primary) {
         out = out.concat(primaryView(r, dur, now));
       } else if (r.empty === 'no_tasks') {
@@ -245,7 +246,9 @@
         var at = taskOf(a.taskId);
         if (!at) return null;
         return h('li.rec-alt', { 'data-task': at.id }, titleLink(at),
-          at.estimateMinutes != null ? h('span.meta', '약 ' + D.duration(at.estimateMinutes)) : null,
+          // 전체는 길고 한 단계만 들어가는 후보 — 그 단계 길이를 보인다 ('30분 안에' 아래에 '약 2시간' 이 뜨지 않게)
+          a.fit === 'step_fits' && a.step ? h('span.meta', '‘' + a.step.title + '’ 단계' + (a.step.estimateMinutes != null ? ' 약 ' + D.duration(a.step.estimateMinutes) : ''))
+            : at.estimateMinutes != null ? h('span.meta', '약 ' + D.duration(at.estimateMinutes)) : null,
           h('button.btn.btn-xs', { type: 'button', 'aria-label': '‘' + at.title + '’ 시작', onclick: function () { startTask(at.id); } }, '시작'));
       }).filter(Boolean);
       return [sum, item, alts.length ? h('div.rec-alts', h('div.rec-alts-title', '다른 후보'), h('ul', alts)) : null];

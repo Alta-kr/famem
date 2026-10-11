@@ -686,6 +686,8 @@
   function planKind(state, note, now, opts) {
     var body = String(note.body || '');
     if (body.indexOf('\n') !== -1 || body.trim().length > 80 || note.kindByUser) return null;
+    // 비슷한 할 일이 이미 있어 만들지 않은 글 — 배운 규칙으로 다시 만들면 중복이 된다
+    if (((note.capture || {}).skipped || []).some(function (x) { return x && x.reason === 'duplicate'; })) return null;
     var items = captureItems(state, note);
     if (items.length !== 1) return null;
     var cur = items[0].kind;
@@ -866,12 +868,13 @@
       learn();
       return note;
     }
-    var next = [];
+    var next = [], fromSource = false;
     // 바꾸는 동안 잠깐 비는 순간에 원문이 '메모로 드러나기' 가 일어나지 않게 막아 둔다
     state.__holdReveal = true;
     try {
       if (!live.length) {
         var t0 = captureToTask(state, noteId, now, opts);
+        fromSource = true;
         role = note.captureRole;
         live = [{ kind: 'task', item: t0 }];
       }
@@ -890,6 +893,8 @@
     note.captureRole = role;
     if (note.kindByUser) { note.kindByUser = false; }
     done(next);
+    // 원문으로 새로 만들었으면 '비슷한 할 일이 있어 만들지 않았어요' 는 더 이상 맞지 않는다
+    if (fromSource && note.capture.skipped && note.capture.skipped.length) note.capture.skipped = [];
     learn();
     M.revealSources(state);
     return note;

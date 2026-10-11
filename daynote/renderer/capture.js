@@ -53,16 +53,18 @@
       classify(note.id, { starting: true }).then(function (r) { if (onDone) onDone(r, note.id); });
       return note;
     }
+    var nid = M.uid('note');
+    if (DN.aiFlow.status().configured) inflight[nid] = true;   // 첫 그림부터 '정리하는 중' 이 되게 ('멈춤' 이 번쩍이지 않게)
     note = S.mutate('입력 저장', function (s) {
       return M.addNote(s, {
-        title: '', body: text, projectId: projectId || null, captureRole: 'memo',
+        id: nid, title: '', body: text, projectId: projectId || null, captureRole: 'memo',
         capture: {
           status: 'pending', at: now().toISOString(), entryType: null, created: [],
           statusLine: opts.statusLine || null, statusHint: opts.statusHint || null
         }
       }, now());
     }, { source: 'capture' });
-    classify(note.id).then(function (r) { if (onDone) onDone(r, note.id); });
+    classify(note.id, { starting: true }).then(function (r) { if (onDone) onDone(r, note.id); });
     return note;
   }
 

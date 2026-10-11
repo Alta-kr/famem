@@ -261,7 +261,7 @@
     var scroll = null;
 
     if (mode === 'month') {
-      monthHost = h('div.cal-month', { 'data-keep-scroll': 'cal-month' });
+      monthHost = h('div.cal-month', { 'data-keep-scroll': 'cal-month', 'data-autoscroll': '' });   // 끌면서 아래 주까지 닿게
       mainCol.appendChild(monthHost);
       paintMonth();
     } else {
@@ -541,6 +541,7 @@
   function startDwell(cell, s) {
     if (s.payload.kind !== 'task') return;
     var ymd = cell.getAttribute('data-day');
+    if (ymd < D.ymd(DN.app.now())) return;   // 지난 날은 머물러도 열지 않는다 (놓기도 받지 않는다)
     var cd = CD();
     if (!cd) return;
     if (cd.isOpen() && cd.ymd() === ymd) return;
@@ -579,6 +580,12 @@
     tick();
   }
 
+  // 하루 패널의 추천 자석·허용 띠는 패널이 다루는 그 할 일(또는 블록)을 끌 때만 쓴다
+  function panelInfoFor(info, p) {
+    if (!info || !p) return null;
+    if (p.kind === 'task' ? info.taskId === p.id : p.kind === 'block' ? info.blockId === p.id : false) return info;
+    return null;
+  }
   function dropKind(t) { return t ? t.getAttribute('data-drop') : null; }
 
   function dragOpts() {
@@ -598,6 +605,9 @@
           if (fit) fit.textContent = fitText(target, s);
           say(dayLabel(target.getAttribute('data-day')) + ' 위');
           startDwell(target, s);
+        } else if (k === 'sugg') {
+          // 하루 패널의 ①②③ 버튼 — 패널이 다루는 그 할 일(블록)을 끌 때만 받는다
+          if (CD() && panelInfoFor(CD()._dragInfo(), s.payload)) { overEl = target; target.classList.add('is-over'); say(target.textContent); }
         } else if (k === 'nav') {
           overEl = target;
           target.classList.add('is-over');
@@ -610,7 +620,7 @@
         if (!tl || dropKind(t) !== 'slot') return;
         Array.prototype.forEach.call(document.querySelectorAll('.cal-ghost, .cd-ghost'), function (g) { if (g.parentNode !== t) g.remove(); });
         var inPanel = t.classList.contains('cd-col');
-        var info = inPanel && CD() && CD()._dragInfo ? CD()._dragInfo() : null;
+        var info = inPanel && CD() && CD()._dragInfo ? panelInfoFor(CD()._dragInfo(), s.payload) : null;
         var g = tl.ghostAt(t, t.getAttribute('data-day'), s.y, s.payload, inPanel
           ? { cls: 'cd-ghost', magnets: info ? info.magnets : [], allowed: s.payload.kind === 'task' && info ? info.allowed : null }
           : { cls: 'cal-ghost' });
@@ -634,9 +644,9 @@
           if (!tl || !CP()) return;
           var ymd2 = target.getAttribute('data-day');
           var start = tl.timeAt(target, ymd2, s.y, p.offsetMin || 0);
-          var info = target.classList.contains('cd-col') && cd && cd._dragInfo ? cd._dragInfo() : null;
-          if (info && p.kind === 'task') {
-            var g = tl.ghostAt(target, ymd2, s.y, p, { cls: 'cd-ghost', magnets: info.magnets, allowed: info.allowed });
+          var info = target.classList.contains('cd-col') && cd && cd._dragInfo ? panelInfoFor(cd._dragInfo(), p) : null;
+          if (info) {
+            var g = tl.ghostAt(target, ymd2, s.y, p, { cls: 'cd-ghost', magnets: info.magnets, allowed: p.kind === 'task' ? info.allowed : null });
             start = g.start;
           }
           var ghost = target.querySelector('.cal-ghost, .cd-ghost');
@@ -647,8 +657,14 @@
             ? CP().dropAtTime(null, start, anchor, { blockId: p.id })
             : CP().dropAtTime(p.id, start, anchor, { copy: target.classList.contains('cd-col') ? 'day' : 'week' });
           pr.then(done, done);
+        } else if (k === 'sugg' && CP() && cd && panelInfoFor(cd._dragInfo(), p)) {
+          // ①②③ 버튼에 놓기 = 그 추천 시각에 넣기 (패널은 열어 둔다)
+          if (TL()) TL().clearGhosts();
+          var at = new Date(target.getAttribute('data-start'));
+          if (p.kind === 'block') CP().dropAtTime(null, at, target, { blockId: p.id });
+          else CP().dropAtTime(p.id, at, target, { copy: 'day' });
         } else {
-          // 달 넘기기 버튼 위에 놓기 = 취소
+          // 달 넘기기 버튼 위에 놓기 = 취소 (다른 할 일을 ①②③ 버튼에 놓아도)
           if (TL()) TL().clearGhosts();
           if (dwellOpen) cd.close('drop-outside');
         }

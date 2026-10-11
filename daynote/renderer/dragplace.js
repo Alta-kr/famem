@@ -108,7 +108,10 @@
 
   function placeGhost() {
     if (!cur || !cur.ghost) return;
-    cur.ghost.style.transform = 'translate3d(' + (cur.s.x + 12) + 'px,' + (cur.s.y + 12) + 'px,0)';
+    // 오른쪽 끝에 닿으면 포인터 왼쪽에 둔다 (폰에서 글자가 화면 밖으로 잘리지 않게)
+    var w = cur.ghost.offsetWidth, gx = cur.s.x + 12;
+    if (gx + w > window.innerWidth - 4) gx = Math.max(4, cur.s.x - 12 - w);
+    cur.ghost.style.transform = 'translate3d(' + gx + 'px,' + (cur.s.y + 12) + 'px,0)';
   }
 
   function schedule() {

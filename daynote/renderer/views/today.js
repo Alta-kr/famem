@@ -522,7 +522,7 @@
         h('div.home-row-title', M.noteTitle(n)),
         preview ? h('div.home-preview', preview.slice(0, 120)) : null,
         h('div.home-meta',
-          c.status === 'pending' ? h('span.chip', h('span.spinner', { 'aria-hidden': 'true' }), ' 정리 중') : ui.kindChip(kind),
+          c.status === 'pending' && DN.capture.isRunning(n.id) ? h('span.chip', h('span.spinner', { 'aria-hidden': 'true' }), ' 정리 중') : ui.kindChip(kind),
           // 링크는 앱 밖(기본 브라우저)에서 연다 — 메인 프로세스가 새 창 요청을 브라우저로 넘긴다
           link ? h('a.home-link', { href: link.url, target: '_blank', rel: 'noopener noreferrer', title: link.url, draggable: 'false',
             onclick: function (e) { e.stopPropagation(); }, onkeydown: function (e) { e.stopPropagation(); } }, ui.icon('link'), link.host) : null,

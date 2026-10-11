@@ -174,7 +174,7 @@
       e.items.forEach(function (it) { count[it.kind] = (count[it.kind] || 0) + 1; });
       var chips = ORDER.filter(function (k) { return count[k]; }).map(function (k) { return ui.kindChip(k, count[k] > 1 ? ' ' + count[k] : ''); });
       var pid = projectIds(e).filter(Boolean)[0];
-      var running = DN.capture.isRunning(n.id) || c.status === 'pending';
+      var running = DN.capture.isRunning(n.id);   // 'pending' 이어도 돌지 않으면(되돌리기·새로고침으로 멈춤) 정리 중이 아니다
       return h('button.arc-row', {
         type: 'button', 'data-note-id': n.id,
         onclick: function () { open(e); },

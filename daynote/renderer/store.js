@@ -13,7 +13,7 @@
   var EMERGENCY_KEY = 'daynote:unsaved';
   var SAVE_DELAY = 400;
   // 되돌리기가 건드리지 않는 최상위 키 — undo 뒤에도 '지금 값' 을 유지한다
-  var KEEP_ON_UNDO = ['prefs', 'presence', 'gcal'];
+  var KEEP_ON_UNDO = ['prefs', 'presence', 'gcal', 'quickDraft', 'homeDraft'];   // 초안은 되돌리지 않는다
 
   // 브라우저 미리보기에는 메인 프로세스가 없어서 Google 로그인·캘린더를 쓸 수 없다 — 같은 모양의 '쓸 수 없음' 응답을 준다
   var G_UNAVAILABLE = { available: false, state: 'unavailable', signedIn: false, email: null, name: null, picture: null,
@@ -136,6 +136,20 @@
     });
   }
 
+  function carryChat(curChat) {
+    if (!Array.isArray(state.chat)) state.chat = [];
+    var have = {}, notes = {}, tasks = {};
+    state.chat.forEach(function (m) { have[m.id] = 1; });
+    (state.notes || []).forEach(function (n) { notes[n.id] = 1; });
+    (state.tasks || []).forEach(function (t) { tasks[t.id] = 1; });
+    curChat.forEach(function (m) {
+      if (!m || have[m.id]) return;
+      if (m.noteId && !notes[m.noteId]) return;
+      if (m.taskId && !tasks[m.taskId]) return;
+      state.chat.push(m);
+    });
+  }
+
   var store = {
     host: host,
     get state() { return state; },
@@ -181,6 +195,8 @@
     },
 
     canUndo: function () { return undoStack.length > 0; },
+    // 지금 맨 위 되돌리기 항목(같은 객체) — 알림의 [되돌리기]가 제 변경이 아직 맨 위인지 확인할 때 쓴다
+    peekUndo: function () { return undoStack[undoStack.length - 1] || null; },
     undo: function () {
       var last = undoStack.pop();
       if (!last) return null;
@@ -188,11 +204,15 @@
       // 되돌리기 대상이 아니다 — 지금 값(같은 객체)을 그대로 유지한다
       var keep = {};
       KEEP_ON_UNDO.forEach(function (k) { if (state[k] !== undefined) keep[k] = state[k]; });
+      var curChat = state.chat || [];
       state = last.snapshot;
       KEEP_ON_UNDO.forEach(function (k) {
         if (keep[k] !== undefined) state[k] = keep[k];
         else if (state[k] === null) delete state[k];   // 스냅숏에서 비워 둔 자리 — 지금도 없으면 없는 대로
       });
+      // 흐름(chat)은 되돌린 단계 뒤에 올라온 글도 남긴다 — 상태 보고·도움말·휴식 카드처럼 데이터와 상관없는 글이
+      // 사라지지 않게. 되돌리기로 없어진 메모·할 일에 묶인 카드만 뺀다
+      carryChat(curChat);
       scheduleSave();
       emit({ type: 'undo', label: last.label });
       return last.label;

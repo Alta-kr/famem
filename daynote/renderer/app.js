@@ -128,12 +128,12 @@
 
   function renderView() {
     var scroll = els.view.scrollTop;
-    var inner = Array.prototype.map.call(els.view.querySelectorAll('[data-keep-scroll]'), function (e) { return [e.getAttribute('data-keep-scroll'), e.scrollTop]; });
+    var inner = Array.prototype.map.call(els.view.querySelectorAll('[data-keep-scroll]'), function (e) { return [e.getAttribute('data-keep-scroll'), e.scrollTop, e.scrollLeft]; });
     if (cur.handle && cur.handle.destroy) cur.handle.destroy();
     els.view.textContent = '';
     cur.handle = DN.views[cur.view].render(els.view, cur.params) || {};
     els.view.scrollTop = scroll;
-    inner.forEach(function (p) { var e = els.view.querySelector('[data-keep-scroll="' + p[0] + '"]'); if (e) e.scrollTop = p[1]; });
+    inner.forEach(function (p) { var e = els.view.querySelector('[data-keep-scroll="' + p[0] + '"]'); if (e) { e.scrollTop = p[1]; e.scrollLeft = p[2]; } });
   }
 
   function onStoreChange(info) {
@@ -152,8 +152,8 @@
   function openTask(id, opts) {
     detailTaskId = id;
     renderDetail();
-    var row = els.view.querySelectorAll('.task-row');
-    Array.prototype.forEach.call(row, function (r) { r.classList.toggle('is-selected', r.getAttribute('data-task-id') === id); });
+    var row = els.view.querySelectorAll('.task-row, .home-row');
+    Array.prototype.forEach.call(row, function (r) { r.classList.toggle('is-selected', (r.getAttribute('data-task-id') || r.getAttribute('data-id')) === id); });
     if (!(opts && opts.keepFocus)) setTimeout(function () { var f = els.detail.querySelector('.detail-title'); if (f) f.focus(); }, 0);
   }
   function renderDetail() {
@@ -167,7 +167,7 @@
     if (detailHandle && detailHandle.destroy) detailHandle.destroy();
     detailHandle = null;
     els.detail.textContent = '';
-    Array.prototype.forEach.call(els.view.querySelectorAll('.task-row.is-selected'), function (r) { r.classList.remove('is-selected'); });
+    Array.prototype.forEach.call(els.view.querySelectorAll('.task-row.is-selected, .home-row.is-selected'), function (r) { r.classList.remove('is-selected'); });
   }
 
   // ------------------------------------------------------------------ 공통 동작
@@ -191,7 +191,7 @@
     if (t.status === 'in_progress') { openTask(id); ui.toast('이미 진행 중인 업무입니다. 관련 자료를 열었습니다.'); return Promise.resolve(true); }
     var others = M.liveTasks(S.state).filter(function (o) { return o.id !== id && o.status === 'in_progress'; });
     var ask = others.length
-      ? ui.confirm('진행 중인 업무 전환', '‘' + others[0].title + '’' + (others.length > 1 ? ' 외 ' + (others.length - 1) + '개' : '') + '가 진행 중입니다. ‘' + t.title + '’로 전환할까요? 기존 업무는 ‘할 일’ 상태로 돌아가며, 되돌릴 수 있습니다.', '전환하고 시작')
+      ? ui.confirm('진행 중인 업무 전환', '‘' + others[0].title + '’' + (others.length > 1 ? ' 외 ' + (others.length - 1) + '개' : '') + (others.length > 1 ? '가' : ui.josa(others[0].title, '가/이').slice(others[0].title.length)) + ' 진행 중입니다. ‘' + t.title + '’' + ui.josa(t.title, '로/으로').slice(t.title.length) + ' 전환할까요? 기존 업무는 ‘할 일’ 상태로 돌아가며, 되돌릴 수 있습니다.', '전환하고 시작')
       : Promise.resolve(true);
     return ask.then(function (ok) {
       if (!ok) return false;
@@ -209,7 +209,7 @@
         label: o.label, sub: D.shortDay(o.at) + ' ' + D.hm(o.at), onClick: function () {
           var t = M.byId(S.state.tasks, id);
           S.mutate('미루기', function (s) { M.snoozeTask(s, id, o.at.toISOString(), now()); });
-          ui.undoToast('‘' + (t && t.title) + '’를 ' + o.label + '까지 미뤘습니다. 업무는 그대로 남아 있습니다.');
+          ui.undoToast('‘' + (t && t.title) + '’' + ui.josa(String(t && t.title), '를/을').slice(String(t && t.title).length) + ' ' + o.label + '까지 미뤘습니다. 업무는 그대로 남아 있습니다.');
           if (after) after();
         }
       };
@@ -233,7 +233,7 @@
     var t = M.byId(S.state.tasks, id);
     S.mutate('삭제', function (s) { M.deleteTask(s, id, now()); });
     if (detailTaskId === id) closeDetail();
-    ui.undoToast('‘' + t.title + '’를 삭제했습니다. 앞으로 잡힌 작업 시간도 함께 지웠습니다.');
+    ui.undoToast('‘' + t.title + '’' + ui.josa(t.title, '를/을').slice(t.title.length) + ' 삭제했습니다. 앞으로 잡힌 작업 시간도 함께 지웠습니다.');
   }
 
   function scheduleTask(id, opts) { return DN.views.schedule.open(Object.assign({ taskId: id }, opts || {})); }
@@ -367,7 +367,9 @@
       }
       return;
     }
-    if ((e.ctrlKey || e.metaKey) && (e.key === 'z' || e.key === 'Z') && !inField) {
+    // 홈 입력창이 비어 있고 보낸 뒤로 아무것도 치지 않았으면 브라우저 되돌리기가 할 일이 없다 — 카드의 'Ctrl+Z로 되돌리기' 가 바로 듣게 한다
+    var freshHome = inField && e.target.matches && e.target.matches('textarea[data-slash]') && !e.target.value && e.target.getAttribute('data-typed') !== '1';
+    if ((e.ctrlKey || e.metaKey) && (e.key === 'z' || e.key === 'Z') && (!inField || freshHome)) {
       e.preventDefault();
       var l = S.undo();
       ui.toast(l ? '‘' + l + '’을(를) 되돌렸습니다.' : '되돌릴 작업이 없습니다.');
