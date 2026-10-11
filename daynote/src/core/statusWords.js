@@ -332,7 +332,8 @@
       // 근무표는 v2 — 시간으로 짐작하지 않는다 (설정에서도 켤 수 없다)
       schedule: { mode: 'off', locked: true, label: '근무 시간' },
       overtime: false,
-      afterWork: 'hide', contextLabels: { work: '근무' }
+      afterWork: 'hide', contextLabels: { work: '근무' },
+      contextWords: { work: { strong: ['인계', '근무표'] } }
     },
     shop: {
       label: '자영업', stage: 'v1', primary: ['work'],

@@ -267,7 +267,9 @@ const POLICY = [
   ['home', ['kids', 'nap'], '요가 가기', 'up', 'personal'],
   ['student', 'part_time', '은행 가기', 'down', 'errand'],
   ['student', 'part_time', '알바 교대 확인', 'up', 'work'],
-  ['student', 'off', '알바 교대 확인', 'hide', 'work']
+  ['student', 'off', '알바 교대 확인', 'hide', 'work'],
+  ['shift', 'work', '인계 자료 정리', 'up', 'work'],
+  ['shift', 'off', '인계 자료 정리', 'hide', 'work']
 ];
 test('정책: 프리셋마다 상태 × 맥락 수준 (§12.2 다른 점)', () => {
   POLICY.forEach(([preset, cur, title, level, ctx]) => {
