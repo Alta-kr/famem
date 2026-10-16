@@ -94,3 +94,108 @@ test('Gemini 오류: 한도 초과(429)는 한 번 더 시도하고, 키 오류(
     assert.strictEqual(r4.attempts, 2);
   });
 });
+
+test('키 글자: 둥근 따옴표 같은 ASCII 밖 글자가 섞인 키는 처음부터 쓰지 않고, .env 의 둥근 따옴표는 벗긴다', () => {
+  withEnv({ GEMINI_API_KEY: '“AIzaSyFAKEFAKEFAKEFAKE123”' }, () => {
+    const s = freshAi().status();
+    assert.strictEqual(s.configured, false);
+    assert.match(s.reason, /공백이나 줄바꿈/);
+    assert.match(s.reason, /다시 복사/);
+  });
+  withEnv({ ANTHROPIC_API_KEY: '‘sk-ant-FAKEFAKEFAKE’' }, () => { assert.strictEqual(freshAi().status().configured, false); });
+  withEnv({ GEMINI_API_KEY: 'AIzaSy가나다FAKEFAKEFAKE' }, () => { assert.strictEqual(freshAi().status().configured, false); });
+  withEnv({ GEMINI_API_KEY: 'AIzaSyFAKE_FAKE-FAKE123' }, () => { assert.strictEqual(freshAi().status().configured, true); });
+
+  const fs = require('fs'), os = require('os'), path = require('path');
+  const K = require('../services/keystore');
+  const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'dn-dotenv-'));
+  fs.writeFileSync(path.join(dir, '.env'), 'GEMINI_API_KEY=“AIzaSyFAKEFAKEFAKEFAKE123”\n');
+  const saved = { g: process.env.GEMINI_API_KEY, d: process.env.DAYNOTE_KEY_FROM_DOTENV };
+  delete process.env.GEMINI_API_KEY;
+  try {
+    assert.strictEqual(K.loadDotEnv(dir), true);
+    assert.strictEqual(process.env.GEMINI_API_KEY, 'AIzaSyFAKEFAKEFAKEFAKE123');
+  } finally {
+    if (saved.g === undefined) delete process.env.GEMINI_API_KEY; else process.env.GEMINI_API_KEY = saved.g;
+    if (saved.d === undefined) delete process.env.DAYNOTE_KEY_FROM_DOTENV; else process.env.DAYNOTE_KEY_FROM_DOTENV = saved.d;
+    fs.rmSync(dir, { recursive: true, force: true });
+  }
+});
+
+test('Gemini 오류: 요청을 만들다 난 오류는 인터넷 문제로 말하지 않고 다시 시도하지 않는다, 연결 오류는 다른 모델로 한 번 더', async () => {
+  await withEnv({ GEMINI_API_KEY: 'g' }, async () => {
+    const ai = freshAi();
+    ai._setClients({ retryDelayMs: 0 });
+    let models = [];
+    ai._setClients({ gemini: { interactions: { create: async (req) => {
+      models.push(req.model);
+      throw Object.assign(new Error('Unexpected HTTP client error: TypeError: Cannot convert argument to a ByteString'), { name: 'UnexpectedClientError' });
+    } } } });
+    let r = await ai.organize(INPUT);
+    assert.strictEqual(r.ok, false);
+    assert.strictEqual(r.error.type, 'unknown');
+    assert.strictEqual(r.error.retryable, false);
+    assert.ok(!/인터넷/.test(r.error.message), r.error.message);
+    assert.ok(!/ByteString/.test(r.error.message));
+    assert.match(r.error.detail, /ByteString/);
+    assert.strictEqual(models.length, 1);
+
+    models = [];
+    ai._setClients({ gemini: { interactions: { create: async (req) => {
+      models.push(req.model);
+      throw Object.assign(new Error('Unable to make request: TypeError: fetch failed'), { name: 'ConnectionError' });
+    } } } });
+    r = await ai.organize(INPUT);
+    assert.strictEqual(r.error.type, 'network');
+    assert.strictEqual(r.error.retryable, true);
+    assert.match(r.error.message, /인터넷 연결/);
+    assert.deepStrictEqual(models, ['gemini-3.8-flash', ai.MODELS.geminiFast]);
+  });
+});
+
+test('응답 읽기: 코드 울타리나 앞 문장으로 감싼 JSON 도 한 번에 읽고, 엉뚱한 글은 그대로 invalid_json', async () => {
+  const shapes = [
+    '```json\n' + JSON.stringify(OUTPUT) + '\n```',
+    '```\n' + JSON.stringify(OUTPUT, null, 2) + '\n```\n',
+    '다음은 결과입니다:\n' + JSON.stringify(OUTPUT)
+  ];
+  await withEnv({ GEMINI_API_KEY: 'g' }, async () => {
+    const ai = freshAi();
+    ai._setClients({ retryDelayMs: 0 });
+    for (const text of shapes) {
+      let calls = 0;
+      ai._setClients({ gemini: { interactions: { create: async () => { calls++; return { status: 'completed', output_text: text }; } } } });
+      const r = await ai.organize(INPUT);
+      assert.ok(r.ok, JSON.stringify(r.error));
+      assert.strictEqual(r.attempts, 1);
+      assert.strictEqual(calls, 1);
+      assert.deepStrictEqual(r.output, OUTPUT);
+      assert.strictEqual(r.raw, text);
+    }
+    for (const text of ['그냥 글이에요', '[1, 2]', '{"summary": "요약", "sections": [']) {
+      let calls = 0;
+      ai._setClients({ gemini: { interactions: { create: async () => { calls++; return { status: 'completed', output_text: text }; } } } });
+      const r = await ai.organize(INPUT);
+      assert.strictEqual(r.ok, false);
+      assert.strictEqual(r.error.type, 'invalid_json');
+      assert.strictEqual(r.attempts, 2);
+      assert.strictEqual(calls, 2);
+    }
+  });
+  await withEnv({ ANTHROPIC_API_KEY: 'sk-ant-test', DAYNOTE_AI_PROVIDER: 'claude' }, async () => {
+    const ai = freshAi();
+    for (const text of shapes) {
+      let calls = 0;
+      ai._setClients({ claude: { beta: { messages: { create: async () => { calls++; return { stop_reason: 'end_turn', model: 'claude-opus-5-5', content: [{ type: 'text', text }], usage: {} }; } } } } });
+      const r = await ai.organize(INPUT);
+      assert.ok(r.ok, JSON.stringify(r.error));
+      assert.strictEqual(calls, 1);
+      assert.deepStrictEqual(r.output, OUTPUT);
+    }
+    let calls = 0;
+    ai._setClients({ claude: { beta: { messages: { create: async () => { calls++; return { stop_reason: 'end_turn', model: 'claude-opus-5-5', content: [{ type: 'text', text: '읽을 수 없는 글' }], usage: {} }; } } } } });
+    const r = await ai.organize(INPUT);
+    assert.strictEqual(r.error.type, 'invalid_json');
+    assert.strictEqual(calls, 2);
+  });
+});

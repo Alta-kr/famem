@@ -39,6 +39,9 @@ const fake = require('../src/core/ai/fake');
 const MODELS = { claude: 'claude-opus-5-5', gemini: 'gemini-3.8-flash', geminiFast: 'gemini-3.5-flash-lite' };
 const THINKING = { 'gemini-3.8-flash': 'low', 'gemini-3.5-flash-lite': 'minimal' };
 let retryDelayMs = null;      // 테스트에서만 바꾼다
+// 요청 하나(두 모델 + JSON 재요청까지)의 전체 마감. 모델별 시간 제한은 callGemini, Claude 는 클라이언트 timeout.
+const DEADLINE_MS = 4 * 60 * 1000;
+let deadlineMs = DEADLINE_MS;
 const inflight = new Set();   // 같은 메모를 동시에 두 번 정리하지 않는다
 
 // 키는 이 모듈 안에만 둔다.
@@ -64,8 +67,9 @@ function keySource() {
   if (process.env.GEMINI_API_KEY || process.env.GOOGLE_API_KEY) return process.env.DAYNOTE_KEY_FROM_DOTENV === '1' ? 'dotenv' : 'env';
   return envKeys.gemini ? envKeys.source : null;
 }
-// 키에 공백·줄바꿈이 섞이면 SDK 오류 메시지에 키가 그대로 실릴 수 있다 — 아예 쓰지 않는다
-function badKey(k) { return !!k && /[\s\u0000-\u001f]/.test(k); }
+// 키에 공백·줄바꿈이 섞이면 SDK 오류 메시지에 키가 그대로 실릴 수 있다 — 아예 쓰지 않는다.
+// 둥근 따옴표 같은 ASCII 밖 글자도 요청 머리말에 실을 수 없어 매번 실패하니 미리 막는다.
+function badKey(k) { return !!k && /[^\x21-\x7e]/.test(k); }
 // 오류 메시지에서 키처럼 보이는 문자열을 가린다 (화면·저장 기록·백업으로 새지 않게)
 function redact(msg) {
   let m = String(msg == null ? '' : msg);
@@ -89,24 +93,96 @@ function status() {
   if (m === 'fake') return { configured: true, provider: 'fake', model: '가짜 AI(테스트)' };
   if (m === 'gemini') return {
     configured: true, provider: 'gemini', model: MODELS.gemini, fastModel: MODELS.geminiFast, vendor: 'Google', keySource: keySource(),
-    notice: 'Gemini API 무료 등급에서는 보낸 내용이 Google 제품 개선에 쓰일 수 있습니다. 결제를 연결한 유료 등급에서는 쓰이지 않습니다.'
+    notice: 'Gemini API 무료 등급에서는 보낸 내용이 Google 제품 개선에 쓰일 수 있어요. 결제를 연결한 유료 등급에서는 쓰이지 않아요.'
   };
   if (m === 'claude') return { configured: true, provider: 'claude', model: MODELS.claude, vendor: 'Anthropic' };
   const want = String(process.env.DAYNOTE_AI_PROVIDER || '').toLowerCase();
-  if (badKey(geminiKey()) || badKey(anthropicKey())) return { configured: false, provider: null, model: null, reason: 'AI 키에 공백이나 줄바꿈이 섞여 있어요. 키를 다시 복사해 넣어 주세요.' };
+  if (badKey(geminiKey()) || badKey(anthropicKey())) return { configured: false, provider: null, model: null, reason: 'AI 키에 공백이나 줄바꿈, 따옴표 같은 다른 문자가 섞여 있어요. 키를 다시 복사해 넣어 주세요.' };
   return {
     configured: false, provider: null, model: null,
-    reason: want === 'gemini' ? 'GEMINI_API_KEY 환경변수가 설정되어 있지 않습니다.'
-      : want === 'claude' ? 'ANTHROPIC_API_KEY 환경변수가 설정되어 있지 않습니다.'
-      : 'AI 키가 없습니다. 설정에서 Google AI Studio 키를 넣어 주세요.'
+    reason: want === 'gemini' ? 'GEMINI_API_KEY 환경변수가 설정되어 있지 않아요.'
+      : want === 'claude' ? 'ANTHROPIC_API_KEY 환경변수가 설정되어 있지 않아요.'
+      : 'AI 키가 없어요. 설정에서 Google AI Studio 키를 넣어 주세요.',
+    // 고를 공급자가 정해지지 않았고 키가 그냥 없는 경우 — main 이 '저장한 키를 못 푼다' 로 바꿔 말할 수 있게
+    noKey: want !== 'gemini' && want !== 'claude'
   };
 }
 
-function parseOutput(text, provider, model, usage) {
-  let output;
-  try { output = JSON.parse(text); }
-  catch (e) { return { ok: false, error: { type: 'invalid_json', message: 'AI 응답을 읽지 못했습니다.', retryable: true }, raw: text }; }
+// schema 를 주면(Claude) '값 없음' 표시를 null 로 되돌린 결과를 output·raw 로 쓴다 (지난 결과 재사용도 같은 모양이 되게)
+// 코드 울타리(```json … ```)나 앞뒤 문장으로 감싼 JSON 도 읽는다 — 내용 검사는 렌더러 검증기가 그대로 한다
+function parseJsonLoose(text) {
+  try { return JSON.parse(text); } catch (e) { /* 아래에서 감싼 모양을 벗겨 본다 */ }
+  const t = String(text || '').trim().replace(/^```[a-zA-Z]*\s*/, '').replace(/\s*```\s*$/, '');
+  try { return JSON.parse(t); } catch (e) { /* 바깥 { … } 만 꺼내 본다 */ }
+  const i = t.indexOf('{'), j = t.lastIndexOf('}');
+  if (i >= 0 && j > i) { try { return JSON.parse(t.slice(i, j + 1)); } catch (e) { /* 못 읽음 */ } }
+  return undefined;
+}
+function parseOutput(text, provider, model, usage, schema) {
+  let output = parseJsonLoose(text);
+  if (!output || typeof output !== 'object' || Array.isArray(output)) {
+    return { ok: false, error: { type: 'invalid_json', message: 'AI 응답을 읽지 못했어요.', retryable: true }, raw: text };
+  }
+  if (schema) { output = fromClaude(schema, output); text = JSON.stringify(output); }
   return { ok: true, provider, model, output, raw: text, usage: usage || null };
+}
+
+// ------------------------------------------------------------------ Claude 용 스키마
+// Anthropic 구조화 출력은 anyOf(합집합) 칸을 요청 하나에 16개까지만 받는다 (넘으면 400 "Schema is too complex").
+// 빠른 입력 분류(capture) 스키마는 null 을 허용하는 칸이 29개라, Claude 에 보낼 때만 null 대신 '값 없음' 표시를 쓴다:
+//   글자 → ""  ·  정수 → -1  ·  선택지 → "none"  ·  참/거짓 → "true" | "false" | "none"
+// 받은 응답은 fromClaude 로 원래 스키마 모양(null)으로 되돌려 같은 검증기를 거친다. Gemini 는 원래 스키마 그대로.
+const NONE_ENUM = 'none';
+const CLAUDE_NONE_NOTE = '출력 형식 안내: 이 요청의 JSON 스키마에는 null 이 없습니다. 지침에서 null 이라고 한 값은 글자 칸이면 빈 문자열 "", 정수 칸이면 -1, 선택지·참거짓 칸이면 "none" 으로 적습니다.';
+function nullableInner(s) {
+  if (!s || !Array.isArray(s.anyOf) || s.anyOf.length !== 2) return null;
+  const rest = s.anyOf.filter((x) => !(x && x.type === 'null' && Object.keys(x).length === 1));
+  return rest.length === 1 ? rest[0] : null;
+}
+function isNoneEnum(t) { return t && t.type === 'string' && Array.isArray(t.enum) && t.enum.indexOf(NONE_ENUM) < 0; }
+function toClaudeSchema(s) {
+  if (!s || typeof s !== 'object') return s;
+  const inner = nullableInner(s);
+  if (inner) {
+    const t = toClaudeSchema(inner);
+    if (isNoneEnum(t)) return Object.assign({}, t, { enum: t.enum.concat([NONE_ENUM]), description: '없으면 "none"' });
+    if (t.type === 'string' && !t.enum) return Object.assign({}, t, { description: '없으면 빈 문자열 ""' });
+    if (t.type === 'integer') return Object.assign({}, t, { description: '없으면 -1' });
+    if (t.type === 'boolean') return { type: 'string', enum: ['true', 'false', NONE_ENUM], description: '없으면 "none"' };
+    return Object.assign({}, s, { anyOf: [t, { type: 'null' }] });
+  }
+  const out = Object.assign({}, s);
+  if (s.properties) {
+    out.properties = {};
+    Object.keys(s.properties).forEach((k) => { out.properties[k] = toClaudeSchema(s.properties[k]); });
+  }
+  if (s.items) out.items = toClaudeSchema(s.items);
+  return out;
+}
+// 원래 스키마(s)를 따라가며 Claude 응답(v)의 '값 없음' 표시를 null 로 되돌린다
+function fromClaude(s, v) {
+  if (!s || typeof s !== 'object') return v;
+  const inner = nullableInner(s);
+  if (inner) {
+    if (v == null) return null;
+    if (isNoneEnum(inner)) return v === NONE_ENUM ? null : v;
+    if (inner.type === 'string' && !inner.enum) return v === '' ? null : v;
+    if (inner.type === 'integer') return v === -1 ? null : v;
+    if (inner.type === 'boolean') return v === 'true' ? true : v === 'false' ? false : v === NONE_ENUM ? null : v;
+    return fromClaude(inner, v);
+  }
+  if (s.properties && v && typeof v === 'object' && !Array.isArray(v)) {
+    const out = Object.assign({}, v);
+    Object.keys(s.properties).forEach((k) => { if (k in out) out[k] = fromClaude(s.properties[k], out[k]); });
+    return out;
+  }
+  if (s.items && Array.isArray(v)) return v.map((x) => fromClaude(s.items, x));
+  return v;
+}
+const claudeSchemas = new WeakMap();        // 요청마다 같은 바이트가 가도록 한 번만 바꾼다
+function claudeSchemaFor(schema) {
+  if (!claudeSchemas.has(schema)) claudeSchemas.set(schema, toClaudeSchema(schema));
+  return claudeSchemas.get(schema);
 }
 
 // ------------------------------------------------------------------ Claude
@@ -123,16 +199,31 @@ function claude() {
   return claudeClient;
 }
 
+// 화면에 보이는 message 는 짧은 한국어 문구만. 제공자 원문(가린 것)은 detail 에 — 설정 '고급'·실행 기록에서만 본다.
+const MSG = {
+  billing: '결제·크레딧을 확인해 주세요. AI 계정의 사용 가능 금액이 부족해요.',
+  model: 'AI 모델을 찾지 못했어요. 앱을 업데이트해 주세요.',
+  timeout: 'AI 응답이 너무 오래 걸려 멈췄어요. 잠시 뒤 다시 시도해 주세요.',
+  portal: 'AI 서버 대신 다른 응답이 왔어요. 인터넷 연결(와이파이 로그인 화면 등)을 확인해 주세요.'
+};
+const BILLING_RE = /credit balance|billing|prepa(?:y|id)/i;
+function isTimeoutError(e) { return !!e && (e.name === 'APIConnectionTimeoutError' || /timed? ?out/i.test(e.message || '')); }
+
 function classifyClaude(e) {
   const Anthropic = require('@anthropic-ai/sdk');
-  if (e instanceof Anthropic.AuthenticationError) return { type: 'auth', message: 'API 키가 올바르지 않습니다. ANTHROPIC_API_KEY 를 확인해 주세요.', retryable: false };
-  if (e instanceof Anthropic.PermissionDeniedError) return { type: 'permission', message: '이 API 키로는 요청할 권한이 없습니다.', retryable: false };
-  if (e instanceof Anthropic.RateLimitError) return { type: 'rate_limit', message: '요청이 많아 잠시 제한되었습니다. 조금 뒤 다시 시도해 주세요.', retryable: true };
-  if (e instanceof Anthropic.BadRequestError) return { type: 'bad_request', message: '요청을 처리하지 못했습니다: ' + redact(e.message), retryable: false };
-  if (e instanceof Anthropic.APIConnectionError) return { type: 'network', message: 'AI 서버에 연결하지 못했습니다. 인터넷 연결을 확인해 주세요.', retryable: true };
-  if (e instanceof Anthropic.APIError && e.status >= 500) return { type: 'server', message: 'AI 서버 오류입니다. 잠시 뒤 다시 시도해 주세요.', retryable: true };
-  if (e instanceof Anthropic.APIError) return { type: 'api', message: 'AI 요청 오류(' + e.status + '): ' + redact(e.message), retryable: false };
-  return { type: 'unknown', message: redact(e && e.message ? e.message : String(e)), retryable: true };
+  const d = { detail: redact(e && e.message ? e.message : String(e)) };
+  const err = (type, message, retryable) => Object.assign({ type, message, retryable }, d);
+  if (e instanceof Anthropic.AuthenticationError) return err('auth', 'Claude API 키가 올바르지 않아요. ANTHROPIC_API_KEY 를 확인해 주세요.', false);
+  if (e instanceof Anthropic.APIError && (e.status === 402 || (e.status === 400 && BILLING_RE.test(e.message || '')))) return err('billing', MSG.billing, false);
+  if (e instanceof Anthropic.PermissionDeniedError) return err('permission', '이 API 키로는 요청할 권한이 없어요.', false);
+  if (e instanceof Anthropic.RateLimitError) return err('rate_limit', '요청이 많아 잠시 제한됐어요. 조금 뒤 다시 시도해 주세요.', true);
+  if (e instanceof Anthropic.NotFoundError) return err('model_not_found', MSG.model, false);
+  if (e instanceof Anthropic.BadRequestError) return err('bad_request', 'AI가 이 요청을 받지 않았어요. 잠시 뒤 다시 시도해 주세요.', false);
+  if (e instanceof Anthropic.APIConnectionTimeoutError) return err('timeout', MSG.timeout, true);
+  if (e instanceof Anthropic.APIConnectionError) return err('network', 'AI 서버에 연결하지 못했어요. 인터넷 연결을 확인해 주세요.', true);
+  if (e instanceof Anthropic.APIError && e.status >= 500) return err('server', 'AI 서버에 문제가 있어요. 잠시 뒤 다시 시도해 주세요.', true);
+  if (e instanceof Anthropic.APIError) return err('api', 'AI 요청이 실패했어요(' + e.status + '). 잠시 뒤 다시 시도해 주세요.', false);
+  return err('unknown', 'AI 처리 중 알 수 없는 오류가 났어요. 잠시 뒤 다시 시도해 주세요.', true);
 }
 
 async function callClaude(input) {
@@ -144,19 +235,24 @@ async function callClaude(input) {
     betas: ['server-side-fallback-2026-07-01'],
     fallbacks: 'default',
     // 정리·추출은 깊은 추론보다 정확한 읽기 — 낮은 effort
-    output_config: { effort: 'low', format: { type: 'json_schema', schema: def.SCHEMA } },
-    // 고정된 지침은 캐시한다 (메모마다 바뀌는 내용은 뒤쪽 user 메시지에만)
-    system: [{ type: 'text', text: def.SYSTEM, cache_control: { type: 'ephemeral' } }],
+    // 스키마는 Claude 용으로 바꾼 것(합집합 칸 없음) — 위 toClaudeSchema 참고
+    output_config: { effort: 'low', format: { type: 'json_schema', schema: claudeSchemaFor(def.SCHEMA) } },
+    // 고정된 지침은 캐시한다 (메모마다 바뀌는 내용은 뒤쪽 user 메시지에만). '값 없음' 안내는 공통 지침 뒤 별도 블록.
+    system: [{ type: 'text', text: def.SYSTEM, cache_control: { type: 'ephemeral' } }, { type: 'text', text: CLAUDE_NONE_NOTE }],
     messages: [{ role: 'user', content: def.userText(input) }]
   });
+  // 와이파이 로그인 화면 같은 엉뚱한 응답은 본문이 없다 — 연결 문제로 다룬다
+  if (!res || !Array.isArray(res.content)) {
+    return { ok: false, error: { type: 'network', message: MSG.portal, retryable: true, detail: redact(String(res).slice(0, 200)) } };
+  }
   if (res.stop_reason === 'refusal') {
-    return { ok: false, error: { type: 'refusal', message: '이 메모는 AI가 처리하지 않았습니다.' + (res.stop_details && res.stop_details.explanation ? ' (' + res.stop_details.explanation + ')' : ''), retryable: false } };
+    return { ok: false, error: { type: 'refusal', message: '이 메모는 AI가 처리하지 않았어요.', retryable: false, detail: res.stop_details && res.stop_details.explanation ? redact(String(res.stop_details.explanation).slice(0, 200)) : undefined } };
   }
   if (res.stop_reason === 'max_tokens') {
-    return { ok: false, error: { type: 'truncated', message: '메모가 길어 결과가 중간에 끊겼습니다.', retryable: true } };
+    return { ok: false, error: { type: 'truncated', message: '메모가 길어 결과가 중간에 끊겼어요.', retryable: true } };
   }
   const text = res.content.filter((b) => b.type === 'text').map((b) => b.text).join('');
-  return parseOutput(text, 'claude', res.model, res.usage);
+  return parseOutput(text, 'claude', res.model, res.usage, def.SCHEMA);
 }
 
 // ------------------------------------------------------------------ Gemini
@@ -169,16 +265,48 @@ function gemini() {
   return geminiClient;
 }
 
+// 키를 어디서 고치면 되는지 — 설정에 저장한 키면 설정, 아니면 환경변수 이름
+function geminiKeyHint() { return keySource() === 'saved' || !keySource() ? '설정에서 키를 확인해 주세요.' : 'GEMINI_API_KEY 를 확인해 주세요.'; }
+
 function classifyGemini(e) {
   const status = e && typeof e.status === 'number' ? e.status : null;
-  if (status === 401 || status === 403) return { type: 'auth', message: 'Gemini API 키가 올바르지 않거나 권한이 없습니다. GEMINI_API_KEY 를 확인해 주세요.', retryable: false };
-  if (status === 429) return { type: 'rate_limit', message: 'Gemini 사용 한도에 걸렸습니다(무료 등급은 분당·하루 요청 수가 정해져 있습니다). 조금 뒤 다시 시도해 주세요.', retryable: true };
+  const msg = (e && e.message) || '';
+  const d = { detail: redact(e && e.message ? e.message : String(e)) };
+  const err = (type, message, retryable) => Object.assign({ type, message, retryable }, d);
+  if (status === 402 || ((status === 400 || status === 403) && BILLING_RE.test(msg))) return err('billing', MSG.billing, false);
+  if (status === 401 || status === 403) return err('auth', 'Gemini API 키가 올바르지 않거나 권한이 없어요. ' + geminiKeyHint(), false);
+  if (status === 429) return err('rate_limit', 'Gemini 사용 한도에 걸렸어요(무료 등급은 분당·하루 요청 수가 정해져 있어요). 조금 뒤 다시 시도해 주세요.', true);
   // 키가 틀리면 Gemini 는 400 + API_KEY_INVALID 를 준다
-  if (status === 400 && /API[_ ]?key/i.test(e.message || '')) return { type: 'auth', message: 'Gemini API 키가 올바르지 않아요. 설정에서 키를 확인해 주세요.', retryable: false };
-  if (status === 400) return { type: 'bad_request', message: 'Gemini가 요청을 처리하지 못했습니다: ' + redact(e.message || ''), retryable: false };
-  if (status && status >= 500) return { type: 'server', message: 'Gemini 서버 오류입니다. 잠시 뒤 다시 시도해 주세요.', retryable: true };
-  if (status) return { type: 'api', message: 'Gemini 요청 오류(' + status + '): ' + redact(e.message || ''), retryable: false };
-  return { type: 'network', message: 'Gemini 서버에 연결하지 못했습니다. 인터넷 연결을 확인해 주세요. (' + redact(e && e.message ? e.message : e) + ')', retryable: true };
+  if (status === 400 && /API[_ ]?key/i.test(msg)) return err('auth', 'Gemini API 키가 올바르지 않아요. ' + geminiKeyHint(), false);
+  if (status === 400 && /location is not supported|not (?:available|supported) in your (?:country|region)/i.test(msg)) return err('region', '지금 있는 지역에서는 Gemini API를 쓸 수 없어요.', false);
+  if (status === 400) return err('bad_request', 'Gemini가 이 요청을 받지 않았어요. 잠시 뒤 다시 시도해 주세요.', false);
+  if (status === 404) return err('model_not_found', MSG.model, false);
+  if (status && status >= 500) return err('server', 'Gemini 서버에 문제가 있어요. 잠시 뒤 다시 시도해 주세요.', true);
+  // 200 인데 JSON 이 아니면(와이파이 로그인 화면 등) 연결 문제 — 다시 시도할 수 있다
+  if (status && status < 300) return err('network', MSG.portal, true);
+  if (status) return err('api', 'Gemini 요청이 실패했어요(' + status + '). 잠시 뒤 다시 시도해 주세요.', false);
+  if (isTimeoutError(e)) return err('timeout', MSG.timeout, true);
+  if (isConnectError(e)) return err('network', 'Gemini 서버에 연결하지 못했어요. 인터넷 연결을 확인해 주세요.', true);
+  // 요청을 만들다 난 오류(키 글자 문제 등)는 연결 문제가 아니고, 다시 해도 똑같이 실패한다
+  return err('unknown', 'Gemini 요청을 보내지 못했어요. 잠시 뒤 다시 시도해 주세요.', false);
+}
+// 실제로 연결이 안 된 경우만 — SDK 의 연결·중단 오류, 또는 fetch 실패·네트워크 오류 코드
+const NET_CODES = ['ECONNRESET', 'ENOTFOUND', 'ETIMEDOUT', 'ECONNREFUSED', 'EAI_AGAIN', 'ENETUNREACH', 'EHOSTUNREACH', 'EPIPE'];
+function isConnectError(e) {
+  if (!e) return false;
+  if (e.name === 'ConnectionError' || e.name === 'RequestTimeoutError' || e.name === 'RequestAbortedError') return true;
+  const codes = [e.code, e.cause && e.cause.code, e.cause && e.cause.cause && e.cause.cause.code];
+  if (codes.some((c) => NET_CODES.indexOf(c) >= 0)) return true;
+  return /^Unable to make request\b|fetch failed|failed to fetch/i.test(e.message || '');
+}
+
+// 요청마다 시간 제한·재시도를 직접 준다. interactions 는 클라이언트의 httpOptions.timeout 을 따르지 않고,
+// SDK 기본값(모델마다 4번 더 재시도, 끊긴 연결은 약 5분씩 대기)이면 메모 하나에 몇십 분이 걸릴 수 있다.
+// 재시도는 callGeminiTiered 의 '다른 모델로 한 번 더' 만 한다.
+const GEMINI_TIMEOUT_MS = { 'gemini-3.5-flash-lite': 60 * 1000 };
+const GEMINI_TIMEOUT_DEFAULT_MS = 120 * 1000;
+function geminiRequestOptions(model) {
+  return { timeout: GEMINI_TIMEOUT_MS[model] || GEMINI_TIMEOUT_DEFAULT_MS, maxRetries: 0 };
 }
 
 async function callGemini(input, model) {
@@ -194,13 +322,14 @@ async function callGemini(input, model) {
     response_format: { type: 'text', mime_type: 'application/json', schema: def.SCHEMA },
     // 요청·응답을 Google 쪽에 보관하지 않는다
     store: false
-  });
+  }, geminiRequestOptions(model));
   if (res.status && res.status !== 'completed') {
     const truncated = res.status === 'incomplete' || res.status === 'budget_exceeded';
     return { ok: false, error: {
       type: truncated ? 'truncated' : 'failed',
-      message: truncated ? '메모가 길어 결과가 중간에 끊겼습니다.' : 'Gemini가 정리를 끝내지 못했습니다(상태: ' + res.status + ').',
-      retryable: true
+      message: truncated ? '메모가 길어 결과가 중간에 끊겼어요.' : 'Gemini가 정리를 끝내지 못했어요.',
+      retryable: true,
+      detail: '상태: ' + res.status
     } };
   }
   const u = res.usage || {};
@@ -227,9 +356,12 @@ async function organize(input) {
   const m = mode();
   if (!m) return { ok: false, error: { type: 'not_configured', message: status().reason, retryable: false } };
   const key = input && (input.noteId || input.requestId);
-  if (!key) return { ok: false, error: { type: 'bad_input', message: '요청 정보가 없습니다.', retryable: false } };
-  if (inflight.has(key)) return { ok: false, error: { type: 'busy', message: '이미 처리 중입니다.', retryable: false } };
-  inflight.add(key);
+  if (!key) return { ok: false, error: { type: 'bad_input', message: '요청 정보가 없어요.', retryable: false } };
+  // 같은 메모라도 종류가 다른 요청(입력 분류 · AI 정리)은 서로 막지 않는다. 같은 종류가 겹치면 잠시 뒤 다시 할 수 있다.
+  const slot = (input.purpose || 'organize') + ':' + key;
+  if (inflight.has(slot)) return { ok: false, error: { type: 'busy', message: '이 메모는 아직 정리하고 있어요. 잠시 뒤 다시 해 주세요.', retryable: true } };
+  inflight.add(slot);
+  let timer = null;
   try {
     if (m === 'fake') {
       await new Promise((r) => setTimeout(r, 600));
@@ -237,19 +369,34 @@ async function organize(input) {
       return Object.assign({ raw: out.output ? JSON.stringify(out.output) : null, attempts: 1 }, out);
     }
     const call = m === 'gemini' ? () => callGeminiTiered(input) : () => callClaude(input);
-    // JSON 을 못 읽은 경우만 한 번 더 요청한다
-    let res = await call();
-    let attempts = 1;
-    if (!res.ok && res.error.type === 'invalid_json') { res = await call(); attempts = 2; }
-    return Object.assign(res, { attempts });
-  } catch (e) {
-    return { ok: false, error: e._classified || (m === 'gemini' ? classifyGemini(e) : classifyClaude(e)), attempts: 1 };
+    const work = (async () => {
+      try {
+        // JSON 을 못 읽은 경우만 한 번 더 요청한다
+        let res = await call();
+        let attempts = 1;
+        if (!res.ok && res.error.type === 'invalid_json') { res = await call(); attempts = 2; }
+        return Object.assign(res, { attempts });
+      } catch (e) {
+        return { ok: false, error: e._classified || (m === 'gemini' ? classifyGemini(e) : classifyClaude(e)), attempts: 1 };
+      }
+    })();
+    // 전체 마감 — 어떤 경우에도 화면이 '정리하는 중…' 에 머물지 않고, 같은 메모를 다시 시도할 수 있게 자리를 비운다
+    const deadline = new Promise((resolve) => {
+      timer = setTimeout(() => resolve({ ok: false, error: { type: 'timeout', message: MSG.timeout, retryable: true }, attempts: 1 }), deadlineMs);
+    });
+    return await Promise.race([work, deadline]);
   } finally {
-    inflight.delete(key);
+    if (timer) clearTimeout(timer);
+    inflight.delete(slot);
   }
 }
 
 // 테스트용: 실제 네트워크 없이 클라이언트를 바꿔 끼운다
-function _setClients(c) { if (c.gemini) geminiClient = c.gemini; if (c.claude) claudeClient = c.claude; if ('retryDelayMs' in c) retryDelayMs = c.retryDelayMs; }
+function _setClients(c) {
+  if (c.gemini) geminiClient = c.gemini; if (c.claude) claudeClient = c.claude;
+  if ('retryDelayMs' in c) retryDelayMs = c.retryDelayMs;
+  if ('deadlineMs' in c) deadlineMs = c.deadlineMs == null ? DEADLINE_MS : c.deadlineMs;
+}
 
-module.exports = { status, organize, MODELS, setSavedKey, captureEnvKeys, redact, _setClients };
+module.exports = { status, organize, MODELS, setSavedKey, captureEnvKeys, redact, _setClients,
+  _claudeSchema: { toClaude: toClaudeSchema, fromClaude: fromClaude, NOTE: CLAUDE_NONE_NOTE } };

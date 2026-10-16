@@ -20,7 +20,8 @@ function loadDotEnv(dir, out) {
   text.split(/\r?\n/).forEach((line) => {
     const m = /^\s*([A-Z0-9_]+)\s*=\s*(.*?)\s*$/.exec(line);
     if (!m || line.trim().startsWith('#')) return;
-    const v = m[2].replace(/^(['"])(.*)\1$/, '$2');
+    // 메모 앱·워드에서 붙여 넣은 둥근 따옴표(“…” ‘…’)도 벗긴다
+    const v = m[2].replace(/^(['"])(.*)\1$/, '$2').replace(/^[“”‘’](.*)[“”‘’]$/, '$1');
     if (!process.env[m[1]] && v) {
       process.env[m[1]] = v;
       if (Array.isArray(out)) out.push(m[1]);
@@ -33,6 +34,7 @@ function loadDotEnv(dir, out) {
 
 function create(userDataDir, safeStorage) {
   const file = path.join(userDataDir, 'ai-key.bin');
+  const tmp = file + '.tmp';
   function read() {
     try {
       const buf = fs.readFileSync(file);
@@ -43,15 +45,34 @@ function create(userDataDir, safeStorage) {
   function save(key) {
     key = String(key || '').trim();
     if (!key) return { ok: false, error: '키가 비어 있어요.' };
+    // 다른 서비스 키는 Gemini 키로 저장하지 않는다 (저장하면 잘 되던 다른 AI 설정까지 덮어쓴다)
+    if (/^sk-ant-/i.test(key)) return { ok: false, error: 'Anthropic(Claude) 키 같아요. 이 칸에는 Google AI Studio 키(AIza…로 시작)를 넣어 주세요.' };
+    if (/^(sk-|ghp_|gho_|github_pat_|xox)/i.test(key)) return { ok: false, error: 'Google AI Studio 키가 아닌 것 같아요. AIza…로 시작하는 키를 붙여 넣어 주세요.' };
     if (!/^[A-Za-z0-9_\-]{20,200}$/.test(key)) return { ok: false, error: '키 형식이 맞지 않아요. Google AI Studio에서 복사한 키를 그대로 붙여 넣어 주세요.' };
-    if (!safeStorage.isEncryptionAvailable()) return { ok: false, error: '이 컴퓨터에서는 키를 안전하게 저장할 수 없어요.' };
-    fs.mkdirSync(path.dirname(file), { recursive: true });
-    fs.writeFileSync(file, safeStorage.encryptString(key));
+    let canEncrypt = false;
+    try { canEncrypt = !!safeStorage.isEncryptionAvailable(); } catch (e) {}
+    if (!canEncrypt) return { ok: false, error: '이 컴퓨터에서는 키를 안전하게 저장할 수 없어요.' };
+    // 암호화·디스크 쓰기가 실패해도 던지지 않는다 (화면이 '저장하는 중…' 에 머물지 않게). tmp 에 0o600 으로 쓰고 rename.
+    try {
+      const enc = safeStorage.encryptString(key);
+      fs.mkdirSync(path.dirname(file), { recursive: true });
+      fs.writeFileSync(tmp, enc, { mode: 0o600 });
+      fs.renameSync(tmp, file);
+      return { ok: true };
+    } catch (e) {
+      try { fs.unlinkSync(tmp); } catch (e2) {}
+      return { ok: false, error: '키를 저장하지 못했어요.' };
+    }
+  }
+  function clear() {
+    try { fs.unlinkSync(file); } catch (e) {}
+    try { fs.unlinkSync(tmp); } catch (e) {}
     return { ok: true };
   }
-  function clear() { try { fs.unlinkSync(file); } catch (e) {} return { ok: true }; }
   function hint(key) { return key ? '••••' + key.slice(-4) : null; }
-  return { read, save, clear, hint };
+  // 파일은 있는데 read() 가 '' 이면 — 다른 컴퓨터로 옮겼거나 보안 저장소가 초기화돼 풀 수 없는 키
+  function exists() { try { return fs.existsSync(file); } catch (e) { return false; } }
+  return { read, save, clear, hint, exists };
 }
 
 // 범용 암호화 JSON 파일. 평문은 디스크에 닿지 않는다.

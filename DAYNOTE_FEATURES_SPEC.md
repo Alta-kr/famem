@@ -286,14 +286,15 @@ var res = SL.findSlot(busy, { from: from, now: now, minutes: Number(durIn.value)
 | `!configured && reason === '확인 중…'` | busy | 확인 중… | — |
 | `S.host.kind === 'browser' && provider !== 'fake'` | — | 브라우저 미리보기 | AI는 데스크톱 앱에서 연결할 수 있어요. |
 | `provider === 'fake'` | busy | 데모 모드 · 실제 AI가 아니에요 | 규칙으로 나눠요. 인터넷으로 보내는 것은 없어요. |
-| `!configured && savedKey` | err | 저장한 키를 쓸 수 없어요 | 키(••••abcd)를 다시 붙여 넣어 주세요. |
+| `!configured && savedKeyBroken` (키 파일은 있는데 이 컴퓨터에서 풀 수 없음) | err | 저장한 키를 쓸 수 없어요 | 키를 다시 붙여 넣어 주세요. |
 | `!configured` | — | AI 꺼짐 | 적은 글은 메모로만 저장돼요. 키를 넣으면 할 일·일정으로 나눠 드려요. |
 | `provider === 'gemini'` | ok | 켜짐 · Google Gemini | 처리 위치: Google 서버 (인터넷 필요) |
 | `provider === 'claude'` | ok | 켜짐 · Anthropic Claude | 처리 위치: Anthropic 서버 (인터넷 필요) |
 
 - 키 줄(데모·브라우저에서는 숨김): `label` **AI 키** · `input#set-ai-key[type=password]` 자리표시 "Google AI Studio 키를 붙여 넣으세요" · [키 저장]/[키 바꾸기] · [연결 확인](켜짐일 때만) · 결과 `span.help[role=status]`.
   - 연결 확인 결과(위쪽): "잘 연결됐어요 · 1.2초" / "연결하지 못했어요. 키를 확인해 주세요." 모델 id·원문 오류는 **고급**에만.
-- 저장한 키 줄(`savedKey` 있을 때): "저장한 키 ••••abcd · 이 컴퓨터의 보안 저장소에 암호화해 뒀어요" + `btn-ghost` [지우기] (확인 대화상자 문구는 지금 그대로).
+- 저장한 키 줄(`savedKey` 있을 때): "저장한 키 ••••abcd · 이 컴퓨터의 보안 저장소에 암호화해 뒀어요" + `btn-ghost` [지우기] (확인 대화상자 문구는 지금 그대로). `savedKeyBroken` 이면 "저장한 키를 이 컴퓨터에서 풀 수 없어요" + [지우기].
+- 키 저장이 실패하면(형식 오류·암호화/디스크 쓰기 실패) 붙여 넣은 값을 칸에 남기고 포커스를 준다. 성공했을 때만 칸을 비운다.
 - 키 만들기: `a.link-btn[href="https://aistudio.google.com/apikey"][target=_blank][rel=noopener]` **키 만들기** + "Google AI Studio에서 무료로 만들 수 있어요." (Electron 은 `setWindowOpenHandler` 가 외부 브라우저로 연다)
 - `aiSt.notice`(무료 등급 안내) `conflict-box` — 유지.
 - 전송 범위 문단(134-136줄) — **그대로 유지**(리뷰 §15).

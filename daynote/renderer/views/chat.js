@@ -238,6 +238,12 @@
     return h('div.cap-foot.meta', out);
   }
 
+  // 키·권한 문제라 다시 시도만으로는 안 되는 실패 — [설정 열기] 를 함께 준다 (busy·api 처럼 설정과 상관없는 것은 제외)
+  function needsSettings(err) { return !!(err && /^(auth|permission|not_configured)$/.test(err.type)); }
+  function settingsButton() {
+    return h('button.btn.btn-xs', { type: 'button', onclick: function () { DN.app.go('settings'); } }, ui.icon('settings'), '설정 열기');
+  }
+
   // 명령어로 정한 글 — 항목이 처음부터 있으므로 스켈레톤 없이 그린다 (FEATURES §6.8)
   function commandCard(n, c, items, now) {
     var CP = DN.capture;
@@ -253,7 +259,7 @@
     } else if (c.status === 'no_ai') {
       ft = foot(h('span', memoLike ? '명령어로 지정' : '명령어로 지정 · AI 없이 날짜만 찾았어요'));
     } else if (c.status === 'failed') {
-      ft = foot(h('span', '명령어로 지정 · AI로 다듬지 못했어요'), retry);
+      ft = foot(h('span', '명령어로 지정 · AI로 다듬지 못했어요'), needsSettings(c.error) ? settingsButton() : null, retry);
     } else {
       var labels = [];
       (c.command.refined || []).forEach(function (k) {
@@ -289,7 +295,7 @@
             h('span.cap-skel-bar', { 'aria-hidden': 'true' }))), 'msg-cap');
       }
       items = CP.items(n);
-      var settingsBtn = h('button.btn.btn-xs', { type: 'button', onclick: function () { DN.app.go('settings'); } }, ui.icon('settings'), '설정 열기');
+      var settingsBtn = settingsButton();
       // AI 없이 배운 대로 바꾼 글 — 종류를 바꾸면 core 가 status 를 'done' 으로 적을 수 있어 runId 가 없는 것도 본다
       var noAiLearned = learned.length && !c.changedByUser && (c.status === 'no_ai' || (c.status === 'done' && !c.runId));
       if (c.status === 'pending' && !c.command) {
@@ -304,7 +310,8 @@
         ft = h('div.cap-foot', settingsBtn);
       } else if (c.status === 'failed') {
         head = h('div.cap-head', h('span', '메모로 남겨 뒀어요'), c.error && c.error.message ? h('span.cap-head-sub', ' · ' + c.error.message) : null);
-        ft = h('div.cap-foot', h('button.btn.btn-xs', { type: 'button', onclick: function () { CP.classify(n.id); } }, ui.icon('refresh'), '다시 시도'));
+        ft = h('div.cap-foot', needsSettings(c.error) ? settingsBtn : null,
+          h('button.btn.btn-xs', { type: 'button', onclick: function () { CP.classify(n.id); } }, ui.icon('refresh'), '다시 시도'));
       } else {
         var skipped = (c.skipped || []).length;
         head = h('div.cap-head', h('span', summary(items, now)),

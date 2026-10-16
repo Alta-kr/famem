@@ -304,6 +304,10 @@
   function watch() {
     if (watching) return;
     watching = true;
+    // 지난번에 답을 받기 전에 꺼져 계속 도는 '생각 중' 말풍선을 끝난 말로 바꾼다
+    if ((S.state.chat || []).some(function (m) { return m && m.kind === 'thinking'; })) {
+      S.mutate(null, function (s) { AS.recoverThinking(s); }, { source: 'chat' });
+    }
     ['keydown', 'mousedown', 'wheel'].forEach(function (ev) { document.addEventListener(ev, function () { lastActivity = Date.now(); }, true); });
     S.subscribe(function (info) {
       if (info.label === '완료') setTimeout(function () { tryNudge('completed'); }, 1500);

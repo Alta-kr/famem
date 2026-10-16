@@ -18,6 +18,8 @@
 
   function now() { return DN.app.now(); }
   function notify() { listeners.forEach(function (fn) { try { fn(); } catch (e) { console.error(e); } }); }
+  // AI 가 켜져 있거나, 아직 상태를 확인하는 중이면 true
+  function aiMaybeOn() { return DN.aiFlow.status().configured || !!(DN.aiFlow.isLoading && DN.aiFlow.isLoading()); }
   function forced() { var F = DN.aiForced; return F && typeof F.createForced === 'function' ? F : null; }
 
   function setCapture(noteId, patch, label) {
@@ -38,7 +40,7 @@
     var note;
     if (cmd && cmd.kind && F) {
       var id = M.uid('note');
-      if (DN.aiFlow.status().configured) inflight[id] = true;   // 첫 그림부터 '다듬는 중' 이 되게
+      if (aiMaybeOn()) inflight[id] = true;   // 첫 그림부터 '다듬는 중' 이 되게
       note = S.mutate('입력 저장', function (s) {
         var n = M.addNote(s, {
           id: id, title: '', body: text, projectId: projectId || null, captureRole: 'memo',
@@ -54,7 +56,7 @@
       return note;
     }
     var nid = M.uid('note');
-    if (DN.aiFlow.status().configured) inflight[nid] = true;   // 첫 그림부터 '정리하는 중' 이 되게 ('멈춤' 이 번쩍이지 않게)
+    if (aiMaybeOn()) inflight[nid] = true;   // 첫 그림부터 '정리하는 중' 이 되게 ('멈춤' 이 번쩍이지 않게)
     note = S.mutate('입력 저장', function (s) {
       return M.addNote(s, {
         id: nid, title: '', body: text, projectId: projectId || null, captureRole: 'memo',
@@ -81,6 +83,15 @@
     var note = M.byId(S.state.notes, noteId);
     if (!note || (inflight[noteId] && !(opts && opts.starting))) return Promise.resolve(null);
     var st = DN.aiFlow.status();
+    // 앱을 막 켜서 AI 상태가 아직 '확인 중…' 이면 'AI 없음' 으로 정하지 않고 상태를 받은 뒤 다시 정한다
+    if (!st.configured && DN.aiFlow.isLoading && DN.aiFlow.isLoading()) {
+      inflight[noteId] = true;
+      notify();
+      return DN.aiFlow.ready().then(function () {
+        delete inflight[noteId];
+        return classify(noteId, { starting: true });
+      });
+    }
     var isCmd = !!(note.capture && note.capture.command);
     if (!st.configured) {
       delete inflight[noteId];

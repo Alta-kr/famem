@@ -93,14 +93,23 @@ ai.captureEnvKeys();
 let keystore = null;
 function aiStatus() {
   const k = keystore ? keystore.read() : '';
-  return Object.assign(ai.status(), { savedKey: keystore ? keystore.hint(k) : null });
+  // 저장한 키 파일은 있는데 이 컴퓨터에서 풀 수 없으면 savedKeyBroken — 설정이 '다시 붙여 넣어 주세요' 와 [지우기] 를 보인다
+  const broken = !!keystore && !k && keystore.exists();
+  const status = ai.status();
+  // 키가 '없다' 가 아니라 '못 쓴다' — 고급·no_ai 카드가 설정의 오류 줄과 같은 말을 하게
+  if (broken && status.noKey) status.reason = '저장한 키를 이 컴퓨터에서 풀 수 없어요. 키를 다시 붙여 넣어 주세요.';
+  return Object.assign(status, { savedKey: keystore ? keystore.hint(k) : null, savedKeyBroken: broken });
 }
 ipcMain.handle('ai:status', () => aiStatus());
 ipcMain.handle('ai:organizeNote', (_e, input) => ai.organize(input));
 ipcMain.handle('ai:setKey', (_e, key) => {
-  const r = keystore.save(key);
-  if (!r.ok) return Object.assign({ ok: false, error: r.error }, { status: aiStatus() });
-  ai.setSavedKey(keystore.read());
+  try {
+    const r = keystore.save(key);
+    if (!r.ok) return Object.assign({ ok: false, error: r.error }, { status: aiStatus() });
+    ai.setSavedKey(keystore.read());
+  } catch (e) {
+    return { ok: false, error: '키를 저장하지 못했어요.', status: aiStatus() };
+  }
   return { ok: true, status: aiStatus() };
 });
 ipcMain.handle('ai:clearKey', () => { keystore.clear(); ai.setSavedKey(''); return { ok: true, status: aiStatus() }; });

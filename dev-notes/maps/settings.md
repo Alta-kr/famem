@@ -80,7 +80,7 @@ Main window (main.js:133-153): `contextIsolation:true, nodeIntegration:false, sa
 | `store:save` | 79 | `json:string` | `{ok:true, savedAt:ISO}` \| `{ok:false, error}` |
 | `store:path` | 80 | – | string (data file path) |
 | `store:reveal` | 81 | – | undefined |
-| `ai:status` | 93 | – | `aiStatus()`, i.e. `ai.status()` plus `savedKey: '••••abcd'\|null` |
+| `ai:status` | 93 | – | `aiStatus()`, i.e. `ai.status()` plus `savedKey: '••••abcd'\|null` and `savedKeyBroken` (key file exists but `keystore.read()` is '') |
 | `ai:organizeNote` | 94 | `input` (built by src/core/ai/*) | `ai.organize(input)` result (§4.6) |
 | `ai:setKey` | 95-100 | `key:string` | `{ok:true, status}` \| `{ok:false, error:string, status}` |
 | `ai:clearKey` | 101 | – | `{ok:true, status}` |

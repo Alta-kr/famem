@@ -15,10 +15,17 @@
 
   function notify() { listeners.forEach(function (fn) { try { fn(); } catch (e) { console.error(e); } }); }
 
+  // 처음 상태를 받기 전('확인 중…')에는 loaded 가 false — 입력 분류는 이때 'AI 없음' 으로 정하지 않고 ready() 를 기다린다
+  var loaded = false, statusPromise = null;
   function loadStatus() {
     var host = S.host;
-    if (!host.ai) { status = { configured: false, reason: '이 환경에서는 AI를 쓸 수 없습니다.' }; notify(); return Promise.resolve(status); }
-    return host.ai.status().then(function (s) { status = s; notify(); return s; });
+    if (!host.ai) { status = { configured: false, reason: '이 환경에서는 AI를 쓸 수 없습니다.' }; loaded = true; notify(); return (statusPromise = Promise.resolve(status)); }
+    statusPromise = host.ai.status().then(function (s) { status = s; loaded = true; notify(); return s; }, function () {
+      // 상태를 못 받아도 '확인 중…' 에 머물지 않게 한다
+      if (!loaded) status = { configured: false, provider: null, model: null, reason: 'AI 상태를 확인하지 못했어요.' };
+      loaded = true; notify(); return status;
+    });
+    return statusPromise;
   }
 
   function contextOpts(note) {
@@ -88,6 +95,9 @@
     }).then(function (res) {
       delete inflight[noteId];
       var done = DN.app.now();
+      // 기다리는 사이 되돌리기(Ctrl+Z)로 메모·실행 기록이 사라졌으면 아무것도 쓰지 않는다 (capture.js 와 같은 처리)
+      var noteNow = M.byId(S.state.notes, noteId);
+      if (!noteNow || noteNow.deletedAt || !M.byId(S.state.aiRuns || [], run.id)) { notify(); return { ok: false, reason: 'gone' }; }
       if (!res.ok) {
         S.mutate(null, function (s) { P.finishRun(s, run.id, { status: 'failed', error: res.error, rawOutput: res.raw || null, attempts: res.attempts || 1 }, done); }, { source: 'ai' });
         notify();
@@ -112,6 +122,8 @@
   DN.aiFlow = {
     loadStatus: loadStatus, organize: organize, contextOpts: contextOpts,
     status: function () { return status; },
+    isLoading: function () { return !loaded; },
+    ready: function () { return loaded ? Promise.resolve(status) : (statusPromise || loadStatus()); },
     isRunning: function (noteId) { return !!inflight[noteId]; },
     onChange: function (fn) { listeners.push(fn); return function () { listeners = listeners.filter(function (f) { return f !== fn; }); }; }
   };

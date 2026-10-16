@@ -18,6 +18,7 @@
   var connectTimer = null;
   var advOpen = false;          // AI 카드 '고급' 열림 여부 — 다시 그려도 유지
   var lastCheck = null;         // 마지막 연결 확인 결과 { ok, ms, model, message }
+  var checking = false;         // 연결 확인 중 — 두 번 눌러도 요청은 한 번 (카드를 다시 그려도 유지)
   var rendered = [];            // 지금 그려진 등록 카드 (destroy 용)
   var liveRoot = null;          // 설정 화면이 그려져 있는 root — 다른 화면으로 가면 null (늦게 온 다시 그리기를 막는다)
   var offAi = null;             // DN.aiFlow.onChange 구독 해제 함수 (AI 상태가 늦게 오면 AI 카드만 다시 그린다)
@@ -105,7 +106,8 @@
     if (!aiSt.configured && aiSt.reason === '확인 중…') return { dot: '.busy', text: '확인 중…', sub: '' };
     if (browser && aiSt.provider !== 'fake') return { dot: '', text: '브라우저 미리보기', sub: 'AI는 데스크톱 앱에서 연결할 수 있어요.' };
     if (aiSt.provider === 'fake') return { dot: '.busy', text: '데모 모드 · 실제 AI가 아니에요', sub: '규칙으로 나눠요. 인터넷으로 보내는 것은 없어요.' };
-    if (!aiSt.configured && aiSt.savedKey) return { dot: '.err', text: '저장한 키를 쓸 수 없어요', sub: '키(' + aiSt.savedKey + ')를 다시 붙여 넣어 주세요.' };
+    // 저장한 키 파일을 이 컴퓨터에서 풀 수 없을 때만 (다른 PC로 옮김·보안 저장소 초기화). 키는 멀쩡한데 꺼진 경우는 'AI 꺼짐' + 고급의 사유
+    if (!aiSt.configured && aiSt.savedKeyBroken) return { dot: '.err', text: '저장한 키를 쓸 수 없어요', sub: '키를 다시 붙여 넣어 주세요.' };
     if (!aiSt.configured) return { dot: '', text: 'AI 꺼짐', sub: '적은 글은 메모로만 저장돼요. 키를 넣으면 할 일·일정으로 나눠 드려요.' };
     if (aiSt.provider === 'gemini') return { dot: '.ok', text: '켜짐 · Google Gemini', sub: '처리 위치: Google 서버 (인터넷 필요)' };
     return { dot: '.ok', text: '켜짐 · Anthropic Claude', sub: '처리 위치: Anthropic 서버 (인터넷 필요)' };
@@ -119,7 +121,7 @@
 
   // AI 카드 모양을 정하는 값들 — 이것이 바뀌었을 때만 카드를 다시 그린다
   function aiSig(aiSt) {
-    return [aiLine(aiSt).text, aiSt.configured ? 1 : 0, aiSt.provider || '', aiSt.savedKey || '', aiSt.keySource || '',
+    return [aiLine(aiSt).text, aiSt.configured ? 1 : 0, aiSt.provider || '', aiSt.savedKey || '', aiSt.savedKeyBroken ? 1 : 0, aiSt.keySource || '',
       aiSt.model || '', aiSt.fastModel || '', aiSt.vendor || '', aiSt.notice || '', aiSt.reason || ''].join('\u0001');
   }
 
@@ -151,7 +153,8 @@
     var line = aiLine(aiSt);
     var showKey = aiSt.provider !== 'fake' && !browser;
     var result = h('span.help#set-ai-result', { role: 'status', 'aria-live': 'polite' });
-    if (lastCheck) result.textContent = lastCheck.ok
+    if (checking) result.textContent = '연결을 확인하는 중… (몇 초 걸려요)';
+    else if (lastCheck) result.textContent = lastCheck.ok
       ? '잘 연결됐어요 · ' + (lastCheck.ms / 1000).toFixed(1) + '초'
       : '연결하지 못했어요. 키를 확인해 주세요.';
     var rerender = function () { DN.aiFlow.loadStatus().then(function () { ctx.rerender(); }); };
@@ -164,20 +167,36 @@
       var k = input.value.trim();
       if (!k) { input.focus(); return; }
       result.textContent = '저장하는 중…';
+      // 실패하면 붙여 넣은 키를 남겨 두고 칸에 포커스 — 따옴표·띄어쓰기처럼 잘못 들어간 글자를 바로 고칠 수 있게
+      var failed = function (msg) {
+        var out = document.getElementById('set-ai-result') || result;
+        out.textContent = msg || '저장하지 못했어요.';
+        input.focus();
+        try { input.select(); } catch (e) {}
+      };
       S.host.ai.setKey(k).then(function (r) {
+        if (!r || !r.ok) { failed(r && r.error); return; }
         input.value = '';
-        if (!r || !r.ok) { result.textContent = (r && r.error) || '저장하지 못했어요.'; return; }
         lastCheck = null;
         ui.toast('AI 키를 저장했어요. 이제 적은 글을 자동으로 나눠 드려요.');
         rerender();
-      });
+      }).catch(function () { failed('키를 저장하지 못했어요.'); });
     }
+    function setCheckBtn(on) { var b = document.getElementById('set-ai-check'); if (b) b.disabled = on; }
     function check() {
+      if (checking) return;
+      checking = true;
+      setCheckBtn(true);
       result.textContent = '연결을 확인하는 중… (몇 초 걸려요)';
-      S.host.ai.check().then(function (r) {
+      S.host.ai.check().catch(function (e) {
+        return { ok: false, error: { message: e && e.message ? e.message : String(e) } };
+      }).then(function (r) {
+        checking = false;
+        setCheckBtn(false);
+        // 고급에는 제공자 원문(detail)을, 없으면 짧은 문구를 보인다
         lastCheck = r && r.ok
           ? { ok: true, ms: r.ms, model: r.model }
-          : { ok: false, message: (r && r.error && r.error.message) || '알 수 없는 오류' };
+          : { ok: false, message: (r && r.error && (r.error.detail || r.error.message)) || '알 수 없는 오류' };
         // 확인하는 사이 카드가 다시 그려졌으면 지금 문서에 있는 결과 칸에 쓴다
         var out = document.getElementById('set-ai-result') || result;
         out.textContent = lastCheck.ok
@@ -189,12 +208,21 @@
     }
     function clearKey() {
       ui.confirm('저장한 키 지우기', '이 앱에 저장한 AI 키를 지워요. 지운 뒤에는 적은 글이 메모로만 저장돼요.', '지우기').then(function (ok) {
-        if (ok) { lastCheck = null; S.host.ai.clearKey().then(rerender); }
+        if (ok) {
+          lastCheck = null;
+          S.host.ai.clearKey().then(rerender).catch(function () {
+            var out = document.getElementById('set-ai-result') || result;
+            out.textContent = '키를 지우지 못했어요.';
+          });
+        }
       });
     }
 
     var keyHint = aiSt.savedKey
       ? h('div.help', '저장한 키 ' + aiSt.savedKey + ' · 이 컴퓨터의 보안 저장소에 암호화해 뒀어요 ',
+          h('button.btn.btn-sm.btn-ghost', { type: 'button', onclick: clearKey }, '지우기'))
+      : aiSt.savedKeyBroken
+      ? h('div.help', '저장한 키를 이 컴퓨터에서 풀 수 없어요 ',
           h('button.btn.btn-sm.btn-ghost', { type: 'button', onclick: clearKey }, '지우기'))
       : null;
 
@@ -227,7 +255,7 @@
         h('label', { for: 'set-ai-key', style: { fontSize: '14px', fontWeight: '500' } }, 'AI 키'),
         input,
         h('button.btn.btn-primary.btn-sm', { type: 'button', onclick: save }, aiSt.savedKey ? '키 바꾸기' : '키 저장'),
-        aiSt.configured ? h('button.btn.btn-sm', { type: 'button', onclick: check }, '연결 확인') : null) : null,
+        aiSt.configured ? h('button.btn.btn-sm#set-ai-check', { type: 'button', onclick: check, disabled: checking }, '연결 확인') : null) : null,
       showKey ? h('div.help', { style: { marginTop: '6px' } },
         h('a.link-btn', { href: 'https://aistudio.google.com/apikey', target: '_blank', rel: 'noopener' }, '키 만들기'),
         ' Google AI Studio에서 무료로 만들 수 있어요.') : null,

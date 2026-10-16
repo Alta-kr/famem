@@ -285,8 +285,20 @@
     return list.slice(0, n || 3);
   }
 
+  // 앱이 꺼지거나 새로고침되는 사이 답을 못 받은 '생각 중' 말풍선 — 앱을 열 때는 기다리는 요청이 없으니 모두 끝난 말로 바꾼다.
+  // 바꾼 개수를 돌려준다.
+  var INTERRUPTED_TEXT = '요청이 중간에 끊겼어요. 필요하면 다시 해 주세요.';
+  function recoverThinking(state) {
+    var n = 0;
+    ((state && state.chat) || []).forEach(function (m) {
+      if (m && m.kind === 'thinking') { m.kind = 'text'; m.text = INTERRUPTED_TEXT; n++; }
+    });
+    return n;
+  }
+
   return {
     BREAKDOWN: BREAKDOWN, ELABORATE: ELABORATE, NUDGE_GAP_MIN: NUDGE_GAP_MIN,
+    recoverThinking: recoverThinking, INTERRUPTED_TEXT: INTERRUPTED_TEXT,
     validateBreakdown: validateBreakdown, validateElaborate: validateElaborate, localElaboratePick: localElaboratePick,
     elaborateCandidates: elaborateCandidates, pendingBreakdowns: pendingBreakdowns, looksIdle: looksIdle, nextNudge: nextNudge,
     applyBreakdown: applyBreakdown, deferBreakdown: deferBreakdown, storeBreakdown: storeBreakdown, markShown: markShown,

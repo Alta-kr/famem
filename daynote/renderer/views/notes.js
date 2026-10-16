@@ -307,6 +307,11 @@
         else if (r.reason === 'empty') ui.toast('정리할 내용이 없습니다. 메모를 먼저 적어 주세요.');
         else if (r.reason === 'not_configured') ui.toast(r.message || 'AI가 연결되어 있지 않습니다.', { error: true });
         else if (r.reason === 'failed' || r.reason === 'invalid') ui.toast('AI 정리에 실패했습니다. 메모는 안전하게 저장되어 있습니다.', { error: true });
+        else if (r.reason === 'gone') ui.toast('기다리는 사이 되돌리기로 정리 기록이 사라졌어요. 다시 정리하려면 버튼을 눌러 주세요.');
+      }).catch(function (e) {
+        console.error(e);
+        if (mem.noteId === id) renderReview();
+        ui.toast('AI 정리에 실패했어요. 메모는 안전하게 저장되어 있어요.', { error: true });
       });
     }
 

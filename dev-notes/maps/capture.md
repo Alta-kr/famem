@@ -93,7 +93,7 @@ C) Ctrl+N modal (app.js:265)     saveQuick() (app.js:286) → DN.capture.submit(
 - Renderer `S.host.ai.organizeNote(input)` → channel **`'ai:organizeNote'`** → `ai.organize(input)`. The same channel serves every purpose. `requestDef(input)` (services/ai.js:30-36) routes on `input.purpose`: `'capture'` → `src/core/ai/capture`, `'breakdown'` → `assist.BREAKDOWN`, `'elaborate'` → `assist.ELABORATE`, anything else → `organizeNote`.
 - Other channels: `'ai:status'` (status object: `{configured, provider:'fake'|'gemini'|'claude'|null, model, fastModel?, reason?, notice?, keySource?, savedKey}`), `'ai:setKey'`, `'ai:clearKey'`, `'ai:check'` (main.js:103-111 classifies "내일까지 견적서 보내기" through `capture.buildInput`).
 - Browser fallback (`store.js:46-62`): when `window.DAYNOTE_WEB_DEMO` is set or the URL has `?fakeai`, it uses `window.Daynote.aiFake.organize(input)` after 500 ms. `window.__daynoteAiFail` simulates a network error. Otherwise it returns `not_configured`.
-- Main-process guard: the `inflight` Set is keyed by `input.noteId || input.requestId`. A duplicate request returns `{ok:false, error:{type:'busy', retryable:false}}`. The renderer has its own `inflight{}` (capture.js:14).
+- Main-process guard: the `inflight` Set is keyed by `(input.purpose || 'organize') + ':' + (input.noteId || input.requestId)`. A duplicate same-purpose request returns `{ok:false, error:{type:'busy', retryable:true}}`. The renderer has its own `inflight{}` (capture.js:14).
 
 ### 3.2 Provider behavior (`services/ai.js`)
 - `mode()` (77-85): `DAYNOTE_AI_FAKE=1` → fake (600 ms delay). Otherwise `DAYNOTE_AI_PROVIDER` or the available key decides: Gemini first, then Claude.
@@ -398,7 +398,7 @@ The existing pattern to copy is done_tasks and updated_tasks:
 3. Ctrl+N (`saveQuick`) captures produce **no chat card**. The only chat-visible paths go through `DN.assistant.send`.
 4. **`'AI 분류'` undo, or a quit mid-call, leaves `capture.status='pending'` forever** (spinner, no retry). No recovery code exists for note status.
 5. Ctrl+Z is ignored in text fields, and the chat textarea holds focus. Kind, project and date changes show no undo toast. `undoToast` pops whatever is on top of the stack.
-6. `no_ai` captures are never re-classified when a key is added later, and the card has no retry button. `aiFlow.status()` starts as `{configured:false, reason:'확인 중…'}` until the `ai:status` IPC resolves, so a capture sent very early is marked `no_ai`.
+6. `no_ai` captures are never re-classified when a key is added later, and the card has no retry button. `aiFlow.status()` starts as `{configured:false, reason:'확인 중…'}` until the `ai:status` IPC resolves; `classify()` waits for `aiFlow.ready()` while `aiFlow.isLoading()` instead of marking such a capture `no_ai` (a rejected status call settles to '상태를 확인하지 못했어요').
 7. Date chip on a task with a work block: `setDate` changes only `dueDate`. The work block (which the chip displays first) does not move. Choosing "날짜 없음" also clears `dueTime`. Date edits set no capture flags.
 8. `captureSetProject` does not touch completed or moved tasks and does not set `changedByUser`. Project and date edits are therefore invisible to the `changedByUser` override (they are direct field edits anyway).
 9. A single-row card uses `setKind` (the whole note, converting every created item). A multi-row card uses `setItemKind`. The row count includes the note row.

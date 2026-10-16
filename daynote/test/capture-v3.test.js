@@ -314,7 +314,9 @@ test('키 가림: 오류 메시지 속 키는 가리고, 공백·줄바꿈이 �
     const r = await ai.organize(capInput('leak'));
     assert.strictEqual(r.ok, false);
     assert.ok(!JSON.stringify(r).includes('LEAKY'));
-    assert.strictEqual(sent, 2);
+    // 요청 머리말을 만들다 난 오류는 연결 문제가 아니라 다시 해도 같다 — 다른 모델로 다시 보내지 않는다
+    assert.strictEqual(sent, 1);
+    assert.strictEqual(r.error.type, 'unknown');
   });
   await withEnv({ GEMINI_API_KEY: 'AIzaBAD\n000000000000000000' }, async () => {
     const s = freshAi().status();
