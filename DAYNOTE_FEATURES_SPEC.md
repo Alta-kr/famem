@@ -292,7 +292,7 @@ var res = SL.findSlot(busy, { from: from, now: now, minutes: Number(durIn.value)
 | `provider === 'claude'` | ok | 켜짐 · Anthropic Claude | 처리 위치: Anthropic 서버 (인터넷 필요) |
 
 - 키 줄(데모·브라우저에서는 숨김): `label` **AI 키** · `input#set-ai-key[type=password]` 자리표시 "Google AI Studio 키를 붙여 넣으세요" · [키 저장]/[키 바꾸기] · [연결 확인](켜짐일 때만) · 결과 `span.help[role=status]`.
-  - 연결 확인 결과(위쪽): "잘 연결됐어요 · 1.2초" / "연결하지 못했어요. 키를 확인해 주세요." 모델 id·원문 오류는 **고급**에만.
+  - 연결 확인 결과(위쪽): "잘 연결됐어요 · 1.2초" / 실패는 오류 type 별 한 줄 — auth "연결하지 못했어요. 키를 확인해 주세요." · rate_limit "…사용 한도에 걸렸어요 — 조금 뒤 다시 확인해 주세요." · network "…인터넷 연결을 확인해 주세요." · timeout "…응답이 너무 늦어요 — …" · server "…AI 서버가 응답하지 않아요 — …" · not_configured "…먼저 키를 저장해 주세요." · 그 밖 "…자세한 까닭은 고급에서 볼 수 있어요." 모델 id·원문 오류는 **고급**에만.
 - 저장한 키 줄(`savedKey` 있을 때): "저장한 키 ••••abcd · 이 컴퓨터의 보안 저장소에 암호화해 뒀어요" + `btn-ghost` [지우기] (확인 대화상자 문구는 지금 그대로). `savedKeyBroken` 이면 "저장한 키를 이 컴퓨터에서 풀 수 없어요" + [지우기].
 - 키 저장이 실패하면(형식 오류·암호화/디스크 쓰기 실패) 붙여 넣은 값을 칸에 남기고 포커스를 준다. 성공했을 때만 칸을 비운다.
 - 키 만들기: `a.link-btn[href="https://aistudio.google.com/apikey"][target=_blank][rel=noopener]` **키 만들기** + "Google AI Studio에서 무료로 만들 수 있어요." (Electron 은 `setWindowOpenHandler` 가 외부 브라우저로 연다)

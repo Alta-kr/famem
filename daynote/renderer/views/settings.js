@@ -147,6 +147,20 @@
     });
   }
 
+  // 연결 확인 결과(위쪽) — 실패는 까닭에 맞는 한 줄로 (원문 오류는 고급에만)
+  var CHECK_FAIL = {
+    auth: '연결하지 못했어요. 키를 확인해 주세요.',
+    rate_limit: '연결하지 못했어요. 사용 한도에 걸렸어요 — 조금 뒤 다시 확인해 주세요.',
+    network: '연결하지 못했어요. 인터넷 연결을 확인해 주세요.',
+    timeout: '연결하지 못했어요. 응답이 너무 늦어요 — 잠시 뒤 다시 확인해 주세요.',
+    server: '연결하지 못했어요. AI 서버가 응답하지 않아요 — 잠시 뒤 다시 확인해 주세요.',
+    not_configured: '연결하지 못했어요. 먼저 키를 저장해 주세요.'
+  };
+  function checkResultText(lc) {
+    if (lc.ok) return '잘 연결됐어요 · ' + (lc.ms / 1000).toFixed(1) + '초';
+    return CHECK_FAIL[lc.type] || '연결하지 못했어요. 자세한 까닭은 고급에서 볼 수 있어요.';
+  }
+
   function aiCard(ctx) {
     var aiSt = DN.aiFlow.status();
     var browser = S.host.kind === 'browser';
@@ -154,9 +168,7 @@
     var showKey = aiSt.provider !== 'fake' && !browser;
     var result = h('span.help#set-ai-result', { role: 'status', 'aria-live': 'polite' });
     if (checking) result.textContent = '연결을 확인하는 중… (몇 초 걸려요)';
-    else if (lastCheck) result.textContent = lastCheck.ok
-      ? '잘 연결됐어요 · ' + (lastCheck.ms / 1000).toFixed(1) + '초'
-      : '연결하지 못했어요. 키를 확인해 주세요.';
+    else if (lastCheck) result.textContent = checkResultText(lastCheck);
     var rerender = function () { DN.aiFlow.loadStatus().then(function () { ctx.rerender(); }); };
 
     var input = h('input.input#set-ai-key', {
@@ -196,12 +208,10 @@
         // 고급에는 제공자 원문(detail)을, 없으면 짧은 문구를 보인다
         lastCheck = r && r.ok
           ? { ok: true, ms: r.ms, model: r.model }
-          : { ok: false, message: (r && r.error && (r.error.detail || r.error.message)) || '알 수 없는 오류' };
+          : { ok: false, type: (r && r.error && r.error.type) || null, message: (r && r.error && (r.error.detail || r.error.message)) || '알 수 없는 오류' };
         // 확인하는 사이 카드가 다시 그려졌으면 지금 문서에 있는 결과 칸에 쓴다
         var out = document.getElementById('set-ai-result') || result;
-        out.textContent = lastCheck.ok
-          ? '잘 연결됐어요 · ' + (lastCheck.ms / 1000).toFixed(1) + '초'
-          : '연결하지 못했어요. 키를 확인해 주세요.';
+        out.textContent = checkResultText(lastCheck);
         var adv = document.getElementById('set-ai-lastcheck');
         if (adv) adv.textContent = lastCheckText();
       });

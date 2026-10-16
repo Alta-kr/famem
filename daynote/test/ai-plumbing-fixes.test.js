@@ -266,3 +266,20 @@ test('main aiStatus: 풀 수 없는 저장 키면 reason 도 \'키가 없다\' �
   safe.decryptString = okSafe().decryptString;
   assert.strictEqual(make(ks, none)().reason, none.reason);
 });
+
+// ---------------------------------------------------------------- 연결 확인 결과 문구
+test('settings: 연결 확인 실패 문구가 오류 종류(auth·rate_limit·network·timeout·server)에 맞게 나온다', () => {
+  const src = fs.readFileSync(path.join(__dirname, '..', 'renderer/views/settings.js'), 'utf8');
+  const a = src.indexOf('  var CHECK_FAIL = {');
+  assert.ok(a >= 0, 'CHECK_FAIL 없음');
+  const fn = extractFn('renderer/views/settings.js', 'checkResultText');
+  const text = new Function(src.slice(a, src.indexOf('};', a) + 2) + '\n' + fn + '; return checkResultText;')();
+  assert.strictEqual(text({ ok: true, ms: 1234 }), '잘 연결됐어요 · 1.2초');
+  assert.match(text({ ok: false, type: 'auth' }), /키를 확인해 주세요/);
+  assert.match(text({ ok: false, type: 'rate_limit' }), /사용 한도/);
+  assert.match(text({ ok: false, type: 'network' }), /인터넷 연결/);
+  assert.match(text({ ok: false, type: 'timeout' }), /너무 늦어요/);
+  assert.match(text({ ok: false, type: 'server' }), /서버가 응답하지 않아요/);
+  assert.doesNotMatch(text({ ok: false, type: 'rate_limit' }), /키를 확인/);
+  assert.match(text({ ok: false, type: 'weird' }), /고급/);
+});

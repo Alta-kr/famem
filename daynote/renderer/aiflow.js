@@ -19,7 +19,7 @@
   var loaded = false, statusPromise = null;
   function loadStatus() {
     var host = S.host;
-    if (!host.ai) { status = { configured: false, reason: '이 환경에서는 AI를 쓸 수 없습니다.' }; loaded = true; notify(); return (statusPromise = Promise.resolve(status)); }
+    if (!host.ai) { status = { configured: false, reason: '이 환경에서는 AI를 쓸 수 없어요.' }; loaded = true; notify(); return (statusPromise = Promise.resolve(status)); }
     statusPromise = host.ai.status().then(function (s) { status = s; loaded = true; notify(); return s; }, function () {
       // 상태를 못 받아도 '확인 중…' 에 머물지 않게 한다
       if (!loaded) status = { configured: false, provider: null, model: null, reason: 'AI 상태를 확인하지 못했어요.' };
@@ -109,7 +109,7 @@
       var r = applyOutput(M.byId(S.state.aiRuns, run.id), snapshot, res.output, done);
       if (!r.ok) {
         S.mutate(null, function (s) {
-          P.finishRun(s, run.id, { status: 'invalid', error: { type: 'invalid_output', message: 'AI 응답이 정해진 형식과 달라 사용하지 않았습니다. (' + r.errors.slice(0, 3).join(', ') + ')', retryable: true } }, done);
+          P.finishRun(s, run.id, { status: 'invalid', error: { type: 'invalid_output', message: 'AI 응답이 정해진 형식과 달라 쓰지 않았어요.', detail: r.errors.slice(0, 3).join(', '), retryable: true } }, done);
         }, { source: 'ai' });
         notify();
         return { ok: false, reason: 'invalid', errors: r.errors };
