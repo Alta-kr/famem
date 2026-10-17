@@ -6,11 +6,10 @@
 //              머리에 남은 생각은 '생각 내려놓기' 로 적어 두고 떠난다 (인지 부하 덜기 — Risko & Gilbert 2016)
 //   쉬는 동안: 앱 전체를 가린다 — 할 일이 보이면 머리가 계속 일을 붙잡는다 (심리적 분리 — Sonnentag & Fritz 2007)
 //              알림·제안은 멈춘다. 모드·시간은 사용자가 고른다 (통제감 — Sonnentag & Fritz 2007)
-//     cover   완전 가림   — 타이머와 한 줄만
-//     breathe 숨 고르기   — 들이쉬기 4초 · 내쉬기 6초 (Balban 외 2023, 내쉬기를 길게 하는 호흡)
-//     eyes    눈 쉬기     — 먼 풍경, 20초마다 먼 곳 보기 (20-20-20 · Lee 외 2015)
-//     stretch 몸 풀기     — 스트레칭을 하나씩 크게 (Albulescu 외 2022)
-//     walk    자리 떠나기 — 화면을 보지 말고 일어나 걷기, 끝나면 소리로 알림 (움직이는 휴식)
+//     calm    숨 고르고 눈 감기 — 순환 한숨 5번(1분 휴식은 3번) → 눈 감고 쉬기, 끝은 종소리
+//               (순환 한숨: Balban 외 2023 · 분당 6회 안팎의 느린 호흡: Zaccaro 외 2018 · 아무것도 요구하지 않는 시간: Sonnentag & Fritz 2007)
+//     stretch 몸 풀기   — 스트레칭을 하나씩 크게 (Albulescu 외 2022)
+//     walk    산책하기  — 화면은 두고 나가서 걷기, 끝나면 소리로 알림 (움직이는 휴식 — Albulescu 외 2022, 점심 산책 Sianoja 외 2018)
 //              소리: 빗소리 같은 잔잔한 소리(선택, Alvarsson 외 2010) · 끝날 때 부드러운 종소리 (눈을 감고 쉬어도 되게)
 //   돌아올 때: "다시 시작할까요?" — 이어서 할 일 · 적어 둔 첫 행동 · 평가(모드 비교)
 
@@ -19,13 +18,17 @@
   var M = DN.model, S = DN.store, ui = DN.ui, h = ui.h;
 
   var MODES = [
-    { id: 'cover', label: '완전 가림', icon: 'clock', desc: '화면을 모두 가리고 타이머만. 아무것도 안 해도 되는 시간이에요.', why: '일에서 마음이 떨어져야 회복된다 (Sonnentag & Fritz 2007)' },
-    { id: 'breathe', label: '숨 고르기', icon: 'spark', desc: '원을 따라 들이쉬고, 더 길게 내쉬어요.', why: '내쉬기를 길게 하는 호흡이 긴장을 낮춘다 (Balban 외 2023)' },
-    { id: 'eyes', label: '눈 쉬기', icon: 'theme', desc: '먼 풍경을 보며 20초씩 먼 곳에 초점을 둬요.', why: '자연을 잠깐 보는 것만으로 다음 집중이 나아진다 (Lee 외 2015)' },
+    { id: 'calm', label: '숨 고르고 눈 감기', icon: 'spark', desc: '원을 따라 숨을 다섯 번(1분 휴식은 세 번) 고른 뒤, 눈을 감고 쉬어요. 끝나면 종소리로 알려 드려요.', why: '내쉬기를 길게 하는 호흡이 긴장을 낮추고 (Balban 외 2023), 아무것도 안 하는 시간이 마음을 일에서 떼어 준다 (Sonnentag & Fritz 2007)' },
     { id: 'stretch', label: '몸 풀기', icon: 'task', desc: '스트레칭을 하나씩 크게 보여 줘요.', why: '짧게 움직이는 휴식이 피로를 줄인다 (Albulescu 외 2022)' },
-    { id: 'walk', label: '자리 떠나기', icon: 'chevronRight', desc: '화면은 두고 일어나 걸어요. 끝나면 종소리로 알려 드려요.', why: '몸을 움직이는 휴식이 활력을 가장 크게 되살린다 (Albulescu 외 2022)' }
+    { id: 'walk', label: '산책하기', icon: 'chevronRight', desc: '화면은 두고 나가서 걸어요. 끝나면 종소리로 알려 드려요.', why: '걷는 휴식이 활력을 가장 크게 되살리고, 점심 산책은 오후 집중을 높인다 (Albulescu 외 2022 · Sianoja 외 2018)' }
   ];
   var LABEL = {}; MODES.forEach(function (m) { LABEL[m.id] = m.label; });
+  // 예전 모드 이름 — 완전 가림·숨 고르기는 합쳐졌고, 눈 쉬기는 없어졌다
+  var LEGACY = { cover: 'calm', breathe: 'calm' };
+  function normMode(id) { return LABEL[id] ? id : (LEGACY[id] || null); }
+  // 순환 한숨 한 번: 코로 들이쉬고 → 한 번 더 짧게 채우고 → 입으로 길게 내쉬기 (약 10초, 분당 6회 안팎)
+  var SIGH = [['in', '들이쉬어요', 2500], ['top', '한 번 더', 1000], ['out', '길게 내쉬어요', 6000]];
+  function breathCount(minutes) { return minutes <= 1 ? 3 : 5; }
   var DURATIONS = [1, 3, 5, 10];
   var RATINGS = [['good', '좋았어요'], ['ok', '보통'], ['bad', '별로']];
 
@@ -86,8 +89,8 @@
     document.documentElement.classList.add('is-resting');
     cur = { el: el, pausedIds: pausedIds, parked: [], minutes: prefs().restMinutes || 3, prevFocus: document.activeElement, sound: !!prefs().restSound };
     el.addEventListener('keydown', function (e) { if (e.key === 'Escape') { e.preventDefault(); if (cur && cur.mode) finish(); else back(false); } });
-    var mode = opts.mode || prefs().restMode;
-    if (mode && LABEL[mode]) start(mode, true); else prepare();
+    var mode = normMode(opts.mode || prefs().restMode);
+    if (mode) start(mode, true); else prepare();
   }
   function clearTimers() { if (cur) { clearInterval(cur.timer); clearTimeout(cur.step); clearInterval(cur.step); cur.timer = null; cur.step = null; } }
   function close() {
@@ -223,44 +226,43 @@
   }
 
   var RENDER = {
-    cover: function (stage, timeEl) {
+    // 숨 고르고 눈 감기 — ① 순환 한숨 N번 (원을 따라) ② 눈 감고 쉬기 (고리 타이머, 끝은 종소리)
+    calm: function (stage, timeEl) {
       cur.onTick = null;
-      stage.appendChild(ring(timeEl));
-      stage.appendChild(h('p.rest-line', '지금은 아무것도 안 해도 돼요.'));
-      stage.appendChild(h('p.rest-hint', '눈을 감아도 좋아요. 끝나면 종소리로 알려 드릴게요.'));
-    },
-    breathe: function (stage, timeEl) {
-      cur.onTick = null;
-      var circle = h('div.breath-circle', h('span.breath-word', '들이쉬어요'));
+      var total = breathCount(cur.minutes);
+      var circle = h('div.breath-circle', h('span.breath-word', '준비'));
       var word = circle.firstChild;
+      var count = h('div.breath-count', '1 / ' + total);
       stage.appendChild(h('div.breath-wrap', circle));
-      stage.appendChild(h('p.rest-line', '코로 천천히 들이쉬고, 입으로 더 길게 내쉬어요.'));
+      stage.appendChild(count);
+      stage.appendChild(h('p.rest-line', '코로 들이쉬고, 한 번 더 짧게 채운 뒤, 입으로 길게 내쉬어요.'));
       stage.appendChild(h('div.rest-small-time', timeEl));
-      var IN = 4000, OUT = 6000;
-      function cycle(inhale) {
-        if (!cur || cur.mode !== 'breathe') return;
-        word.textContent = inhale ? '들이쉬어요' : '내쉬어요';
-        circle.style.transitionDuration = (inhale ? IN : OUT) + 'ms';
-        circle.classList.toggle('is-in', inhale);
-        circle.classList.toggle('is-out', !inhale);
-        cur.step = setTimeout(function () { cycle(!inhale); }, inhale ? IN : OUT);
+      stage.appendChild(h('button.link-btn.rest-skip', { type: 'button', onclick: closeEyes }, '바로 눈 감고 쉬기'));
+      var n = 0, k = 0;
+      function phase() {
+        if (!cur || cur.mode !== 'calm') return;
+        var p = SIGH[k];
+        word.textContent = p[1];
+        circle.style.transitionDuration = p[2] + 'ms';
+        circle.className = 'breath-circle is-' + p[0];
+        cur.step = setTimeout(function () {
+          k += 1;
+          if (k < SIGH.length) return phase();
+          k = 0; n += 1;
+          if (n >= total) return closeEyes();
+          count.textContent = (n + 1) + ' / ' + total;
+          phase();
+        }, p[2]);
       }
-      cur.step = setTimeout(function () { cycle(true); }, 50);
-    },
-    eyes: function (stage, timeEl) {
-      cur.onTick = null;
-      stage.appendChild(h('div.eye-scene', { 'aria-hidden': 'true' },
-        h('div.eye-sun'), h('div.eye-cloud.c1'), h('div.eye-cloud.c2'), h('div.eye-hill.h1'), h('div.eye-hill.h2'), h('div.eye-hill.h3')));
-      var prompt = h('p.rest-line.eye-prompt', '창밖 먼 곳(6m 이상)을 바라봐요');
-      var count = h('div.eye-count', '20');
-      stage.appendChild(h('div.eye-panel', prompt, count, h('div.rest-small-time', timeEl)));
-      var far = true, n = 20;
-      cur.step = setInterval(function () {
-        if (!cur) return;
-        n -= 1;
-        if (n <= 0) { far = !far; n = 20; prompt.textContent = far ? '창밖 먼 곳(6m 이상)을 바라봐요' : '눈을 감고, 천천히 깜빡여요'; }
-        count.textContent = String(n);
-      }, 1000);
+      function closeEyes() {
+        if (!cur || cur.mode !== 'calm') return;
+        clearTimeout(cur.step); cur.step = null;
+        stage.textContent = '';
+        stage.appendChild(ring(timeEl));
+        stage.appendChild(h('p.rest-line', '이제 눈을 감고 쉬어요.'));
+        stage.appendChild(h('p.rest-hint', '아무것도 안 해도 돼요. 끝나면 종소리로 알려 드릴게요.'));
+      }
+      cur.step = setTimeout(phase, 600);
     },
     stretch: function (stage, timeEl) {
       cur.onTick = null;
@@ -279,12 +281,12 @@
       show(0);
       cur.step = setInterval(function () { if (!cur) return; left -= 1; count.textContent = Math.max(0, left) + '초'; if (left <= 0) show(i + 1); }, 1000);
     },
-    // 자리 떠나기 — 화면을 보지 않아도 되게 아주 단순하게, 끝은 소리로
+    // 산책하기 — 화면을 보지 않아도 되게 아주 단순하게, 끝은 소리로
     walk: function (stage, timeEl) {
       cur.onTick = null;
       stage.appendChild(ring(timeEl));
-      stage.appendChild(h('p.rest-line', '일어나서 잠깐 걸어요.'));
-      stage.appendChild(h('ul.walk-ideas', ['물 한 잔 마시기', '창가까지 걸어가 먼 곳 보기', '계단 한 층 오르내리기', '어깨를 크게 돌리며 걷기'].map(function (x) { return h('li', x); })));
+      stage.appendChild(h('p.rest-line', '일어나서 걷고 와요.'));
+      stage.appendChild(h('ul.walk-ideas', ['밖에 나가 한 바퀴', '나무나 하늘 보며 걷기', '계단 오르내리기', '물 한 잔 마시고 오기'].map(function (x) { return h('li', x); })));
       stage.appendChild(h('p.rest-hint', '휴대폰은 두고 가요. 끝나면 종소리로 알려 드릴게요.'));
     }
   };
@@ -315,7 +317,7 @@
       rateRow,
       h('div.rest-actions',
         h('button.btn.btn-primary', { type: 'button', onclick: function () { save(mode, rated, spent); back(true); } }, tasks.length ? '작업 공간으로 (이어서 하기)' : '돌아가기'),
-        h('button.btn', { type: 'button', onclick: function () { save(mode, rated, spent); cur.minutes = 3; cur.startedAt = Date.now(); start(mode || 'cover', true); } }, '조금 더 쉬기 (3분)'),
+        h('button.btn', { type: 'button', onclick: function () { save(mode, rated, spent); cur.minutes = 3; cur.startedAt = Date.now(); start(mode || 'calm', true); } }, '조금 더 쉬기 (3분)'),
         h('button.btn.btn-ghost', { type: 'button', onclick: function () { save(mode, rated, spent); prepare(); } }, '다른 방법으로 쉬기'))));
     var b = el.querySelector('.rest-actions .btn-primary'); if (b) b.focus();
   }
@@ -344,7 +346,7 @@
   function stats(state) {
     var log = (state.meta && state.meta.restLog) || [];
     return MODES.map(function (m) {
-      var rows = log.filter(function (r) { return r.mode === m.id; });
+      var rows = log.filter(function (r) { return normMode(r.mode) === m.id; });
       var c = { mode: m.id, label: m.label, count: rows.length, good: 0, ok: 0, bad: 0 };
       rows.forEach(function (r) { if (c[r.rating] != null) c[r.rating] += 1; });
       var rated = c.good + c.ok + c.bad;
@@ -353,5 +355,5 @@
     });
   }
 
-  DN.rest = { open: open, close: close, finish: finish, MODES: MODES, stats: stats, chime: chime, isOpen: function () { return !!cur; } };
+  DN.rest = { open: open, close: close, finish: finish, MODES: MODES, normMode: normMode, stats: stats, chime: chime, isOpen: function () { return !!cur; } };
 })();

@@ -263,8 +263,8 @@
     // ---------------------------------------------------------------- 휴식 — 기본 모드, 모드별 평가 비교
     var restModeSel = h('select.select#set-rest-mode', { 'aria-label': '휴식 기본 모드',
       onchange: function () { var v = restModeSel.value; S.mutate(null, function (s2) { s2.prefs.restMode = v || null; }, { silent: true }); } },
-      [h('option', { value: '', selected: !st.prefs.restMode }, '매번 고르기')].concat((DN.rest ? DN.rest.MODES : []).map(function (m) {
-        return h('option', { value: m.id, selected: st.prefs.restMode === m.id }, m.label);
+      [h('option', { value: '', selected: !(DN.rest && DN.rest.normMode(st.prefs.restMode)) }, '매번 고르기')].concat((DN.rest ? DN.rest.MODES : []).map(function (m) {
+        return h('option', { value: m.id, selected: DN.rest.normMode(st.prefs.restMode) === m.id }, m.label);
       })));
     var stats = DN.rest ? DN.rest.stats(st) : [];
     var anyRest = stats.some(function (r) { return r.count; });
