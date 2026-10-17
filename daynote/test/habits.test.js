@@ -33,12 +33,12 @@ test('계획 오류: 끝낸 일 3개부터 예상 대비 실제 비율(중앙값
   assert.strictEqual(HB.realistic(st2, o2), null);
 });
 
-test('오래 집중: 50분 넘게 이어서 진행 중인 일', () => {
+test('오래 집중(안전망): 90분 넘게 이어서 진행 중인 일', () => {
   const st = M.emptyState();
   const t = M.addTask(st, { title: '집중' }, NOW);
   M.startTask(st, t.id, new Date(NOW.getTime() - 30 * 60000));
-  assert.strictEqual(HB.longFocus(st, NOW), null);
-  assert.strictEqual(HB.longFocus(st, new Date(NOW.getTime() + 25 * 60000)).id, t.id);
+  assert.strictEqual(HB.longFocus(st, new Date(NOW.getTime() + 25 * 60000)), null);
+  assert.strictEqual(HB.longFocus(st, new Date(NOW.getTime() + 65 * 60000)).id, t.id);
   M.pauseTask(st, t.id, NOW);
   assert.strictEqual(HB.longFocus(st, new Date(NOW.getTime() + 60 * 60000)), null);
 });
@@ -77,4 +77,25 @@ test('새 주 시작: 주마다 한 번, 꼭 끝낼 일은 3개까지', () => {
   assert.strictEqual(HB.shouldOfferWeekStart(st, NOW), false);
   assert.strictEqual(HB.shouldOfferWeekStart(st, new Date(2026, 9, 26, 9, 0)), true);   // 다음 주
   assert.strictEqual(HB.isWeekGoal(ts[0], new Date(2026, 9, 26, 9, 0)), false);
+});
+
+test('일한 흐름: 50분쯤 이어서 일한 뒤 일을 끝내면 쉬기 권하기, 30분 비면 새 흐름', () => {
+  const at = (m) => new Date(NOW.getTime() + m * 60000);
+  let run = null;
+  run = HB.touchWork(run, at(0));
+  run = HB.touchWork(run, at(25));
+  assert.strictEqual(HB.workRunMinutes(run, at(40)), 40);
+  assert.strictEqual(HB.restDue(run, at(40), null), false);
+  run = HB.touchWork(run, at(50));
+  assert.strictEqual(HB.restDue(run, at(52), null), true);
+  assert.strictEqual(HB.restDue(run, at(52), at(40).toISOString()), false);   // 20분 안에 권했으면 다시 안 함
+  assert.strictEqual(HB.restDue(run, at(52), at(30).toISOString()), true);
+  // 30분 넘게 아무것도 안 했으면 쉬다 온 것 — 흐름을 새로
+  assert.strictEqual(HB.workRunMinutes(run, at(85)), 0);
+  run = HB.touchWork(run, at(85));
+  assert.strictEqual(HB.workRunMinutes(run, at(90)), 5);
+  // 날이 바뀌면 새로
+  const late = HB.touchWork(HB.touchWork(null, new Date(2026, 9, 19, 23, 40)), new Date(2026, 9, 20, 0, 5));
+  assert.strictEqual(HB.workRunMinutes(late, new Date(2026, 9, 20, 0, 10)), 5);
+  assert.strictEqual(HB.REST_DEFAULT_MIN, 3);
 });

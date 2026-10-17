@@ -240,3 +240,55 @@ test('묶음 말: "마감 지난 것들은 2시간 뒤로" 는 작업 공간에 
   assert.deepStrictEqual([s.old.dueDate, s.old.dueTime], ['2026-10-18', '02:40']);
   assert.deepStrictEqual([s.focus.dueDate, s.focus.dueTime], ['2026-10-17', '18:00']);
 });
+
+test('프로젝트 묶음 · 날 단위: "사내 세미나 관련 할일은 마감 하루 미뤄줘"', () => {
+  const V = require('../src/core/ai/validate');
+  const P = require('../src/core/ai/proposals');
+  const C = require('../src/core/ai/capture');
+  const fake = require('../src/core/ai/fake');
+  assert.strictEqual(V.shiftMinutes('마감 하루 미뤄줘'), 1440);
+  assert.strictEqual(V.shiftMinutes('이틀 연장해줘'), 2880);
+  assert.strictEqual(V.shiftMinutes('일주일 늦춰'), 7 * 1440);
+  assert.strictEqual(V.shiftMinutes('3일 뒤로 미뤄'), 3 * 1440);
+  assert.strictEqual(V.shiftMinutes('2주 미뤄줘'), 14 * 1440);
+  assert.strictEqual(V.shiftMinutes('두 시간 미뤄줘'), 120);
+  assert.deepStrictEqual(V.groupScope('사내 세미나 관련 할일은 마감 하루 미뤄줘', ['사내 세미나']), { filter: 'all_open', project: '사내 세미나' });
+  assert.deepStrictEqual(V.groupScope('사내세미나 쪽 마감 지난 거 내일로', ['사내 세미나']), { filter: 'overdue', project: '사내 세미나' });
+  assert.strictEqual(V.groupScope('세미나 발표 자료 하루 미뤄줘', ['사내 세미나']), null);
+  const at = new Date(2026, 9, 18, 1, 50);
+  const nul = { text: null, date: null, time: null };
+  function setup() {
+    const st = M.emptyState();
+    const sem = M.addProject(st, { name: '사내 세미나' }, at);
+    const a = M.addTask(st, { title: '세미나 발표 자료 목차 잡기', dueDate: '2026-10-19', projectId: sem.id }, at);
+    const b = M.addTask(st, { title: '세미나 발표자 섭외 메일 보내기', dueDate: '2026-10-18', dueTime: '17:00', projectId: sem.id }, at);
+    const c = M.addTask(st, { title: '분기 지표 대시보드 캡처 정리', dueDate: '2026-10-18' }, at);
+    return { st, a, b, c };
+  }
+  function send(st, body, out) {
+    const note = M.addNote(st, { title: '', body, capture: { status: 'pending', at: at.toISOString() } }, at);
+    note.updatedAt = at.toISOString();
+    const input = C.buildInput(note, { today: '2026-10-18 (일)', projects: ['사내 세미나'], openTasks: M.liveTasks(st).filter((t) => t.status !== 'done').map((t) => t.title), focusTask: null });
+    out = out || fake.organize(input).output;
+    const run = P.startRun(st, { noteId: note.id, kind: 'capture', promptVersion: C.PROMPT_VERSION }, at);
+    P.applyCapture(st, { note, run, validated: V.validateOrganizeNote(out, { note, state: st, now: at }), output: out }, at);
+    return note;
+  }
+  const body = '사내 세미나 관련 할일은 마감 하루 미뤄줘';
+  // 데모 AI
+  let s = setup();
+  const note = send(s.st, body);
+  assert.deepStrictEqual([s.a.dueDate, s.a.dueTime], ['2026-10-20', null]);
+  assert.deepStrictEqual([s.b.dueDate, s.b.dueTime], ['2026-10-19', '17:00']);
+  assert.strictEqual(s.c.dueDate, '2026-10-18');
+  assert.strictEqual(note.capture.entryType, 'update');
+  // AI 가 묶음으로 주면 (날짜 계산은 앱이)
+  s = setup();
+  const base = { summary: '', sections: [], tasks: [], events: [], open_questions: [], entry_type: 'update', note_title: 'x', note_project_hint: '사내 세미나', note_kind: 'memo', done_tasks: [], updated_tasks: [] };
+  send(s.st, body, Object.assign({}, base, { bulk_updates: [{ filter: 'all_open', project_hint: '사내 세미나', evidence: { quote: body, line: 1 }, due: { text: '하루 미뤄', date: null, time: null }, do_at: nul }] }));
+  assert.deepStrictEqual([s.a.dueDate, s.b.dueDate, s.b.dueTime, s.c.dueDate], ['2026-10-20', '2026-10-19', '17:00', '2026-10-18']);
+  // AI 가 한 건으로 줘도 프로젝트 묶음으로
+  s = setup();
+  send(s.st, body, Object.assign({}, base, { bulk_updates: [], updated_tasks: [{ title: '세미나 발표 자료 목차 잡기', evidence: { quote: body, line: 1 }, due: { text: '하루', date: '2026-10-20', time: null }, do_at: nul }] }));
+  assert.deepStrictEqual([s.a.dueDate, s.b.dueDate, s.c.dueDate], ['2026-10-20', '2026-10-19', '2026-10-18']);
+});

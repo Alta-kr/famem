@@ -305,7 +305,33 @@
     if (input && document.activeElement === input && input.value.trim()) return;
     if (!DN.app || DN.app.current().view !== 'today') return;
     S.mutate(null, function (s) { s.meta.lastRestNudgeAt = now().toISOString(); }, { source: 'chat', silent: true });
-    post({ kind: 'text', text: '‘' + t.title + '’에 ' + DN.habits.LONG_FOCUS_MIN + '분 넘게 집중했어요. 5분만 쉬어 가면 다음 집중이 더 잘 돼요.', actions: ['rest'] });
+    post({ kind: 'text', text: '‘' + t.title + '’에 ' + DN.habits.LONG_FOCUS_MIN + '분 넘게 집중했어요. 3분만 쉬어 가면 다음 집중이 더 잘 돼요.', actions: ['rest'] });
+  }
+
+  // 일한 흐름 — 50분쯤 이어서 일한 뒤 할 일·단계를 끝내면 쉬기를 권한다 (일이 끝나는 지점에서)
+  var workRun = null;
+  function touchWork() { workRun = DN.habits.touchWork(workRun, now()); }
+  function rested() { workRun = null; }
+  function doneCount(st) {
+    return M.liveTasks(st).reduce(function (n, t) {
+      return n + (t.status === 'done' ? 1 : 0) + (t.steps || []).filter(function (x) { return x.done; }).length;
+    }, 0);
+  }
+  // 끝낸 직후 — 쉴 때가 됐으면 쉬기를, 아니면 (할 일을 끝냈을 때) 평소 제안
+  function afterBoundary(taskDone, title) {
+    if (DN.rest && DN.rest.isOpen()) return;
+    var meta = S.state.meta;
+    if (!meta.focus && DN.habits.restDue(workRun, now(), meta.lastRestNudgeAt)) {
+      var input = document.querySelector('.chat-input textarea');
+      if (!(input && document.activeElement === input && input.value.trim())) {
+        var mins = DN.habits.workRunMinutes(workRun, now());
+        S.mutate(null, function (s) { s.meta.lastRestNudgeAt = now().toISOString(); }, { source: 'chat', silent: true });
+        post({ kind: 'text', text: (taskDone ? (title ? '‘' + title + '’ 끝! ' : '하나 끝냈어요! ') : '단계 하나 끝냈어요. ') +
+          DN.dates.duration(mins) + ' 이어서 일했어요. 일이 끝난 지금이 쉬기 좋은 때예요 — ' + DN.habits.REST_DEFAULT_MIN + '분 쉬어 갈까요?', actions: ['rest'] });
+        return;
+      }
+    }
+    if (taskDone) tryNudge('completed');
   }
 
   // 집중 타이머 — 25분 집중 → 종소리 → 쉬러 가기 권하기 (정해 둔 휴식이 피로를 줄인다, Biwer 외 2023)
@@ -342,7 +368,7 @@
     if (DN.rest && DN.rest.chime) DN.rest.chime();
     var longBreak = cnt % 4 === 0;
     post({ kind: 'text', text: (t ? '‘' + t.title + '’에 ' : '') + f.minutes + '분 집중했어요 (오늘 ' + cnt + '번째). ' +
-      (longBreak ? '네 번 했으니 15분쯤 길게 쉬어 가요.' : '5분 쉬어 가면 다음 집중이 더 잘 돼요.'), actions: ['rest'] });
+      (longBreak ? '네 번 했으니 15분쯤 길게 쉬어 가요.' : '3분 쉬어 가면 다음 집중이 더 잘 돼요.'), actions: ['rest'] });
   }
 
   // 휴식 — 앱 전체를 가리는 휴식 화면 (renderer/rest.js). 모드를 주지 않으면 쉬기 전 화면에서 고른다
@@ -401,15 +427,29 @@
     if (watching) return;
     watching = true;
     ['keydown', 'mousedown', 'wheel'].forEach(function (ev) { document.addEventListener(ev, function () { lastActivity = Date.now(); }, true); });
+    var lastDone = doneCount(S.state);
     S.subscribe(function (info) {
-      if (info.label === '완료') setTimeout(function () { tryNudge('completed'); }, 1500);
+      var n = doneCount(S.state);
+      var more = info.type === 'change' && n > lastDone;
+      lastDone = n;
+      if (info.type !== 'change' || info.source === 'rest') return;
+      touchWork();
+      if (!more) return;
+      var doneTask = M.liveTasks(S.state).filter(function (t) { return t.status === 'done' && t.completedAt; })
+        .sort(function (a, b) { return a.completedAt < b.completedAt ? 1 : -1; })[0];
+      var taskDone = info.label === '완료' || (doneTask && now() - new Date(doneTask.completedAt) < 5000);
+      setTimeout(function () { afterBoundary(taskDone, taskDone && doneTask ? doneTask.title : null); }, 1500);
     });
     setInterval(function () {
       if (document.visibilityState !== 'visible') return;
       if (Date.now() - lastActivity >= IDLE_MIN * 60000) { lastActivity = Date.now(); tryNudge('idle'); }
     }, 30000);
     setTimeout(function () { tryNudge('open'); }, 8000);
-    setInterval(function () { if (document.visibilityState === 'visible') checkLongFocus(); }, 60000);
+    setInterval(function () {
+      // 진행 중인 일이 있으면 일하는 중 (화면을 안 보고 있어도)
+      if (M.liveTasks(S.state).some(function (t) { return t.status === 'in_progress'; })) touchWork();
+      if (document.visibilityState === 'visible') checkLongFocus();
+    }, 60000);
     armFocus();   // 앱을 다시 켰을 때 집중 타이머 이어서 (이미 지났으면 바로 끝 알림)
     // 빠른 메모 창(Ctrl+Shift+Space)에서 보낸 글 — 홈 입력과 똑같이 흐름에 올리고 분류한다
     var host = S.host;
@@ -428,7 +468,7 @@
     send: send, next: next, breakdown: breakdown, applyBreakdown: applyBreakdown, deferBreakdown: deferBreakdown,
     elaborate: elaborate, saveElaboration: saveElaboration, skipElaboration: skipElaboration,
     rest: rest, startTimer: startTimer, tryNudge: tryNudge, update: update, post: post, work: work, returnWork: returnWork, focusTask: focusTask, runCommand: runCommand,
-    startFocus: startFocus, stopFocus: stopFocus, dayClose: dayClose, overdueOffer: overdueOffer, replan: replan, weekStart: weekStart, planAt: planAt, checkLongFocus: checkLongFocus,
+    rested: rested, startFocus: startFocus, stopFocus: stopFocus, dayClose: dayClose, overdueOffer: overdueOffer, replan: replan, weekStart: weekStart, planAt: planAt, checkLongFocus: checkLongFocus,
     quickKey: function () { return quickKey; }
   };
 })();

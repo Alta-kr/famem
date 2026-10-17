@@ -87,7 +87,7 @@
     var el = h('div.rest-overlay', { role: 'dialog', 'aria-modal': 'true', 'aria-label': '휴식' });
     document.body.appendChild(el);
     document.documentElement.classList.add('is-resting');
-    cur = { el: el, pausedIds: pausedIds, parked: [], minutes: prefs().restMinutes || 3, prevFocus: document.activeElement, sound: !!prefs().restSound };
+    cur = { el: el, pausedIds: pausedIds, parked: [], minutes: DN.habits.REST_DEFAULT_MIN, prevFocus: document.activeElement, sound: !!prefs().restSound };
     el.addEventListener('keydown', function (e) { if (e.key === 'Escape') { e.preventDefault(); if (cur && cur.mode) finish(); else back(false); } });
     var mode = normMode(opts.mode);
     if (mode) start(mode, true); else prepare();
@@ -96,6 +96,7 @@
   function close() {
     if (!cur) return;
     clearTimers(); stopNoise();
+    if (cur.mode && DN.assistant && DN.assistant.rested) DN.assistant.rested();   // 쉬었으니 일한 흐름은 새로
     cur.el.remove();
     document.documentElement.classList.remove('is-resting');
     var f = cur.prevFocus; cur = null;
@@ -158,8 +159,7 @@
     return h('div.rest-durations', { role: 'group', 'aria-label': '쉬는 시간' }, h('span', '쉬는 시간'),
       DURATIONS.map(function (n) {
         return h('button.rest-dur' + (cur.minutes === n ? '.is-on' : ''), { type: 'button', 'aria-pressed': String(cur.minutes === n), onclick: function () {
-          cur.minutes = n;
-          S.mutate(null, function (s) { s.prefs.restMinutes = n; }, { silent: true });
+          cur.minutes = n;   // 이번 휴식만 — 다음 휴식은 다시 기본 3분
           if (cur.mode) start(cur.mode, true); else prepare();
         } }, n + '분');
       }));

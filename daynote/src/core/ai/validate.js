@@ -120,6 +120,22 @@
     }
     return null;
   }
+  // 묶음 범위 — { filter, project } 또는 null. "사내 세미나 관련 할 일은 …" 처럼 프로젝트 이름 뒤에 '관련·쪽 + 할 일·일·것' 이 오면
+  //   그 프로젝트의 남은 할 일 (마감 지난 것 같은 묶음 말이 함께 있으면 그 묶음을 프로젝트로 좁힌다)
+  var PROJ_TAIL_RE = /^(관련된|관련|쪽|프로젝트|(의)?(할일|일|것|거|작업|항목))/;
+  function groupScope(text, projects) {
+    var s = String(text || ''), ns = s.replace(/\s+/g, '');
+    var project = null;
+    (projects || []).forEach(function (name) {
+      var nn = String(name || '').replace(/\s+/g, '');
+      if (!nn || project) return;
+      var i = ns.indexOf(nn);
+      if (i !== -1 && PROJ_TAIL_RE.test(ns.slice(i + nn.length))) project = name;
+    });
+    var filter = groupFilter(s);
+    if (!filter && !project) return null;
+    return { filter: filter || 'all_open', project: project };
+  }
 
   function relativeAt(text, ref) {
     var mins = relativeMinutes(text);
@@ -343,8 +359,15 @@
   }
 
   // "두 시간 미뤄줘", "30분 더 늦춰", "1시간 반 연장" — 지금이 아니라 지금 마감에서 몇 분 뒤로 (후로·뒤로 가 없을 때)
+  var DAYNUM = { '하루': 1, '이틀': 2, '사흘': 3, '나흘': 4, '닷새': 5, '일주일': 7 };
   function shiftMinutes(text) {
     var s = String(text || '');
+    // 날 단위 — 지금 마감에서 그만큼 (뒤로·후로 가 붙어도 마감 기준: "마감 하루 뒤로 미뤄줘")
+    var d = s.match(/(하루|이틀|사흘|나흘|닷새|일주일|(\d+)\s*일|(\d+|한|두|세)\s*주(?:일)?)\s*(?:더\s*|만\s*|정도\s*|씩\s*)?(?:(?:뒤|후)로?\s*)?(?:미뤄|미루|늦춰|늦추|연장)/);
+    if (d) {
+      var days = DAYNUM[d[1]] || (d[2] ? +d[2] : 0) || (d[3] ? (KNUM[d[3]] || +d[3]) * 7 : 0);
+      if (days > 0 && days <= 366) return days * 1440;
+    }
     // 시간 표현 바로 뒤에 후·뒤가 붙을 때만 "지금부터" — 제목 속 '후보'·'오후'·'뒤풀이' 에는 반응하지 않는다
     if (/(\d+|한|두|세|네|다섯|여섯|반)\s*(?:시간(?:\s*반)?(?:\s*\d+\s*분)?|분)\s*(?:후|뒤|있다가|이따)/.test(s)) return null;
     var m = s.match(/(\d+|한|두|세|네|다섯|여섯|반)\s*시간\s*(반)?\s*(?:(\d+)\s*분)?\s*(?:더\s*|만\s*|정도\s*)?(?:미뤄|미루|늦춰|늦추|연장)/);
@@ -375,7 +398,7 @@
   }
 
   return {
-    verifyWhen: verifyWhen, shiftMinutes: shiftMinutes, relativeAt: relativeAt, groupFilter: groupFilter,
+    verifyWhen: verifyWhen, shiftMinutes: shiftMinutes, relativeAt: relativeAt, groupFilter: groupFilter, groupScope: groupScope,
     validateOrganizeNote: validateOrganizeNote, shapeErrors: shapeErrors, timeCandidates: timeCandidates, sanitizeSteps: sanitizeSteps,
     noteLines: noteLines, locate: locate, DATE_RE: DATE_RE, TIME_RE: TIME_RE
   };

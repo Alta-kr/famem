@@ -133,24 +133,26 @@
     var bulk = [];
     body.forEach(function (l) {
       if (!UPDATE_RE.test(l)) return;
-      var filter = V.groupFilter(l);   // "마감 지난 것들", "오늘 마감인 거 다" …
-      if (!filter) return;
-      var set = [null, filter];
+      var scope = V.groupScope(l, input.projects);   // "마감 지난 것들", "오늘 마감인 거 다", "사내 세미나 관련 할 일은" …
+      if (!scope) return;
       var hint = SG.parseDueHint(l, ref);
       var rel = l.match(/(\d+\s*분|(?:\d+|한|두|세|네)\s*시간(?:\s*반)?)\s*(?:더\s*)?(?:후|뒤|미뤄|미루|늦춰|연장)/);
-      if (!hint && !rel) return;
-      bulk.push({ filter: set[1], project_hint: null, evidence: { quote: l.trim(), line: input.lines.indexOf(l) + 1 },
-        due: hint && !rel ? { text: hint.phrase, date: hint.dueDate, time: null } : { text: rel[0], date: null, time: null },
+      var shift = V.shiftMinutes(l);   // "마감 하루 미뤄줘" — 계산은 앱이
+      if (!hint && !rel && !shift) return;
+      bulk.push({ filter: scope.filter, project_hint: scope.project, evidence: { quote: l.trim(), line: input.lines.indexOf(l) + 1 },
+        due: shift ? { text: l.trim(), date: null, time: null } : hint && !rel ? { text: hint.phrase, date: hint.dueDate, time: null } : { text: rel[0], date: null, time: null },
         do_at: { text: null, date: null, time: null } });
       used[l] = true;
     });
     body.forEach(function (l) {
       if (!UPDATE_RE.test(l)) return;
       // 날짜 표현: "내일" 같은 날, "두 시간 후로" 같은 상대 시각, "두 시간 미뤄" 같은 마감 기준 미루기 (계산은 앱 검증기가)
+      if (used[l]) return;   // 묶음으로 이미 받은 줄
       var hint = SG.parseDueHint(l, ref);
       var rel = l.match(/(\d+\s*분|(?:\d+|한|두|세|네)\s*시간(?:\s*반)?)\s*(?:더\s*)?(?:후|뒤|미뤄|미루|늦춰|연장)/);
-      if (!hint && !rel) return;
-      var due = hint ? { text: hint.phrase, date: hint.dueDate, time: null } : { text: rel[0], date: null, time: null };
+      var shift = V.shiftMinutes(l);
+      if (!hint && !rel && !shift) return;
+      var due = shift ? { text: l.trim(), date: null, time: null } : hint ? { text: hint.phrase, date: hint.dueDate, time: null } : { text: rel[0], date: null, time: null };
       var targets = matchOpen(input, hint ? l.replace(hint.phrase, ' ') : l, UPDATE_RE);
       // 대상을 말하지 않았으면 작업 공간에 올려 둔 할 일
       if (!targets.length && input.focusTask) targets = [input.focusTask];

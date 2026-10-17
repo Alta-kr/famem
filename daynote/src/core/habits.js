@@ -3,7 +3,9 @@
 // 연구에 기반한 작은 도움들 — 근거는 ../../DAYNOTE_UX_RESEARCH.md
 //
 //   realistic   : 계획 오류(Buehler·Griffin·Ross 1994) — 내 예상 대비 실제 걸린 시간 비율로 현실적인 시간을 알려 준다
-//   longFocus   : 미세 휴식(Albulescu 외 2022) — 한 일에 50분 넘게 이어서 집중하면 쉬어 가기를 권한다
+//   workRun     : 미세 휴식(Albulescu 외 2022) — 50분쯤 이어서 일한 뒤 할 일·단계를 끝내면 3분 쉬기를 권한다
+//                 쉬기 권하기는 일이 끝나는 지점에서 (작업 경계의 방해가 비용이 적다 — Bailey & Konstan 2006)
+//   longFocus   : 끝나는 지점이 오지 않아도 한 일에 90분 넘게 이어서 집중하면 쉬어 가기를 권한다 (안전망)
 //   dayClose    : 계획 세우기가 미완료 목표의 잔상을 없앤다(Masicampo & Baumeister 2011) — 하루 마무리에 남은 일마다 다음 시각을 정한다
 //   overdue     : 자기 용서(Wohl·Pychyl·Bennett 2010) — 밀린 일을 탓하지 않고 한 번에 다시 정하게 한다
 //   weekStart   : 새 출발 효과(Dai·Milkman·Riis 2014) — 주의 첫날에 이번 주 꼭 끝낼 일 3가지를 고르게 한다
@@ -18,7 +20,10 @@
   if (typeof module !== 'undefined' && module.exports) module.exports = api;
   if (typeof window !== 'undefined') { window.Daynote = window.Daynote || {}; window.Daynote.habits = api; }
 })(function (D, M) {
-  var LONG_FOCUS_MIN = 50;      // 이만큼 이어서 집중하면 쉬어 가기 권하기
+  var LONG_FOCUS_MIN = 90;      // 끝나는 지점 없이 한 일에 이만큼 이어서 집중하면 쉬어 가기 권하기 (안전망)
+  var REST_EVERY_MIN = 50;      // 이만큼 이어서 일한 뒤 일 하나를 끝내면 쉬기 권하기
+  var AWAY_MIN = 30;            // 이만큼 아무 일도 안 했으면 쉬다 온 것으로 본다 (흐름을 새로)
+  var REST_DEFAULT_MIN = 3;     // 쉬는 시간 기본값
   var MIN_SAMPLES = 3;          // 예상 대비 실제 비율은 끝낸 일이 이만큼 쌓여야 쓴다
 
   function round5(n) { return Math.max(5, Math.round(n / 5) * 5); }
@@ -47,7 +52,26 @@
     return { estimate: task.estimateMinutes, actual: worked };
   }
 
-  // ---------------------------------------------------------------- 오래 집중
+  // ---------------------------------------------------------------- 일한 흐름 — { since, last } (ISO)
+  //   일한 흔적(시작·완료·단계 체크·진행 중)마다 touch. 날이 바뀌었거나 30분 넘게 비었으면 새 흐름
+  function touchWork(run, now) {
+    var n = new Date(now);
+    if (!run || D.ymd(new Date(run.last)) !== D.ymd(n) || n - new Date(run.last) > AWAY_MIN * 60000) return { since: n.toISOString(), last: n.toISOString() };
+    return { since: run.since, last: n.toISOString() };
+  }
+  function workRunMinutes(run, now) {
+    if (!run) return 0;
+    var n = new Date(now);
+    if (n - new Date(run.last) > AWAY_MIN * 60000) return 0;
+    return Math.floor((n - new Date(run.since)) / 60000);
+  }
+  // 일 하나를 끝낸 지금 쉬기를 권할까 — 50분쯤 이어서 일했고, 최근 20분 안에 권하지 않았으면
+  function restDue(run, now, lastNudgeAt) {
+    if (workRunMinutes(run, now) < REST_EVERY_MIN) return false;
+    return !lastNudgeAt || new Date(now) - new Date(lastNudgeAt) >= 20 * 60000;
+  }
+
+  // ---------------------------------------------------------------- 오래 집중 (안전망)
   function longFocus(state, now) {
     var n = new Date(now).getTime();
     return M.liveTasks(state).filter(function (t) {
@@ -112,7 +136,8 @@
   function isWeekGoal(task, now) { return !!task.weekGoal && task.weekGoal === weekKey(now) && task.status !== 'done'; }
 
   return {
-    LONG_FOCUS_MIN: LONG_FOCUS_MIN, estimateRatio: estimateRatio, realistic: realistic, actualVsEstimate: actualVsEstimate,
+    LONG_FOCUS_MIN: LONG_FOCUS_MIN, REST_EVERY_MIN: REST_EVERY_MIN, REST_DEFAULT_MIN: REST_DEFAULT_MIN,
+    touchWork: touchWork, workRunMinutes: workRunMinutes, restDue: restDue, estimateRatio: estimateRatio, realistic: realistic, actualVsEstimate: actualVsEstimate,
     longFocus: longFocus, dayClose: dayClose, whenChoices: whenChoices,
     overdueTasks: overdueTasks, postponeOverdueToTomorrow: postponeOverdueToTomorrow,
     weekKey: weekKey, shouldOfferWeekStart: shouldOfferWeekStart, setWeekGoals: setWeekGoals, isWeekGoal: isWeekGoal
