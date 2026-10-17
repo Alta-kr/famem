@@ -67,6 +67,7 @@
   var state = M.emptyState();
   var listeners = [];
   var undoStack = [];
+  var redoStack = [];   // 되돌린 것을 다시 실행 (새 작업을 하면 비운다)
   var saveTimer = null;
   var saveStatus = { phase: 'saved', at: null, error: null };   // saved | pending | saving | error
   var statusListeners = [];
@@ -160,6 +161,7 @@
       if (label) {
         undoStack.push({ label: label, snapshot: before, at: Date.now() });
         if (undoStack.length > 30) undoStack.shift();
+        redoStack = [];   // 새 작업을 하면 '다시 실행' 할 것이 없어진다
       }
       scheduleSave();
       if (!opts.silent) emit({ type: 'change', label: label, source: opts.source });
@@ -167,9 +169,11 @@
     },
 
     canUndo: function () { return undoStack.length > 0; },
+    canRedo: function () { return redoStack.length > 0; },
     undo: function () {
       var last = undoStack.pop();
       if (!last) return null;
+      redoStack.push({ label: last.label, snapshot: clone(state), at: Date.now() });
       // 화면 설정(prefs: 사이드바·모션 줄이기·홈 분할 비율 등)은 되돌리기 대상이 아니다 — 지금 값을 유지한다
       var prefs = state.prefs;
       state = last.snapshot;
@@ -178,10 +182,22 @@
       emit({ type: 'undo', label: last.label });
       return last.label;
     },
+    // 다시 실행 — 방금 되돌린 것을 다시 (되돌리기와 같은 규칙: 화면 설정은 지금 값 유지)
+    redo: function () {
+      var next = redoStack.pop();
+      if (!next) return null;
+      undoStack.push({ label: next.label, snapshot: clone(state), at: Date.now() });
+      var prefs = state.prefs;
+      state = next.snapshot;
+      state.prefs = prefs;
+      scheduleSave();
+      emit({ type: 'redo', label: next.label });
+      return next.label;
+    },
 
     flush: flush,
     retrySave: function () { dirty = true; return flush(); },
-    replaceAll: function (next) { state = M.normalize(next); undoStack = []; scheduleSave(); emit({ type: 'load' }); }
+    replaceAll: function (next) { state = M.normalize(next); undoStack = []; redoStack = []; scheduleSave(); emit({ type: 'load' }); }
   };
 
   // 창을 닫기 전에 남은 저장을 끝낸다

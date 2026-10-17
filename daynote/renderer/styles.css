@@ -1503,3 +1503,11 @@ li[aria-expanded="true"] .task-steps { background: var(--surface); }
 .dc-end { font-weight: 600; color: var(--success); }
 .ws-list { display: flex; flex-direction: column; gap: 2px; }
 .ws-row { display: flex; align-items: center; gap: 8px; padding: 4px 0; cursor: pointer; font-size: 14px; }
+
+/* 사이드바 아래: 저장 상태 + 되돌리기·다시 실행 */
+.sidebar-foot-row { display: flex; align-items: center; gap: 4px; }
+.sidebar-foot-row .save-indicator { flex: 1; min-width: 0; }
+.hist-btns { display: flex; gap: 2px; }
+.hist-btn { width: 28px; height: 28px; }
+.hist-btn:disabled { opacity: .35; cursor: default; }
+.sidebar-collapsed .sidebar-foot-row { flex-direction: column; }

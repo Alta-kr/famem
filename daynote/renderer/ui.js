@@ -52,6 +52,8 @@
     search: '<circle cx="11" cy="11" r="7"/><path d="M20 20l-3.5-3.5"/>',
     play: '<path d="M7 5l12 7-12 7z"/>',
     pause: '<path d="M8 5v14M16 5v14"/>',
+    undo: '<path d="M9 14L4 9l5-5"/><path d="M4 9h10.5a5.5 5.5 0 010 11H11"/>',
+    redo: '<path d="M15 14l5-5-5-5"/><path d="M20 9H9.5a5.5 5.5 0 000 11H13"/>',
     info: '<circle cx="12" cy="12" r="9"/><path d="M12 11v6M12 7.5v.5"/>',
     clock: '<circle cx="12" cy="12" r="9"/><path d="M12 7v5l3 2"/>',
     snooze: '<path d="M12 21a9 9 0 1 1 0-18 9 9 0 0 1 0 18zM9 9h6l-6 6h6"/>',
@@ -105,7 +107,7 @@
   // 되돌리기 알림 — store.undo 를 붙여 준다
   function undoToast(msg) {
     var S = window.Daynote.store;
-    return toast(msg, { action: { label: '되돌리기', fn: function () { S.undo(); } } });
+    return toast(msg, { action: { label: '되돌리기', fn: function () { if (window.Daynote.app && window.Daynote.app.undo) window.Daynote.app.undo(); else S.undo(); } } });
   }
 
   // ------------------------------------------------------------------ 대화상자

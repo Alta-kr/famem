@@ -35,11 +35,15 @@
     els.nav = h('nav.nav', { 'aria-label': '주 메뉴' });
     els.navSub = h('div.nav');
     els.save = h('div.save-indicator', { role: 'status', 'aria-live': 'polite' });
+    // 되돌리기 · 다시 실행 버튼 (Ctrl+Z · Ctrl+Y)
+    els.undoBtn = h('button.icon-btn.hist-btn', { type: 'button', title: '되돌리기 (Ctrl+Z)', 'aria-label': '되돌리기', onclick: function () { undo(); } }, ui.icon('undo'));
+    els.redoBtn = h('button.icon-btn.hist-btn', { type: 'button', title: '다시 실행 (Ctrl+Y)', 'aria-label': '다시 실행', onclick: function () { redo(); } }, ui.icon('redo'));
+    els.hist = h('div.hist-btns', els.undoBtn, els.redoBtn);
     els.sidebar = h('aside.sidebar',
       h('div.brand', h('div.brand-mark', { 'aria-hidden': 'true' }, 'D'), h('div.brand-name', 'Daynote'),
         h('button.icon-btn.brand-collapse', { type: 'button', 'aria-label': '사이드바 접기/펴기', title: '사이드바 접기/펴기 (Ctrl+\\)', onclick: toggleSidebar }, ui.icon('sidebar'))),
       els.nav,
-      h('div.sidebar-foot', els.navSub, els.save)
+      h('div.sidebar-foot', els.navSub, h('div.sidebar-foot-row', els.save, els.hist))
     );
     els.banner = h('div');
     els.view = h('div.view', { id: 'view', tabindex: '-1' });
@@ -49,6 +53,10 @@
     root.appendChild(els.shell);
 
     S.onStatus(renderSave);
+    // 되돌릴 것·다시 실행할 것이 있을 때만 버튼을 켠다
+    function renderHist() { els.undoBtn.disabled = !S.canUndo(); els.redoBtn.disabled = !S.canRedo(); }
+    S.subscribe(renderHist);
+    renderHist();
   }
 
   function renderNav() {
@@ -167,6 +175,20 @@
   }
 
   // ------------------------------------------------------------------ 공통 동작
+  // 되돌리기 · 다시 실행 — 알림에서 반대 동작을 바로 누를 수 있게
+  function undo() {
+    var l = S.undo();
+    if (!l) { ui.toast('되돌릴 작업이 없어요.'); return null; }
+    ui.toast('‘' + l + '’' + ui.josa(l, '를/을').slice(l.length) + ' 되돌렸어요.', { action: { label: '다시 실행', fn: redo } });
+    return l;
+  }
+  function redo() {
+    var l = S.redo();
+    if (!l) { ui.toast('다시 실행할 작업이 없어요.'); return null; }
+    ui.toast('‘' + l + '’' + ui.josa(l, '를/을').slice(l.length) + ' 다시 실행했어요.', { action: { label: '되돌리기', fn: undo } });
+    return l;
+  }
+
   function toggleDone(id) {
     var t = M.byId(S.state.tasks, id);
     if (!t) return;
@@ -311,12 +333,9 @@
       if (slash) { e.preventDefault(); slash.focus(); if (slash.select && slash.tagName === 'INPUT') slash.select(); }
       return;
     }
-    if ((e.ctrlKey || e.metaKey) && (e.key === 'z' || e.key === 'Z') && !inField) {
-      e.preventDefault();
-      var l = S.undo();
-      ui.toast(l ? '‘' + l + '’을(를) 되돌렸습니다.' : '되돌릴 작업이 없습니다.');
-      return;
-    }
+    var redoKey = (e.ctrlKey || e.metaKey) && ((e.key === 'y' || e.key === 'Y') || ((e.key === 'z' || e.key === 'Z') && e.shiftKey));
+    if (redoKey && !inField) { e.preventDefault(); redo(); return; }
+    if ((e.ctrlKey || e.metaKey) && (e.key === 'z' || e.key === 'Z') && !inField) { e.preventDefault(); undo(); return; }
     if (e.key === 'Escape' && detailTaskId && !inField) { closeDetail(); return; }
   }
 
@@ -341,7 +360,7 @@
   }
 
   DN.app = {
-    now: now, go: go, refresh: function () { renderView(); renderNav(); }, openTask: openTask, closeDetail: closeDetail, toggleDone: toggleDone, startTask: startTask, pauseTask: pauseTask, returnToTodo: returnToTodo,
+    now: now, go: go, undo: undo, redo: redo, refresh: function () { renderView(); renderNav(); }, openTask: openTask, closeDetail: closeDetail, toggleDone: toggleDone, startTask: startTask, pauseTask: pauseTask, returnToTodo: returnToTodo,
     snoozeMenu: snoozeMenu, taskMenu: taskMenu, deleteTask: deleteTask, scheduleTask: scheduleTask, openRef: openRef, applyPrefs: applyPrefs,
     quickCapture: quickCapture, saveQuick: saveQuick, loadSample: loadSample, clearSample: clearSample,
     current: function () { return cur; }, detailTaskId: function () { return detailTaskId; },
