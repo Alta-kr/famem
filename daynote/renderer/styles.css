@@ -1637,3 +1637,44 @@ html.is-resting .toast, html.is-resting .toasts { display: none !important; }   
 .stretch-phase-bar > span { display: block; height: 100%; background: #7C8CF8; transition: width 300ms; }
 .stretch-next { color: #8892A8; font-size: 13px; min-height: 1.2em; }
 .stretch-actions { display: flex; gap: 8px; }
+
+/* 마감·프로젝트 칩 — 눌러서 고치기, 없으면 '+ 마감' '+ 프로젝트' */
+.chip.is-editable { cursor: pointer; }
+.chip.is-editable:hover, .chip.is-editable:focus-visible { filter: brightness(1.15); outline: 1px solid currentColor; outline-offset: 1px; }
+.chip.chip-add { cursor: pointer; background: transparent; border: 1px dashed var(--border); color: var(--text-secondary); opacity: .55; }
+.home-row:hover .chip-add, .work:hover .chip-add, .chip-add:focus-visible { opacity: 1; }
+.chip.chip-add:hover { color: var(--primary); border-color: var(--primary); }
+.menu-due { padding: 10px; min-width: 280px; }
+.due-editor { display: flex; flex-direction: column; gap: 8px; }
+.due-quick { display: flex; flex-wrap: wrap; gap: 6px; }
+.due-fields { display: grid; grid-template-columns: 1fr 120px; gap: 6px; }
+.due-fields .input { height: 30px; }
+.due-actions { display: flex; justify-content: flex-end; gap: 6px; }
+.proj-dot { width: 10px; height: 10px; border-radius: 50%; display: inline-block; }
+/* 메모 분류 — 끌면 아래에 프로젝트 폴더·휴지통 */
+.note-dock { position: fixed; left: 50%; bottom: 20px; transform: translateX(-50%); z-index: 900; max-width: min(920px, calc(100vw - 32px));
+  padding: 12px 14px 10px; border-radius: 18px; background: var(--surface); border: 1px solid var(--border); box-shadow: 0 18px 48px rgba(0,0,0,.28);
+  display: flex; flex-direction: column; gap: 8px; animation: dock-in 160ms var(--ease, ease-out); }
+@keyframes dock-in { from { opacity: 0; transform: translate(-50%, 12px); } to { opacity: 1; transform: translate(-50%, 0); } }
+.reduce-motion .note-dock { animation: none; }
+.dock-hint { font-size: 12px; color: var(--text-secondary); text-align: center; }
+.dock-row { display: flex; gap: 6px; overflow-x: auto; padding-bottom: 2px; }
+.dock-tile { flex: 0 0 auto; width: 88px; padding: 8px 4px 6px; border-radius: 12px; display: flex; flex-direction: column; align-items: center; gap: 4px; border: 1px solid transparent; transition: background 100ms, transform 100ms; }
+.dock-tile * { pointer-events: none; }
+.dock-tile.is-over { background: var(--primary-soft); border-color: var(--primary); transform: translateY(-3px) scale(1.04); }
+.dock-tile.is-current { opacity: .45; }
+.dock-icon { width: 48px; height: 40px; display: grid; place-items: center; }
+.dock-icon svg { width: 48px; height: 40px; }
+.dock-name { font-size: 12px; max-width: 80px; text-align: center; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.dock-plus, .dock-trash { width: 40px; height: 36px; border-radius: 10px; display: grid; place-items: center; border: 1.5px dashed var(--border); color: var(--text-secondary); }
+.dock-plus svg, .dock-trash svg { width: 20px; height: 20px; }
+.dock-tile.is-trash .dock-trash { border-style: solid; }
+.dock-tile.is-trash.is-over { background: rgba(220, 38, 38, .12); border-color: #DC2626; }
+.dock-tile.is-trash.is-over .dock-trash { color: #DC2626; border-color: #DC2626; }
+.dock-tile + .dock-tile.is-new { margin-left: 8px; border-left: 0; }
+.note-dock.is-trash-only { padding: 8px; border-radius: 20px; animation: dock-pop 260ms cubic-bezier(.34,1.56,.64,1); }
+@keyframes dock-pop { 0% { opacity: 0; transform: translate(-50%, 24px) scale(.6); } 100% { opacity: 1; transform: translate(-50%, 0) scale(1); } }
+.reduce-motion .note-dock.is-trash-only { animation: none; }
+
+.menu.menu-due .due-quick button { display: inline-flex; width: auto; padding: 4px 10px; border: 1px solid var(--border); background: var(--surface); }
+.menu.menu-due .due-actions button { display: inline-flex; width: auto; }

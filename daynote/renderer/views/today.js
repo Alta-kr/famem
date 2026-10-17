@@ -147,6 +147,20 @@
       if (isNote(e)) { A.memoToTask(e.dataTransfer.getData('application/x-daynote-note')); return; }
       DN.assistant.returnWork(e.dataTransfer.getData('application/x-daynote-work'));
     });
+    // 할 일을 메모 칸에 끌어 놓으면 메모로 (오늘 목록의 할 일 · 작업 카드)
+    function isTask(e) { return hasType(e, 'application/x-daynote-task'); }
+    secMemos.addEventListener('dragover', function (e) {
+      if (!isTask(e)) return;
+      e.preventDefault(); e.dataTransfer.dropEffect = 'move';
+      secMemos.classList.add('is-drop-target', 'is-note-drop');
+    });
+    secMemos.addEventListener('dragleave', function (e) { if (!secMemos.contains(e.relatedTarget)) secMemos.classList.remove('is-drop-target', 'is-note-drop'); });
+    secMemos.addEventListener('drop', function (e) {
+      if (!isTask(e)) return;
+      e.preventDefault();
+      secMemos.classList.remove('is-drop-target', 'is-note-drop');
+      A.taskToMemo(e.dataTransfer.getData('application/x-daynote-task'));
+    });
     var secs = [secTasks, secMemos, agenda(st, now)];
     secs.bars = [];
     var bar0 = splitter(secs, 0), bar1 = splitter(secs, 1);
@@ -288,11 +302,11 @@
     var meta = h('div.home-meta',
       t.status === 'in_progress' ? h('span.chip.chip-progress', ui.icon('play'), '진행 중') : null,
       t.status === 'paused' ? h('span.chip.chip-paused', ui.icon('pause'), '일시 정지') : null,
-      ui.dueChip(t, now),
+      ui.dueChip(t, now, { add: true }),
       DN.habits && DN.habits.isWeekGoal(t, now) ? h('span.chip.chip-goal', { title: '이번 주 꼭 끝낼 일' }, '★ 이번 주') : null,
       steps.length ? h('span.chip.chip-steps', '단계 ' + stepCnt.done + '/' + stepCnt.total, h('span.mini-bar', h('span', { style: { width: Math.round(stepCnt.done / stepCnt.total * 100) + '%' } }))) : null,
       pendingDraft ? h('button.chip.chip-guess.chip-btn', { type: 'button', title: 'AI가 나눠 둔 단계 보기', onclick: function (e) { e.stopPropagation(); DN.assistant.breakdown(t.id); } }, '나눠 둔 단계 있음') : null,
-      proj ? h('span.chip.chip-project', { style: { '--pc': proj.color } }, proj.name) : null);
+      ui.projectPickChip(st, t));
     var main = h('div.home-main', h('div.home-row-title', t.title || '(제목 없음)'), meta.childNodes.length ? meta : null);
     var li = h('li.home-row' + (done ? '.is-done' : '') + (selected ? '.is-selected' : ''), {
       'data-id': done ? null : t.id, 'data-task-id': done ? null : t.id, draggable: done ? null : 'true', tabindex: '0',

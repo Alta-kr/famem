@@ -63,7 +63,10 @@
   }
   S.subscribe(function (info) { if (info.type === 'undo' || info.type === 'redo' || info.type === 'load') settleOrphans(info.type); });
 
-  function classify(noteId) {
+  // copts.moveToTask: 할 일 목록으로 끌어 놓은 메모 · copts.join: 이 정리를 합칠 되돌리기 칸
+  function classify(noteId, copts) {
+    copts = copts || {};
+    if (copts.join) joinKey[noteId] = copts.join;
     var note = M.byId(S.state.notes, noteId);
     if (!note || inflight[noteId]) return Promise.resolve(null);
     var st = DN.aiFlow.status();
@@ -77,6 +80,7 @@
     // 작업 공간(채팅)에 올려 둔 할 일이 있으면 "마감 두 시간 후로 미뤄줘" 의 대상이 된다
     var focus = DN.assistant && DN.assistant.focusTask && DN.assistant.focusTask();
     if (focus) opts.focusTask = focus.title;
+    if (copts.moveToTask) opts.moveToTask = true;
     var input = C.buildInput(sent, opts);
     var run = S.mutate(null, function (s) {
       var n = M.byId(s.notes, noteId);

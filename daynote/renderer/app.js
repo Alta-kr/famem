@@ -176,15 +176,63 @@
 
   // ------------------------------------------------------------------ 공통 동작
   // 되돌리기 · 다시 실행 — 알림에서 반대 동작을 바로 누를 수 있게
-  // 메모를 할 일로 — 오늘 화면에서 메모를 할 일 목록으로 끌어 놓을 때
+  // 메모를 할 일로 — 오늘 화면에서 메모를 할 일 목록으로 끌어 놓을 때.
+  //   AI 로 다시 정리한다 (마감·프로젝트를 알아내게, 목록이면 세부 할 일로). AI 가 없거나 할 일을 못 만들면 첫 줄 제목 + 아래 줄 세부 할 일로
+  //   끌어 놓기 · AI 정리 · 대신 만들기는 되돌리기 한 칸 (Ctrl+Z 한 번에 메모로)
   function memoToTask(noteId) {
     var n = M.byId(S.state.notes, noteId);
     if (!n || n.deletedAt) return null;
-    var t = DN.capture.toTask(noteId);
-    if (!t) return null;
-    var cnt = DN.steps.count(t.steps);
-    ui.undoToast('‘' + t.title + '’ 할 일로 정리했어요' + (cnt.total ? ' — 세부 할 일 ' + cnt.total + '개' : '') + '.');
-    return t;
+    function local(key) {
+      var t = S.withJoin(key, function () { return DN.capture.toTask(noteId); });
+      if (!t) return null;
+      var cnt = DN.steps.count(t.steps);
+      ui.undoToast('‘' + t.title + '’ 할 일로 정리했어요' + (cnt.total ? ' — 세부 할 일 ' + cnt.total + '개' : '') + '.');
+      return t;
+    }
+    if (!DN.aiFlow.status().configured) return local(null);
+    var key = M.uid('mt');
+    S.mutate('할 일로 정리', function (s) {
+      var x = M.byId(s.notes, noteId);
+      x.capture = Object.assign({ created: [] }, x.capture || {}, { status: 'pending', error: null, changedByUser: false, kindByUser: false });
+    }, { source: 'capture', key: key });
+    ui.toast('‘' + M.noteTitle(n) + '’ 할 일로 정리하는 중…');
+    return DN.capture.classify(noteId, { moveToTask: true, join: key }).then(function (r) {
+      if (r && r.reason === 'undone') return null;
+      var note = M.byId(S.state.notes, noteId);
+      var made = note && note.capture && (note.capture.created || []).filter(function (c) { return c.kind === 'task'; })
+        .map(function (c) { return M.byId(S.state.tasks, c.id); }).filter(function (t) { return t && !t.deletedAt; });
+      if (!r || !r.ok || !made || !made.length) return local(key);
+      var t = made[0], cnt = DN.steps.count(t.steps);
+      var proj = t.projectId && M.byId(S.state.projects, t.projectId);
+      var bits = [t.dueDate ? '마감 ' + D.relDay(t.dueDate, now()) + (t.dueTime ? ' ' + t.dueTime : '') : null, proj ? proj.name : null, cnt.total ? '세부 할 일 ' + cnt.total + '개' : null].filter(Boolean);
+      ui.undoToast('‘' + t.title + '’' + (made.length > 1 ? ' 외 ' + (made.length - 1) + '개' : '') + ' 할 일로 정리했어요' + (bits.length ? ' — ' + bits.join(' · ') : '') + '.');
+      return t;
+    });
+  }
+
+  // 할 일을 메모로 — 메모 칸에 끌어 놓을 때. 적은 글에서 만든 할 일이면 그 글을 다시 메모로 (원문 그대로),
+  //   직접 만든 할 일이면 제목 · 세부 할 일(목록) · 메모로 새 메모를 만든다
+  function taskToMemo(taskId) {
+    var t = M.byId(S.state.tasks, taskId);
+    if (!t || t.deletedAt) return null;
+    var src = (t.sources || []).filter(function (x) { return x.type === 'note'; }).map(function (x) { return M.byId(S.state.notes, x.refId); })[0];
+    var others = src && !src.deletedAt ? ((src.capture && src.capture.created) || []).filter(function (c) {
+      if (c.id === taskId) return false;
+      var it = M.byId(c.kind === 'task' ? S.state.tasks : S.state.blocks, c.id);
+      return it && !it.deletedAt;
+    }) : null;
+    var note = S.mutate('메모로 옮기기', function (s) {
+      if (src && !src.deletedAt && others && !others.length) return DN.aiProposals.captureToMemo(s, src.id, now());
+      var lines = [t.title];
+      DN.steps.walk(t.steps || [], function (x, d) { lines.push(new Array(d + 2).join('  ') + '- ' + (x.done ? '[x] ' : '') + x.title); });
+      if (t.memo && t.memo.trim()) lines.push('', t.memo.trim());
+      var n2 = M.addNote(s, { title: '', body: lines.join('\n'), projectId: t.projectId || null, captureRole: 'memo', fromTaskId: t.id,
+        capture: { status: 'done', at: now().toISOString(), entryType: 'memo', created: [], changedByUser: true } }, now());
+      M.deleteTask(s, taskId, now());
+      return n2;
+    });
+    if (note) ui.undoToast('‘' + t.title + '’를 메모로 옮겼어요.');
+    return note;
   }
   function undo() {
     var l = S.undo();
@@ -372,7 +420,7 @@
   }
 
   DN.app = {
-    now: now, go: go, undo: undo, redo: redo, memoToTask: memoToTask, refresh: function () { renderView(); renderNav(); }, openTask: openTask, closeDetail: closeDetail, toggleDone: toggleDone, startTask: startTask, pauseTask: pauseTask, returnToTodo: returnToTodo,
+    now: now, go: go, undo: undo, redo: redo, memoToTask: memoToTask, taskToMemo: taskToMemo, refresh: function () { renderView(); renderNav(); }, openTask: openTask, closeDetail: closeDetail, toggleDone: toggleDone, startTask: startTask, pauseTask: pauseTask, returnToTodo: returnToTodo,
     snoozeMenu: snoozeMenu, taskMenu: taskMenu, deleteTask: deleteTask, scheduleTask: scheduleTask, openRef: openRef, applyPrefs: applyPrefs,
     quickCapture: quickCapture, saveQuick: saveQuick, loadSample: loadSample, clearSample: clearSample,
     current: function () { return cur; }, detailTaskId: function () { return detailTaskId; },

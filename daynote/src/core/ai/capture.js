@@ -98,12 +98,16 @@
     // 지금 작업 공간(채팅)에 올려 둔 할 일 — "이거 미뤄줘" 의 대상
     input.focusTask = opts && opts.focusTask ? String(opts.focusTask).slice(0, 200) : null;
     if (input.focusTask && input.openTasks.indexOf(input.focusTask) === -1) input.openTasks = [input.focusTask].concat(input.openTasks);
+    // 메모를 할 일 목록으로 끌어 놓았다 — 이 글은 할 일이다 (마감·프로젝트를 함께 알아낸다)
+    input.moveToTask = !!(opts && opts.moveToTask);
     return input;
   }
   function userText(input) {
     var t = O.userText(input);
-    if (!input.focusTask) return t;
-    return t.replace('</context>', '작업 공간에 올려 둔 할 일: ' + input.focusTask + '\n</context>');
+    var extra = '';
+    if (input.focusTask) extra += '작업 공간에 올려 둔 할 일: ' + input.focusTask + '\n';
+    if (input.moveToTask) extra += '사용자가 이 글을 할 일 목록으로 끌어 놓았습니다 — 할 일(tasks)로 정리하세요 (entry_type "task"). 마감·할 시각·프로젝트가 글에 있으면 함께 넣고, 목록이면 맨 위 줄이 할 일이고 아래 항목은 세부 할 일입니다.\n';
+    return extra ? t.replace('</context>', extra + '</context>') : t;
   }
 
   return { PROMPT_VERSION: PROMPT_VERSION, ENTRY_TYPES: ENTRY_TYPES, NOTE_KINDS: NOTE_KINDS, SYSTEM: SYSTEM, SCHEMA: SCHEMA, buildInput: buildInput, userText: userText };

@@ -177,7 +177,7 @@
       var pid = projectIds(e).filter(Boolean)[0];
       var running = DN.capture.isRunning(n.id) || c.status === 'pending';
       return h('button.arc-row', {
-        type: 'button', 'data-note-id': n.id,
+        type: 'button', 'data-note-id': n.id, draggable: 'true',
         onclick: function () { open(e); },
         onkeydown: function (ev) {
           if (ev.key !== 'ArrowDown' && ev.key !== 'ArrowUp') return;

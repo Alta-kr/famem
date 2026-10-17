@@ -199,7 +199,7 @@
       el.style.top = top + 'px'; el.style.left = left + 'px';
     }
     function onDown(e) { if (!el.contains(e.target) && !(anchor && anchor.contains(e.target))) close(false); }
-    function onAnchorDown(e) { if (anchor && anchor.contains(e.target)) { e.preventDefault(); close(false); } }   // 연 버튼을 다시 누르면 닫기만 한다
+    function onAnchorDown(e) { if (anchor && anchor.contains(e.target)) { e.preventDefault(); anchor.__closedAt = Date.now(); close(false); } }   // 연 버튼을 다시 누르면 닫기만 한다
     function onResize() { close(false); }
     function close(restore) {
       if (closed) return;
@@ -322,22 +322,217 @@
 
   // 마감 칩 — "마감 내일 18:00 · 21시간 남음" / 지났으면 "마감 지남 · 10월 3일 (토) · 2일 지남"
   // 지난 칩은 Alt+클릭으로 지금부터 24시간 뒤로 미룬다 (postponeOverdue)
-  function dueChip(task, now) {
-    if (!task.dueDate) return null;
+  //   끝나지 않은 일의 칩은 누르면 마감을 고치는 창이 뜬다 (Enter·Space 도). opts.add: 마감이 없으면 '+ 마감' 칩
+  function dueChip(task, now, opts) {
     now = now || window.Daynote.app.now();
+    var open = task.status !== 'done';
+    function editable(el, overdue) {
+      if (!open) return el;
+      el.classList.add('is-editable');
+      el.setAttribute('role', 'button'); el.setAttribute('tabindex', '0');
+      el.setAttribute('title', '눌러서 마감 고치기' + (overdue ? ' · Alt+클릭: 지금부터 ' + M.POSTPONE_HOURS + '시간 뒤로 미루기' : ''));
+      el.addEventListener('click', function (e) {
+        e.preventDefault(); e.stopPropagation();
+        if (overdue && e.altKey) { postponeOverdue(task.id); return; }
+        dueEditor(el, task.id);
+      });
+      el.addEventListener('keydown', function (e) {
+        if (e.key !== 'Enter' && e.key !== ' ') return;
+        e.preventDefault(); e.stopPropagation(); dueEditor(el, task.id);
+      });
+      el.addEventListener('dragstart', function (e) { e.preventDefault(); e.stopPropagation(); });
+      return el;
+    }
+    if (!task.dueDate) return opts && opts.add && open ? editable(h('span.chip.chip-add', icon('flag'), '+ 마감')) : null;
     var due = D.dueAt(task.dueDate, task.dueTime);
     var diff = D.dayDiff(now, D.parseYmd(task.dueDate));
     var when = D.relDay(task.dueDate, now) + (task.dueTime ? ' ' + task.dueTime : '');
-    if (task.status === 'done') return h('span.chip.chip-due', icon('flag'), '마감 ' + when);
+    if (!open) return h('span.chip.chip-due', icon('flag'), '마감 ' + when);
     var left = D.remainText(due, now);
-    if (due.getTime() < now.getTime()) {
-      return h('span.chip.chip-overdue.is-postponable', {
-        title: 'Alt+클릭: 마감을 지금부터 ' + M.POSTPONE_HOURS + '시간 뒤로 미루기',
-        onclick: function (e) { if (e.altKey) { e.preventDefault(); e.stopPropagation(); postponeOverdue(task.id); } }
-      }, icon('flag'), '마감 지남 · ' + when + ' · ' + left);
-    }
-    return h('span.chip.' + (diff === 0 ? 'chip-today' : 'chip-due'), icon('flag'), '마감 ' + when + ' · ' + left);
+    if (due.getTime() < now.getTime()) return editable(h('span.chip.chip-overdue.is-postponable', icon('flag'), '마감 지남 · ' + when + ' · ' + left), true);
+    return editable(h('span.chip.' + (diff === 0 ? 'chip-today' : 'chip-due'), icon('flag'), '마감 ' + when + ' · ' + left));
   }
+
+  // 마감 고치기 — 빠른 선택(오늘·내일·금요일·다음 주 월요일·하루 미루기) + 날짜·시각 + 마감 없애기
+  //   토글 — 같은 칩을 다시 누르면 닫힌다 (popover 가 누르는 순간 닫으니 바로 다시 열지 않게). 창은 한 번에 하나만
+  function justClosed(anchor) { return anchor && anchor.__closedAt && Date.now() - anchor.__closedAt < 500; }
+  function dueEditor(anchor, taskId) {
+    if (justClosed(anchor)) return null;
+    var S = window.Daynote.store, A = window.Daynote.app;
+    var t = M.byId(S.state.tasks, taskId);
+    if (!t) return null;
+    var now = A.now(), wd = now.getDay();
+    var dIn = h('input.input', { type: 'date', value: t.dueDate || '', 'aria-label': '마감 날짜' });
+    var tIn = h('input.input', { type: 'time', value: t.dueTime || '', 'aria-label': '마감 시각 (비우면 그날 안)' });
+    var pop;
+    function save(date, time, label) {
+      S.mutate(label || '마감 바꾸기', function (s) { M.updateTask(s, taskId, { dueDate: date || null, dueTime: date && time ? time : null }, now); });
+      if (pop) pop.close(true);
+      undoToast(date ? '‘' + t.title + '’ 마감을 ' + D.relDay(date, now) + (time ? ' ' + time : '') + '(으)로 정했어요.' : '‘' + t.title + '’ 마감을 없앴어요.');
+    }
+    var quick = [['오늘', D.ymd(now)], ['내일', D.ymd(D.addDays(now, 1))],
+      ['이번 주 금요일', D.ymd(D.addDays(now, (5 - wd + 7) % 7))], ['다음 주 월요일', D.ymd(D.addDays(now, ((8 - wd) % 7) || 7))]];
+    if (t.dueDate) quick.push(['하루 미루기', D.ymd(D.addDays(D.parseYmd(t.dueDate), 1))]);
+    var form = h('form.due-editor', { onsubmit: function (e) { e.preventDefault(); if (dIn.value) save(dIn.value, tIn.value); else dIn.focus(); } },
+      h('div.menu-label', t.dueDate ? '마감 고치기' : '마감 정하기'),
+      h('div.due-quick', quick.map(function (q) {
+        return h('button.btn.btn-xs', { type: 'button', onclick: function () { save(q[1], tIn.value || t.dueTime || '', q[0] === '하루 미루기' ? '마감 미루기' : null); } }, q[0]);
+      })),
+      h('div.due-fields', dIn, tIn),
+      h('div.due-actions',
+        t.dueDate ? h('button.btn.btn-xs.btn-ghost', { type: 'button', onclick: function () { save(null, null, '마감 없애기'); } }, '마감 없애기') : null,
+        h('button.btn.btn-xs.btn-primary', { type: 'submit' }, '저장')));
+    pop = popover(anchor, form, { label: '마감', className: 'menu-due' });
+    return pop;
+  }
+
+  // 프로젝트 칩 — 누르면 프로젝트 바꾸기 (없으면 '+ 프로젝트')
+  function projectPickChip(state, task) {
+    var p = task.projectId && M.byId(state.projects, task.projectId);
+    if (p && p.deletedAt) p = null;
+    if (task.status === 'done') return p ? h('span.chip.chip-project', { style: { '--pc': p.color } }, p.name) : null;
+    var el = p ? h('span.chip.chip-project.is-editable', { style: { '--pc': p.color } }, p.name) : h('span.chip.chip-add', icon('project'), '+ 프로젝트');
+    el.setAttribute('role', 'button'); el.setAttribute('tabindex', '0'); el.setAttribute('title', '눌러서 프로젝트 바꾸기');
+    el.addEventListener('click', function (e) { e.preventDefault(); e.stopPropagation(); projectPicker(el, task.id); });
+    el.addEventListener('keydown', function (e) { if (e.key === 'Enter' || e.key === ' ') { e.preventDefault(); e.stopPropagation(); projectPicker(el, task.id); } });
+    el.addEventListener('dragstart', function (e) { e.preventDefault(); e.stopPropagation(); });
+    return el;
+  }
+  function projectPicker(anchor, taskId) {
+    if (justClosed(anchor)) return null;
+    var S = window.Daynote.store, A = window.Daynote.app;
+    var t = M.byId(S.state.tasks, taskId);
+    if (!t) return null;
+    function set(pid, name) {
+      S.mutate('프로젝트 바꾸기', function (s) { M.updateTask(s, taskId, { projectId: pid || null }, A.now()); });
+      undoToast(pid ? '‘' + t.title + '’를 ‘' + name + '’ 프로젝트로 옮겼어요.' : '‘' + t.title + '’를 프로젝트에서 뺐어요.');
+    }
+    var items = [{ label: '프로젝트 없음', checked: !t.projectId, onClick: function () { set(null); } }];
+    M.liveProjects(S.state).forEach(function (p) {
+      items.push({ label: p.name, checked: t.projectId === p.id, icon: h('span.proj-dot', { style: { background: p.color } }), onClick: function () { set(p.id, p.name); } });
+    });
+    items.push({ sep: true });
+    items.push({ label: '새 프로젝트…', icon: 'plus', keepOpen: true, onClick: function (pop) {
+      var inp = h('input.input', { placeholder: '프로젝트 이름', 'aria-label': '새 프로젝트 이름' });
+      pop.setContent(h('form.due-editor', { onsubmit: function (e) {
+        e.preventDefault();
+        var name = inp.value.trim();
+        if (!name) { inp.focus(); return; }
+        var created = null;
+        S.mutate('새 프로젝트', function (s) { created = M.addProject(s, { name: name.slice(0, 60) }, A.now()); M.updateTask(s, taskId, { projectId: created.id }, A.now()); });
+        pop.close(true);
+        undoToast('‘' + name + '’ 프로젝트를 만들고 ‘' + t.title + '’를 넣었어요.');
+      } }, h('div.menu-label', '새 프로젝트'), inp, h('div.due-actions', h('button.btn.btn-xs.btn-primary', { type: 'submit' }, '만들고 넣기'))), 'dialog');
+    } });
+    return menu(anchor, items, { label: '프로젝트' });
+  }
+
+  // ------------------------------------------------------------------ 메모 분류 — 메모를 끌면 프로젝트 폴더·휴지통이 뜬다
+  //   폴더에 놓으면 그 프로젝트로 (메모에서 만든 할 일·일정도 함께), 휴지통에 놓으면 메모를 지운다 (Ctrl+Z 로 되돌리기)
+  //   메모 요소에 data-note-id 만 있으면 어디서 끌어도 된다 (오늘 메모 · 보관함)
+  var NOTE_T = 'application/x-daynote-note';
+  var dock = null;
+  function hideDock() { if (dock) { dock.remove(); dock = null; } document.documentElement.classList.remove('is-note-dragging'); }
+  function showDock(noteId) {
+    var S = window.Daynote.store, A = window.Daynote.app;
+    var n = M.byId(S.state.notes, noteId);
+    if (!n) return;
+    hideDock();
+    function tile(cls, label, iconEl, act, extra) {
+      var el = h('div.dock-tile' + cls, Object.assign({ 'data-act': act }, extra || {}), h('div.dock-icon', iconEl), h('div.dock-name', label));
+      el.addEventListener('dragenter', function (e) { e.preventDefault(); el.classList.add('is-over'); });
+      el.addEventListener('dragover', function (e) { e.preventDefault(); e.dataTransfer.dropEffect = 'move'; el.classList.add('is-over'); });
+      el.addEventListener('dragleave', function (e) { if (!el.contains(e.relatedTarget)) el.classList.remove('is-over'); });
+      el.addEventListener('drop', function (e) {
+        e.preventDefault(); e.stopPropagation();
+        var id = e.dataTransfer.getData(NOTE_T) || noteId;
+        hideDock();
+        act(id);
+      });
+      return el;
+    }
+    function folder(color) {
+      var svg = document.createElementNS('http://www.w3.org/2000/svg', 'svg');
+      svg.setAttribute('viewBox', '0 0 48 40'); svg.setAttribute('aria-hidden', 'true');
+      svg.innerHTML = '<path d="M2 8a4 4 0 0 1 4-4h12l4 4h20a4 4 0 0 1 4 4v22a4 4 0 0 1-4 4H6a4 4 0 0 1-4-4z" fill="' + color + '" opacity=".35"/>' +
+        '<path d="M2 14a4 4 0 0 1 4-4h36a4 4 0 0 1 4 4v20a4 4 0 0 1-4 4H6a4 4 0 0 1-4-4z" fill="' + color + '"/>';
+      return svg;
+    }
+    function moveTo(pid, name) {
+      return function (id) {
+        var note = M.byId(S.state.notes, id);
+        if (!note) return;
+        if ((note.projectId || null) === (pid || null)) { toast(pid ? '이미 ‘' + name + '’에 있어요.' : '이미 프로젝트 밖에 있어요.'); return; }
+        window.Daynote.capture.setProject(id, pid);
+        undoToast('‘' + M.noteTitle(note) + '’를 ' + (pid ? '‘' + name + '’ 프로젝트로 옮겼어요.' : '프로젝트에서 뺐어요.'));
+      };
+    }
+    var projects = M.liveProjects(S.state).filter(function (p) { return !p.archivedAt; });
+    var tiles = projects.map(function (p) {
+      return tile(n.projectId === p.id ? '.is-current' : '', p.name, folder(p.color), moveTo(p.id, p.name), { title: n.projectId === p.id ? '지금 이 프로젝트에 있어요' : '‘' + p.name + '’에 넣기' });
+    });
+    if (n.projectId) tiles.unshift(tile('.is-none', '프로젝트 없음', folder('#8892A8'), moveTo(null)));
+    tiles.push(tile('.is-new', '새 프로젝트', h('span.dock-plus', icon('plus')), function (id) {
+      var inp = h('input.input', { placeholder: '프로젝트 이름', 'aria-label': '새 프로젝트 이름', autofocus: true });
+      var m = modal({ title: '새 프로젝트에 넣기', body: inp, actions: [
+        { label: '취소' },
+        { label: '만들고 넣기', primary: true, onClick: function () {
+          var name = inp.value.trim();
+          if (!name) { inp.focus(); return false; }
+          S.mutate('새 프로젝트에 넣기', function (s) { var created = M.addProject(s, { name: name.slice(0, 60) }, A.now()); window.Daynote.aiProposals.captureSetProject(s, id, created.id); });
+          undoToast('‘' + name + '’ 프로젝트를 만들고 메모를 넣었어요.');
+        } }] });
+      inp.addEventListener('keydown', function (e) { if (e.key === 'Enter' && !e.isComposing) { e.preventDefault(); m.foot.querySelector('.btn-primary').click(); } });
+    }));
+    tiles.push(tile('.is-trash', '휴지통', h('span.dock-trash', icon('trash')), function (id) {
+      var note = M.byId(S.state.notes, id);
+      if (!note) return;
+      S.mutate('메모 지우기', function (s) { M.deleteNote(s, id, A.now()); });
+      undoToast('‘' + M.noteTitle(note) + '’ 메모를 휴지통에 버렸어요.');
+    }, { title: '메모 지우기 (Ctrl+Z 로 되돌리기)' }));
+    dock = h('div.note-dock', { role: 'region', 'aria-label': '메모 분류 — 폴더나 휴지통에 놓으세요' },
+      h('div.dock-hint', '프로젝트 폴더에 놓으면 옮기고, 휴지통에 놓으면 지워요'),
+      h('div.dock-row', tiles));
+    document.body.appendChild(dock);
+    document.documentElement.classList.add('is-note-dragging');
+  }
+  // 할 일을 끌면 아래에 휴지통이 퉁 하고 뜬다 — 놓으면 지운다 (앞으로 잡힌 작업 시간도 함께, Ctrl+Z 로 되돌리기)
+  function showTaskTrash(taskId) {
+    var S = window.Daynote.store, A = window.Daynote.app;
+    if (!M.byId(S.state.tasks, taskId)) return;
+    hideDock();
+    var bin = h('div.dock-tile.is-trash', { title: '할 일 지우기 (Ctrl+Z 로 되돌리기)' }, h('div.dock-icon', h('span.dock-trash', icon('trash'))), h('div.dock-name', '휴지통'));
+    bin.addEventListener('dragenter', function (e) { e.preventDefault(); bin.classList.add('is-over'); });
+    bin.addEventListener('dragover', function (e) { e.preventDefault(); e.dataTransfer.dropEffect = 'move'; bin.classList.add('is-over'); });
+    bin.addEventListener('dragleave', function (e) { if (!bin.contains(e.relatedTarget)) bin.classList.remove('is-over'); });
+    bin.addEventListener('drop', function (e) {
+      e.preventDefault(); e.stopPropagation();
+      var id = e.dataTransfer.getData('application/x-daynote-task') || taskId;
+      hideDock();
+      var t = M.byId(S.state.tasks, id);
+      if (!t) return;
+      S.mutate('삭제', function (s) { M.deleteTask(s, id, A.now()); });
+      undoToast('‘' + t.title + '’를 휴지통에 버렸어요. 앞으로 잡힌 작업 시간도 함께 지웠어요.');
+    });
+    dock = h('div.note-dock.is-trash-only', { role: 'region', 'aria-label': '할 일 지우기 — 휴지통에 놓으세요' }, bin);
+    document.body.appendChild(dock);
+  }
+  document.addEventListener('dragstart', function (e) {
+    var tEl = e.target && e.target.closest && e.target.closest('[data-task-id]');
+    if (tEl && e.dataTransfer && !(e.target.closest('[data-note-id]'))) {
+      var tid = tEl.getAttribute('data-task-id');
+      try { if (Array.prototype.indexOf.call(e.dataTransfer.types || [], 'application/x-daynote-task') === -1) e.dataTransfer.setData('application/x-daynote-task', tid); } catch (err) {}
+      setTimeout(function () { showTaskTrash(tid); }, 0);
+      return;
+    }
+    var el = e.target && e.target.closest && e.target.closest('[data-note-id]');
+    if (!el || !e.dataTransfer) return;
+    var id = el.getAttribute('data-note-id');
+    try { if (Array.prototype.indexOf.call(e.dataTransfer.types || [], NOTE_T) === -1) e.dataTransfer.setData(NOTE_T, id); } catch (err) {}
+    setTimeout(function () { showDock(id); }, 0);   // 끌기 시작한 그 순간에 화면을 바꾸면 끌기가 취소된다
+  });
+  document.addEventListener('dragend', function () { setTimeout(hideDock, 0); });
+  document.addEventListener('drop', function () { setTimeout(hideDock, 0); });
 
   // 마감 지난 할 일을 지금 + 24시간으로 (Ctrl+Z 로 되돌릴 수 있다)
   function postponeOverdue(taskId) {
@@ -583,7 +778,7 @@
   window.Daynote.ui = {
     h: h, icon: icon, toast: toast, undoToast: undoToast, modal: modal, confirm: confirmDialog, menu: menu, closeMenu: closeMenu, popover: popover,
     kindChip: kindChip, KIND_LABEL: KIND_LABEL, KIND_ICON: KIND_ICON, josa: josa,
-    stepsPanel: stepsPanel, stepsToggle: stepsToggle, stepTree: stepTree,
+    stepsPanel: stepsPanel, stepsToggle: stepsToggle, stepTree: stepTree, dueEditor: dueEditor, projectPicker: projectPicker, projectPickChip: projectPickChip,
     projectChip: projectChip, dueChip: dueChip, postponeOverdue: postponeOverdue, scheduleChip: scheduleChip, estimateChip: estimateChip,
     statusChips: statusChips, sourceChip: sourceChip, taskRow: taskRow, projectOptions: projectOptions, highlight: highlight
   };

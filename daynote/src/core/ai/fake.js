@@ -163,6 +163,12 @@
         used[l] = true;
       });
     });
+    // 할 일 목록으로 끌어 놓은 메모 — 첫 줄이 할 일
+    if (input.moveToTask && !tasks.length && !events.length && body.length) {
+      var first = body[0], fh = SG.parseDueHint(first, ref);
+      tasks.push({ title: actionTitle(first.replace(BULLET_RE, '').trim()), evidence: { quote: first.trim(), line: input.lines.indexOf(first) + 1 },
+        due: { text: fh ? fh.phrase : null, date: fh ? fh.dueDate : null, time: null }, project_hint: null, basis: 'explicit' });
+    }
     // 목록으로 적은 글("보드 디버깅 / 1. 전원 / 2. 클럭") — 맨 위 줄이 할 일 (아래 항목은 앱이 세부 할 일로)
     if (!tasks.length && !events.length && ST) ST.outlineGroups(input.lines.join('\n')).forEach(function (g) {
       var raw = input.lines[g.line];

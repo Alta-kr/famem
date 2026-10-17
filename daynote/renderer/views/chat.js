@@ -658,7 +658,7 @@
       h('div.work-head',
         h('span.work-state', ui.icon(t.status === 'in_progress' ? 'play' : t.status === 'paused' ? 'pause' : done ? 'check' : 'task'), WORK_STATE[t.status] || '할 일',
           mins ? h('span.work-time', ' · ' + (mins >= 60 ? Math.floor(mins / 60) + '시간 ' + (mins % 60) + '분' : mins + '분')) : null),
-        ui.dueChip(t, now)),
+        ui.dueChip(t, now, { add: true })),
       h('div.work-title', { title: '오른쪽 클릭: 자세히 편집·미루기·삭제', oncontextmenu: function (e) { e.preventDefault(); A.taskMenu(t.id, e.currentTarget); } }, t.title || '(제목 없음)'),
       timeLine(st, t),
       t.status === 'paused' ? resumeBox(t) : (t.resumeNote && t.status === 'in_progress' ? h('div.work-resume', ui.icon('info'), '이어서: ' + t.resumeNote) : null),
