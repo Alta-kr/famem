@@ -345,7 +345,7 @@
       (longBreak ? '네 번 했으니 15분쯤 길게 쉬어 가요.' : '5분 쉬어 가면 다음 집중이 더 잘 돼요.'), actions: ['rest'] });
   }
 
-  // 휴식 — 앱 전체를 가리는 휴식 화면 (renderer/rest.js). 모드는 설정의 기본값, 없으면 고르기
+  // 휴식 — 앱 전체를 가리는 휴식 화면 (renderer/rest.js). 모드를 주지 않으면 쉬기 전 화면에서 고른다
   function rest(mode) {
     if (DN.rest) DN.rest.open({ mode: mode });
     else post({ kind: 'rest', stretches: AS.pickStretches(3, Date.now()), timerEnd: null });

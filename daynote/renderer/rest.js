@@ -76,7 +76,7 @@
   }
 
   // ---------------------------------------------------------------- 열기·닫기
-  // opts.mode: 바로 이 모드로 / 없으면 설정의 기본 모드 (기본 '고르기' 면 쉬기 전 화면부터)
+  // opts.mode: 바로 이 모드로 (예: 집중 타이머 끝·명령) / 없으면 늘 쉬기 전 화면에서 고른다 — 쉬는 방법은 그때그때 스스로 고르게 (통제감)
   function open(opts) {
     opts = opts || {};
     if (cur) return;
@@ -89,7 +89,7 @@
     document.documentElement.classList.add('is-resting');
     cur = { el: el, pausedIds: pausedIds, parked: [], minutes: prefs().restMinutes || 3, prevFocus: document.activeElement, sound: !!prefs().restSound };
     el.addEventListener('keydown', function (e) { if (e.key === 'Escape') { e.preventDefault(); if (cur && cur.mode) finish(); else back(false); } });
-    var mode = normMode(opts.mode || prefs().restMode);
+    var mode = normMode(opts.mode);
     if (mode) start(mode, true); else prepare();
   }
   function clearTimers() { if (cur) { clearInterval(cur.timer); clearTimeout(cur.step); clearInterval(cur.step); cur.timer = null; cur.step = null; } }
@@ -146,12 +146,13 @@
       parkBox(false),
       h('div.rest-label', '어떻게 쉴까요?'),
       h('div.rest-cards', MODES.map(function (m) {
-        return h('button.rest-card', { type: 'button', onclick: function () { start(m.id, true); } },
-          h('span.rest-card-icon', ui.icon(m.icon)), h('b', m.label), h('span.rest-card-desc', m.desc), h('span.rest-card-why', m.why));
+        var isDef = m.id === normMode(prefs().restMode);
+        return h('button.rest-card' + (isDef ? '.is-default' : ''), { type: 'button', onclick: function () { start(m.id, true); } },
+          h('span.rest-card-icon', ui.icon(m.icon)), h('b', m.label, isDef ? h('span.rest-card-tag', '기본') : null), h('span.rest-card-desc', m.desc), h('span.rest-card-why', m.why));
       })),
       durationRow(), soundRow(),
       h('div.rest-actions', h('button.btn.btn-ghost', { type: 'button', onclick: function () { back(false); } }, '쉬지 않고 돌아가기'))));
-    var first = el.querySelector('.rest-card'); if (first) first.focus();
+    var first = el.querySelector('.rest-card.is-default') || el.querySelector('.rest-card'); if (first) first.focus();
   }
   function durationRow() {
     return h('div.rest-durations', { role: 'group', 'aria-label': '쉬는 시간' }, h('span', '쉬는 시간'),

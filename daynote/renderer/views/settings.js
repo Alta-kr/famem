@@ -263,7 +263,7 @@
     // ---------------------------------------------------------------- 휴식 — 기본 모드, 모드별 평가 비교
     var restModeSel = h('select.select#set-rest-mode', { 'aria-label': '휴식 기본 모드',
       onchange: function () { var v = restModeSel.value; S.mutate(null, function (s2) { s2.prefs.restMode = v || null; }, { silent: true }); } },
-      [h('option', { value: '', selected: !(DN.rest && DN.rest.normMode(st.prefs.restMode)) }, '매번 고르기')].concat((DN.rest ? DN.rest.MODES : []).map(function (m) {
+      [h('option', { value: '', selected: !(DN.rest && DN.rest.normMode(st.prefs.restMode)) }, '없음')].concat((DN.rest ? DN.rest.MODES : []).map(function (m) {
         return h('option', { value: m.id, selected: DN.rest.normMode(st.prefs.restMode) === m.id }, m.label);
       })));
     var stats = DN.rest ? DN.rest.stats(st) : [];
@@ -271,7 +271,8 @@
     var best = stats.filter(function (r) { return r.score != null; }).sort(function (a, b) { return b.score - a.score || b.count - a.count; })[0];
     var restCard = h('section.card.settings-card', { 'aria-labelledby': 'set-rest' },
       h('h3#set-rest', '휴식'),
-      h('label.check-row', { for: 'set-rest-mode' }, '휴식 버튼을 누르면 ', restModeSel),
+      h('label.check-row', { for: 'set-rest-mode' }, '휴식 화면에서 먼저 골라 둘 모드 ', restModeSel),
+      h('p.help', '휴식 버튼을 누르면 늘 쉬는 방법을 고르는 화면이 먼저 나와요. 여기서 고른 모드는 ‘기본’ 표시가 붙고, Enter 만 누르면 바로 시작해요.'),
       h('p.help', '모드마다 써 보고 끝날 때 평가를 남기면, 어떤 휴식이 나에게 맞는지 아래에서 비교할 수 있어요.'),
       anyRest ? h('table.rest-stats',
         h('tr', h('th', '모드'), h('th', '쓴 횟수'), h('th', '좋았어요 / 보통 / 별로'), h('th', '만족도')),
