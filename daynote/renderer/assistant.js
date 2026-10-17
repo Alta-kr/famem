@@ -321,7 +321,7 @@
   function rested() { workRun = null; }
   function doneCount(st) {
     return M.liveTasks(st).reduce(function (n, t) {
-      return n + (t.status === 'done' ? 1 : 0) + (t.steps || []).filter(function (x) { return x.done; }).length;
+      return n + (t.status === 'done' ? 1 : 0) + DN.steps.count(t.steps).done;
     }, 0);
   }
   // 끝낸 직후 — 쉴 때가 됐으면 쉬기를, 아니면 (할 일을 끝냈을 때) 평소 제안

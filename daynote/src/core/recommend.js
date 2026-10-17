@@ -98,12 +98,18 @@
     return null;
   }
 
+  // 세부 할 일은 아래 단계를 가질 수 있다 — 아래 단계가 없는 단계만 (적힌 순서대로)
+  function leafSteps(list) {
+    var out = [];
+    (list || []).forEach(function (s) { if (s.steps && s.steps.length) out = out.concat(leafSteps(s.steps)); else out.push(s); });
+    return out;
+  }
   function fitOf(t, T) {
     var est = t.estimateMinutes;
     if (T == null) return { fit: 'open', used: est };
     if (est == null) return { fit: 'unknown', used: null };
     if (est <= T) return { fit: 'fits', used: est };
-    var steps = (t.steps || []).filter(function (s) { return !s.done && s.estimateMinutes != null && s.estimateMinutes <= T; });
+    var steps = leafSteps(t.steps).filter(function (s) { return !s.done && s.estimateMinutes != null && s.estimateMinutes <= T; });
     if (steps.length) return { fit: 'step_fits', used: steps[0].estimateMinutes, step: steps[0] };
     return { fit: 'too_long', used: est };
   }

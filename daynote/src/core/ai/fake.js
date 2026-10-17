@@ -8,12 +8,12 @@
 
 (function (factory) {
   var deps = (typeof module !== 'undefined' && module.exports)
-    ? { dates: require('../dates'), suggest: require('../suggest'), validate: require('./validate') }
-    : { dates: window.Daynote.dates, suggest: window.Daynote.suggest, validate: window.Daynote.aiValidate };
-  var api = factory(deps.dates, deps.suggest, deps.validate);
+    ? { dates: require('../dates'), suggest: require('../suggest'), validate: require('./validate'), steps: require('../steps') }
+    : { dates: window.Daynote.dates, suggest: window.Daynote.suggest, validate: window.Daynote.aiValidate, steps: window.Daynote.steps };
+  var api = factory(deps.dates, deps.suggest, deps.validate, deps.steps);
   if (typeof module !== 'undefined' && module.exports) module.exports = api;
   if (typeof window !== 'undefined') { window.Daynote = window.Daynote || {}; window.Daynote.aiFake = api; }
-})(function (D, SG, V) {
+})(function (D, SG, V, ST) {
   var EVENT_RE = /(회의|미팅|면담|발표|리뷰|세미나|워크숍|약속|점심|저녁|통화|콜)/;
 
   // 데모용: 요청 문장 → 짧은 행동형 제목 (실제 AI 는 프롬프트 v2 규칙을 따른다)
@@ -162,6 +162,14 @@
           due: due, do_at: { text: null, date: null, time: null } });
         used[l] = true;
       });
+    });
+    // 목록으로 적은 글("보드 디버깅 / 1. 전원 / 2. 클럭") — 맨 위 줄이 할 일 (아래 항목은 앱이 세부 할 일로)
+    if (!tasks.length && !events.length && ST) ST.outlineGroups(input.lines.join('\n')).forEach(function (g) {
+      var raw = input.lines[g.line];
+      if (!raw || used[raw]) return;
+      var hint = SG.parseDueHint(g.title, ref);
+      tasks.push({ title: actionTitle(g.title), evidence: { quote: raw.trim(), line: g.line + 1 },
+        due: { text: hint ? hint.phrase : null, date: hint ? hint.dueDate : null, time: null }, project_hint: null, basis: 'explicit' });
     });
     if (!tasks.length && !events.length && body.length === 1 && !used[body[0]]) {
       var t = body[0].replace(BULLET_RE, '').trim();

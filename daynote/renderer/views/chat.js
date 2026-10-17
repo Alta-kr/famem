@@ -641,13 +641,7 @@
     var done = t.status === 'done';
     var mins = M.workedMinutes(t, now);
     var steps = t.steps || [];
-    var stepsDone = steps.filter(function (x) { return x.done; }).length;
-    function toggleStep(id) {
-      S.mutate('단계 체크', function (s) {
-        var tk = M.byId(s.tasks, t.id);
-        if (tk) M.updateTask(s, tk.id, { steps: tk.steps.map(function (x) { return x.id === id ? Object.assign({}, x, { done: !x.done }) : x; }) }, A.now());
-      });
-    }
+    var stepCnt = DN.steps.count(steps);
     var stateBtn = done ? null
       : t.status === 'in_progress'
         ? h('button.btn.btn-sm', { type: 'button', onclick: function () { A.pauseTask(t.id); } }, ui.icon('pause'), '일시 정지')
@@ -669,13 +663,9 @@
       timeLine(st, t),
       t.status === 'paused' ? resumeBox(t) : (t.resumeNote && t.status === 'in_progress' ? h('div.work-resume', ui.icon('info'), '이어서: ' + t.resumeNote) : null),
       steps.length ? h('div.work-steps',
-        h('div.meta', '단계 ' + stepsDone + '/' + steps.length),
-        progressBar(stepsDone, steps.length),
-        h('ul', steps.map(function (x) {
-          return h('li' + (x.done ? '.is-done' : ''),
-            h('label', h('input', { type: 'checkbox', checked: !!x.done, onchange: function () { toggleStep(x.id); } }),
-              h('span', x.title), x.estimateMinutes ? h('span.meta', ' · ' + x.estimateMinutes + '분') : null));
-        }))) : null,
+        h('div.meta', '단계 ' + stepCnt.done + '/' + stepCnt.total),
+        progressBar(stepCnt.done, stepCnt.total),
+        ui.stepTree(t, { editable: !done, label: '단계 체크' })) : null,
       done
         ? h('div.msg-actions', h('span.meta', '완료했어요.'), h('button.btn.btn-xs.btn-ghost', { type: 'button', onclick: function () { A.toggleDone(t.id); } }, '완료 취소'))
         : h('div.msg-actions',

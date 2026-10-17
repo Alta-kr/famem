@@ -1609,3 +1609,21 @@ html.is-resting .toast, html.is-resting .toasts { display: none !important; }   
 .rest-top, .rest-bottom { position: relative; z-index: 2; }
 .rest-card.is-default { border-color: #7C8CF8; }
 .rest-card-tag { margin-left: 6px; padding: 1px 7px; border-radius: 999px; background: rgba(124,140,248,.2); color: #B7C0FF; font-size: 11px; font-weight: 600; vertical-align: middle; }
+
+/* 세부 할 일 나무 — 하위 단계는 들여 쓰고 왼쪽 선으로 묶는다 */
+.step-tree { list-style: none; margin: 0; padding: 0; display: flex; flex-direction: column; gap: 2px; }
+.step-tree.is-sub { margin: 2px 0 4px 9px; padding-left: 14px; border-left: 1px solid var(--border-deco); }
+.step-row { display: flex; align-items: center; gap: 6px; min-height: 28px; }
+.step-row label { flex: 1; min-width: 0; display: flex; align-items: baseline; gap: 8px; padding: 3px 0; cursor: pointer; font-size: 13.5px; }
+.step-row label .meta { font-variant-numeric: tabular-nums; }
+.step-row .step-sub-count { margin-left: auto; }
+.step-tree li.is-done > .step-row .task-step-title { text-decoration: line-through; color: var(--text-secondary); }
+.step-tools { display: inline-flex; gap: 2px; opacity: 0; transition: opacity 120ms; }
+.step-row:hover .step-tools, .step-row:focus-within .step-tools { opacity: 1; }
+.step-tool { all: unset; cursor: pointer; font-size: 12px; color: var(--text-secondary); padding: 2px 6px; border-radius: 6px; display: inline-flex; align-items: center; }
+.step-tool:hover, .step-tool:focus-visible { background: var(--surface-hover, var(--surface-subtle)); color: var(--text); }
+.step-tool svg { width: 12px; height: 12px; }
+.step-sub-add { margin: 2px 0 4px 23px; width: calc(100% - 23px); }
+.work-steps .step-tree { margin-top: 4px; }
+/* 메모를 할 일 목록에 끌어 놓기 */
+.home-sec.is-note-drop { outline: 2px dashed var(--primary); outline-offset: -4px; border-radius: 12px; }

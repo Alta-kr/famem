@@ -176,6 +176,16 @@
 
   // ------------------------------------------------------------------ 공통 동작
   // 되돌리기 · 다시 실행 — 알림에서 반대 동작을 바로 누를 수 있게
+  // 메모를 할 일로 — 오늘 화면에서 메모를 할 일 목록으로 끌어 놓을 때
+  function memoToTask(noteId) {
+    var n = M.byId(S.state.notes, noteId);
+    if (!n || n.deletedAt) return null;
+    var t = DN.capture.toTask(noteId);
+    if (!t) return null;
+    var cnt = DN.steps.count(t.steps);
+    ui.undoToast('‘' + t.title + '’ 할 일로 정리했어요' + (cnt.total ? ' — 세부 할 일 ' + cnt.total + '개' : '') + '.');
+    return t;
+  }
   function undo() {
     var l = S.undo();
     if (!l) { ui.toast('되돌릴 작업이 없어요.'); return null; }
@@ -362,7 +372,7 @@
   }
 
   DN.app = {
-    now: now, go: go, undo: undo, redo: redo, refresh: function () { renderView(); renderNav(); }, openTask: openTask, closeDetail: closeDetail, toggleDone: toggleDone, startTask: startTask, pauseTask: pauseTask, returnToTodo: returnToTodo,
+    now: now, go: go, undo: undo, redo: redo, memoToTask: memoToTask, refresh: function () { renderView(); renderNav(); }, openTask: openTask, closeDetail: closeDetail, toggleDone: toggleDone, startTask: startTask, pauseTask: pauseTask, returnToTodo: returnToTodo,
     snoozeMenu: snoozeMenu, taskMenu: taskMenu, deleteTask: deleteTask, scheduleTask: scheduleTask, openRef: openRef, applyPrefs: applyPrefs,
     quickCapture: quickCapture, saveQuick: saveQuick, loadSample: loadSample, clearSample: clearSample,
     current: function () { return cur; }, detailTaskId: function () { return detailTaskId; },

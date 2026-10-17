@@ -129,17 +129,22 @@
     secTasks.id = 'home-sec-tasks';
     secMemos.id = 'home-sec-memos';
     // 작업 공간(채팅)의 작업 카드를 여기로 끌어 놓으면 '할 일' 로 돌려보낸다 (진행 중·일시 정지 → 할 일)
-    function isWork(e) { return e.dataTransfer && Array.prototype.indexOf.call(e.dataTransfer.types || [], 'application/x-daynote-work') !== -1; }
+    //   메모를 끌어 놓으면 할 일로 정리한다 — 첫 줄이 제목, 아래 목록·들여쓴 줄은 세부 할 일 (세부 할 일 아래 단계까지)
+    function hasType(e, t) { return e.dataTransfer && Array.prototype.indexOf.call(e.dataTransfer.types || [], t) !== -1; }
+    function isWork(e) { return hasType(e, 'application/x-daynote-work'); }
+    function isNote(e) { return hasType(e, 'application/x-daynote-note'); }
     secTasks.addEventListener('dragover', function (e) {
-      if (!isWork(e)) return;
+      if (!isWork(e) && !isNote(e)) return;
       e.preventDefault(); e.dataTransfer.dropEffect = 'move';
       secTasks.classList.add('is-drop-target');
+      secTasks.classList.toggle('is-note-drop', isNote(e));
     });
-    secTasks.addEventListener('dragleave', function (e) { if (!secTasks.contains(e.relatedTarget)) secTasks.classList.remove('is-drop-target'); });
+    secTasks.addEventListener('dragleave', function (e) { if (!secTasks.contains(e.relatedTarget)) secTasks.classList.remove('is-drop-target', 'is-note-drop'); });
     secTasks.addEventListener('drop', function (e) {
-      if (!isWork(e)) return;
+      if (!isWork(e) && !isNote(e)) return;
       e.preventDefault();
-      secTasks.classList.remove('is-drop-target');
+      secTasks.classList.remove('is-drop-target', 'is-note-drop');
+      if (isNote(e)) { A.memoToTask(e.dataTransfer.getData('application/x-daynote-note')); return; }
       DN.assistant.returnWork(e.dataTransfer.getData('application/x-daynote-work'));
     });
     var secs = [secTasks, secMemos, agenda(st, now)];
@@ -275,7 +280,7 @@
     var A = DN.app;
     var done = t.status === 'done';
     var steps = t.steps || [];
-    var stepsDone = steps.filter(function (s) { return s.done; }).length;
+    var stepCnt = DN.steps.count(steps);
     var check = h('input.check', { type: 'checkbox', checked: done, 'aria-label': '‘' + t.title + '’ ' + (done ? '완료 취소' : '완료'),
       onclick: function (e) { e.stopPropagation(); }, onchange: function () { A.toggleDone(t.id); } });
     var proj = t.projectId && M.byId(st.projects, t.projectId);
@@ -285,7 +290,7 @@
       t.status === 'paused' ? h('span.chip.chip-paused', ui.icon('pause'), '일시 정지') : null,
       ui.dueChip(t, now),
       DN.habits && DN.habits.isWeekGoal(t, now) ? h('span.chip.chip-goal', { title: '이번 주 꼭 끝낼 일' }, '★ 이번 주') : null,
-      steps.length ? h('span.chip.chip-steps', '단계 ' + stepsDone + '/' + steps.length, h('span.mini-bar', h('span', { style: { width: Math.round(stepsDone / steps.length * 100) + '%' } }))) : null,
+      steps.length ? h('span.chip.chip-steps', '단계 ' + stepCnt.done + '/' + stepCnt.total, h('span.mini-bar', h('span', { style: { width: Math.round(stepCnt.done / stepCnt.total * 100) + '%' } }))) : null,
       pendingDraft ? h('button.chip.chip-guess.chip-btn', { type: 'button', title: 'AI가 나눠 둔 단계 보기', onclick: function (e) { e.stopPropagation(); DN.assistant.breakdown(t.id); } }, '나눠 둔 단계 있음') : null,
       proj ? h('span.chip.chip-project', { style: { '--pc': proj.color } }, proj.name) : null);
     var main = h('div.home-main', h('div.home-row-title', t.title || '(제목 없음)'), meta.childNodes.length ? meta : null);
@@ -324,7 +329,7 @@
     var title = M.noteTitle(n);
     var preview = (body[0] && (body[0] === title || body[0].indexOf(title) === 0) ? body.slice(1) : body).join(' ');
     return h('li.home-row.home-memo', {
-      'data-id': n.id, 'data-kind': kind, draggable: 'true', tabindex: '0',
+      'data-id': n.id, 'data-note-id': n.id, 'data-kind': kind, draggable: 'true', tabindex: '0', title: '끌어서 할 일 목록에 놓으면 할 일로 정리해요',
       onclick: function () { A.go('notes', { noteId: n.id }); },
       onkeydown: function (e) { if (e.target === e.currentTarget && e.key === 'Enter') { e.preventDefault(); A.go('notes', { noteId: n.id }); } }
     },
@@ -422,6 +427,9 @@
       e.dataTransfer.effectAllowed = tid ? 'copyMove' : 'move';
       e.dataTransfer.setData('text/plain', dragId);
       if (tid) e.dataTransfer.setData('application/x-daynote-task', tid);
+      // 메모는 할 일 목록으로 끌어 놓으면 할 일이 된다
+      var nid = li.getAttribute('data-note-id');
+      if (nid) { e.dataTransfer.effectAllowed = 'copyMove'; e.dataTransfer.setData('application/x-daynote-note', nid); }
     });
     ul.addEventListener('dragover', function (e) {
       if (!dragId) return;

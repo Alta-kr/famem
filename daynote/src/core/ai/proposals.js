@@ -13,12 +13,12 @@
 
 (function (factory) {
   var deps = (typeof module !== 'undefined' && module.exports)
-    ? { dates: require('../dates'), model: require('../model'), suggest: require('../suggest'), validate: require('./validate') }
-    : { dates: window.Daynote.dates, model: window.Daynote.model, suggest: window.Daynote.suggest, validate: window.Daynote.aiValidate };
-  var api = factory(deps.dates, deps.model, deps.suggest, deps.validate);
+    ? { dates: require('../dates'), model: require('../model'), suggest: require('../suggest'), validate: require('./validate'), steps: require('../steps') }
+    : { dates: window.Daynote.dates, model: window.Daynote.model, suggest: window.Daynote.suggest, validate: window.Daynote.aiValidate, steps: window.Daynote.steps };
+  var api = factory(deps.dates, deps.model, deps.suggest, deps.validate, deps.steps);
   if (typeof module !== 'undefined' && module.exports) module.exports = api;
   if (typeof window !== 'undefined') { window.Daynote = window.Daynote || {}; window.Daynote.aiProposals = api; }
-})(function (D, M, SG, V) {
+})(function (D, M, SG, V, ST) {
   var norm = SG.normalizeText;
   var RAW_LIMIT = 60000;
 
@@ -383,6 +383,9 @@
     });
     var res = ids.length ? applySelections(state, ids, now) : { ok: true, created: [] };
     var created = res.ok ? res.created.map(function (c) { return { kind: c.kind, id: c.id }; }) : [];
+    // 들여쓰기·번호로 적은 아래 항목은 위 할 일의 세부 할 일로 ("인공조류 보드 디버깅\n 1. 전원 디버깅\n 2. 클럭 확인")
+    var outlined = {};
+    created = groupOutline(state, note, created, outlined);
     Object.keys(guessedDur).forEach(function (pid) {
       var gp = M.byId(state.proposals, pid);
       var gb = gp && gp.resultRef && gp.resultRef.kind === 'block' ? M.byId(state.blocks, gp.resultRef.id) : null;
@@ -416,6 +419,8 @@
     if (entryType === 'done' && !completed.length) entryType = 'update';
     if (entryType === 'update' && !updated.length) entryType = 'done';
 
+    // 글 전체가 목록 하나(할 일 + 세부 할 일)로 들어갔으면 할 일만 적은 글이다
+    if (outlined.all && created.length && (entryType === 'mixed' || entryType === 'memo')) entryType = 'task';
     if (entryType === 'task' && !created.length) entryType = 'memo';   // 할 일로 못 만들었으면 메모로 남긴다
     // 링크는 할 일이 같이 생겨도 자료로 남겨 둔다 (원문 URL 을 보관함에서 찾을 수 있게)
     var keepLink = note.kindByUser ? note.kind === 'link' : out.note_kind === 'link';
@@ -498,6 +503,46 @@
       out.push(rec);
     });
     return out;
+  }
+
+  // 목록으로 적은 글 — AI 가 아래 항목을 따로 할 일로 만들었어도 위 줄의 할 일 하나로 모으고, 아래 항목은 세부 할 일로.
+  //   위 줄이 할 일이 아니었으면 처음 만든 아래 항목 할 일을 위 줄 제목으로 바꿔 쓴다
+  var MARK_STRIP = /^[ \t\u3000]*((?:\d{1,3}|[a-zA-Z]|[가나다라마바사아자차카타파하])[.)]|\(\d{1,3}\)|[-*+•·▪◦‣–]|\[[ xX]\])?\s*/;
+  function groupOutline(state, note, created, info) {
+    var body = String((note && note.body) || '');
+    var groups = ST.outlineGroups(body);
+    if (!groups.length) return created;
+    var lines = body.split(/\r?\n/).map(function (l) { return { full: nospace(l), bare: nospace(l.replace(MARK_STRIP, '')) }; });
+    function lineOf(t) {
+      var ex = nospace(((t.sources || [])[0] || {}).excerpt || t.title);
+      if (!ex) return -1;
+      for (var i = 0; i < lines.length; i++) {
+        var L = lines[i];
+        if (!L.bare) continue;
+        if (L.full === ex || L.bare === ex || (ex.length >= 2 && L.full.indexOf(ex) !== -1) || (L.bare.length >= 2 && ex.indexOf(L.bare) !== -1)) return i;
+      }
+      return -1;
+    }
+    var drop = {}, covered = {};
+    groups.forEach(function (g) {
+      var members = created.filter(function (c) { return c.kind === 'task' && !drop[c.id]; }).map(function (c) {
+        var t = M.byId(state.tasks, c.id);
+        return t ? { t: t, line: lineOf(t) } : null;
+      }).filter(function (x) { return x && (x.line === g.line || g.childLines.indexOf(x.line) !== -1); });
+      if (!members.length) return;
+      var keep = members.filter(function (x) { return x.line === g.line; })[0] || members[0];
+      if (keep.line !== g.line) keep.t.title = g.title;
+      if (!(keep.t.steps || []).length) keep.t.steps = g.steps;
+      keep.t.breakdown = null;   // 직접 나눠 적었으니 AI 단계 초안은 쓰지 않는다
+      members.forEach(function (x) { if (x !== keep) drop[x.t.id] = true; });
+      covered[g.line] = true; g.childLines.forEach(function (l) { covered[l] = true; });
+    });
+    // 빈 줄을 빼고 모든 줄이 할 일(제목·세부 할 일)로 들어갔는가
+    if (info) info.all = lines.every(function (L, i) { return !L.bare || covered[i]; }) && Object.keys(covered).length > 0;
+    if (!Object.keys(drop).length) return created;
+    state.tasks = state.tasks.filter(function (t) { return !drop[t.id]; });
+    state.blocks = state.blocks.filter(function (b) { return !drop[b.taskId]; });
+    return created.filter(function (c) { return !drop[c.id]; });
   }
 
   // 묶음 말을 한 건으로 받은 경우 되돌리기 — "마감 지난 것들은 2시간 뒤로" 를 AI 가 작업 공간의 할 일 하나로 받으면
@@ -622,16 +667,20 @@
     var note = M.byId(state.notes, noteId);
     if (!note) return null;
     var text = (note.body || note.title || '').split('\n').map(function (l) { return l.trim(); }).filter(Boolean);
-    var first = (text[0] || note.title || '').replace(/^\s*(?:[-*+]|\d+[.)])?\s*(\[[ xX]\]\s*)?/, '').trim();
+    // 첫 줄이 제목, 그 아래 줄(목록·들여쓰기)은 세부 할 일 — 세부 할 일도 아래 단계를 가질 수 있다
+    var shaped = ST.taskFromText(note.body || note.title || '');
+    var first = shaped ? shaped.title : '';
     var task = M.addTask(state, {
       title: first.length > 120 ? first.slice(0, 117) + '…' : first || '(제목 없음)',
+      steps: shaped ? shaped.steps : [],
       projectId: note.projectId || null,
       sources: [{ type: 'note', refId: note.id, excerpt: text.join(' ').slice(0, 300) }],
       origin: 'user'
     }, now);
-    note.captureRole = text.length <= 1 ? 'task_source' : 'memo';
+    // 글 전체가 제목과 세부 할 일로 들어갔으니 원문은 할 일의 출처로만 둔다 (할 일을 지우면 다시 메모로 보인다)
+    note.captureRole = shaped ? 'task_source' : 'memo';
     note.capture = Object.assign({}, note.capture || {}, {
-      status: (note.capture && note.capture.status) || 'done', entryType: text.length <= 1 ? 'task' : 'mixed',
+      status: (note.capture && note.capture.status) || 'done', entryType: shaped ? 'task' : 'mixed',
       created: ((note.capture && note.capture.created) || []).concat({ kind: 'task', id: task.id }), changedByUser: true
     });
     return task;

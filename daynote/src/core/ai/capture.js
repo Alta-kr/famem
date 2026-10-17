@@ -15,7 +15,7 @@
   if (node) module.exports = api;
   if (typeof window !== 'undefined') { window.Daynote = window.Daynote || {}; window.Daynote.aiCapture = api; }
 })(function (O, CMD) {
-  var PROMPT_VERSION = 'capture.v9';   // v2: 큰 할 일 감지 + 단계 초안(보관만) · v3: 메모 종류(메모/아이디어/링크) · v4: 시간 정한 할 일(do_at) · v5: 완료 보고(done_tasks) · v6: 날짜 바꾸기(updated_tasks) · v7: 채팅 명령(commands) · v8: 작업 공간 할 일이 있어도 묶음 말은 묶음으로 · v9: 프로젝트 묶음 · 날 단위로 미루기
+  var PROMPT_VERSION = 'capture.v10';   // v2: 큰 할 일 감지 + 단계 초안(보관만) · v3: 메모 종류(메모/아이디어/링크) · v4: 시간 정한 할 일(do_at) · v5: 완료 보고(done_tasks) · v6: 날짜 바꾸기(updated_tasks) · v7: 채팅 명령(commands) · v8: 작업 공간 할 일이 있어도 묶음 말은 묶음으로 · v9: 프로젝트 묶음 · 날 단위로 미루기 · v10: 목록은 할 일 하나 + 세부 할 일
   var ENTRY_TYPES = ['memo', 'task', 'mixed', 'done', 'update', 'command'];
   var NOTE_KINDS = ['memo', 'idea', 'link'];
 
@@ -54,6 +54,8 @@
     'K. 묶음으로 바꾸기: "마감 지난 것 전부 두 시간 후로 미뤄줘", "오늘 마감인 거 다 내일로", "온보딩 프로젝트 할 일 전부 다음 주 월요일로", "사내 세미나 관련 할 일은 마감 하루 미뤄줘" 처럼 여러 할 일을 묶어서 말하면 bulk_updates 에 넣습니다.',
     '   filter: overdue(마감 지난 것) · due_today(오늘 마감) · no_due(마감 없는 것) · in_progress(진행 중) · paused(일시 정지) · all_open(남은 할 일 전부). project_hint: 특정 프로젝트로 좁히면 그 이름, 아니면 null.',
     '   due·do_at 은 I 와 같은 규칙입니다. 어떤 할 일이 그 묶음인지는 앱이 고르니 updated_tasks 에 하나씩 나열하지 마세요. 묶음 지시가 없으면 빈 배열입니다.',
+    'L. 목록으로 적은 할 일: 한 줄 아래에 들여쓰기나 번호·기호(1. 2. / - / •)로 적은 항목들은 위 줄의 세부 할 일입니다.',
+    '   예) "인공조류 보드 디버깅\n 1. 전원 디버깅\n 2. 클럭 확인" → tasks 에는 "인공조류 보드 디버깅" 하나만 넣습니다. 아래 항목을 따로 tasks 로 만들지 마세요 (앱이 세부 할 일로 넣습니다).',
     'J. 작업 공간의 할 일: <context> 에 "작업 공간에 올려 둔 할 일" 이 있으면, 사용자가 대상을 말하지 않고 "마감 두 시간 후로 미뤄줘", "이거 끝났어", "이거 내일로" 처럼 쓴 글은 그 할 일 이야기입니다.',
     '   이때 done_tasks·updated_tasks 의 title 은 그 할 일 제목을 그대로 씁니다. 다른 할 일 이름이 분명히 적혀 있으면 그쪽입니다. 이런 지시를 새 할 일로 만들지 마세요.',
     '   단, "마감 지난 것들은 2시간 뒤로", "밀린 거 내일로" 처럼 묶음을 말하면 작업 공간의 할 일이 아니라 K(bulk_updates) 입니다 (전부·모두 가 없어도).',

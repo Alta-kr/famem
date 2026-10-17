@@ -56,7 +56,7 @@ daynote/
 │  ├─ habits.js          연구 기반 도움 (계획 오류 보정, 50분 휴식, 하루 마무리, 새 주 목표 …)
 │  └─ ai/
 │     ├─ organizeNote.js 메모 정리 프롬프트·스키마 (기준)
-│     ├─ capture.js      던진 글 분류 프롬프트·스키마 (capture.v9)
+│     ├─ capture.js      던진 글 분류 프롬프트·스키마 (capture.v10)
 │     ├─ validate.js     AI 결과 검증 — 근거 인용, 날짜·시각 재계산("30분 후"), 중복
 │     ├─ proposals.js    검증 결과 반영 — 할 일·일정 만들기, 완료 보고, 날짜 바꾸기, 묶음 바꾸기, 종류 바꾸기·되돌리기
 │     ├─ commands.js     채팅 명령 — 바로 알아듣기(matchLocal), AI 명령 검증(resolve)

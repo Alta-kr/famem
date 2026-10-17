@@ -464,16 +464,62 @@
   // 펼친 상태는 다시 그려도(체크 → 저장 → 다시 그림) 유지된다. 상세 편집은 오른쪽 클릭 메뉴의 '자세히 편집'.
   var expanded = {};
   var refocusAdd = null;
-  function stepsPanel(task) {
+  var addingUnder = {};   // taskId → 하위 단계를 적는 중인 단계 id
+  function setTaskSteps(taskId, fn, label) {
     var S = window.Daynote.store, A = window.Daynote.app;
+    S.mutate(label, function (s) {
+      var t = M.byId(s.tasks, taskId);
+      if (t) M.updateTask(s, t.id, { steps: fn(t.steps || []) }, A.now());
+    });
+  }
+  // 세부 할 일 나무 — opts.editable 이면 단계마다 [+ 하위] [×]. 체크하면 아래 단계도, 아래를 다 끝내면 위 단계도 끝
+  function stepTree(task, opts) {
+    opts = opts || {};
+    var ST = window.Daynote.steps;
+    var stop = function (e) { e.stopPropagation(); };
+    var done = task.status === 'done';
+    function rows(list, depth) {
+      return h('ul.step-tree' + (depth ? '.is-sub' : ''), list.map(function (x) {
+        var subs = x.steps || [];
+        var adding = opts.editable && addingUnder[task.id] === x.id;
+        var subInput = adding ? h('input.input.task-step-add.step-sub-add', {
+          placeholder: '‘' + x.title + '’ 아래에 추가 (Enter · Esc)', 'aria-label': '‘' + x.title + '’ 하위 단계 추가', onclick: stop,
+          onkeydown: function (e) {
+            e.stopPropagation();
+            if (e.key === 'Escape') { delete addingUnder[task.id]; setTaskSteps(task.id, function (l) { return l; }, null); return; }
+            if (e.key !== 'Enter' || e.isComposing || e.keyCode === 229) return;
+            e.preventDefault();
+            var v = e.currentTarget.value.trim();
+            if (!v) return;
+            setTaskSteps(task.id, function (l) { return ST.add(l, x.id, v); }, '하위 단계 추가');
+          } }) : null;
+        return h('li' + (x.done ? '.is-done' : '') + (subs.length ? '.has-sub' : ''),
+          h('div.step-row',
+            h('label',
+              h('input', { type: 'checkbox', checked: !!x.done, onchange: function () { setTaskSteps(task.id, function (l) { return ST.toggle(l, x.id); }, opts.label || '세부 할 일 체크'); } }),
+              h('span.task-step-title', x.title),
+              x.estimateMinutes ? h('span.meta', x.estimateMinutes + '분') : null,
+              subs.length ? h('span.meta.step-sub-count', ST.count(subs).done + '/' + ST.count(subs).total) : null),
+            opts.editable && !done ? h('span.step-tools',
+              h('button.step-tool', { type: 'button', title: '아래에 하위 단계 추가', 'aria-label': '‘' + x.title + '’ 아래에 하위 단계 추가', onclick: function (e) {
+                e.stopPropagation(); addingUnder[task.id] = x.id; setTaskSteps(task.id, function (l) { return l; }, null);
+              } }, '+ 하위'),
+              h('button.step-tool', { type: 'button', title: '이 단계 빼기', 'aria-label': '‘' + x.title + '’ 빼기', onclick: function (e) {
+                e.stopPropagation(); setTaskSteps(task.id, function (l) { return ST.remove(l, x.id); }, '세부 할 일 빼기');
+              } }, icon('x'))) : null),
+          subs.length ? rows(subs, depth + 1) : null,
+          subInput);
+      }));
+    }
+    var tree = rows(task.steps || [], 0);
+    if (opts.editable && addingUnder[task.id]) setTimeout(function () { var x = tree.querySelector('.step-sub-add'); if (x) x.focus(); }, 0);
+    return tree;
+  }
+  function stepsPanel(task) {
+    var A = window.Daynote.app, ST = window.Daynote.steps;
     var steps = task.steps || [];
     var stop = function (e) { e.stopPropagation(); };
-    function setSteps(fn, label) {
-      S.mutate(label, function (s) {
-        var t = M.byId(s.tasks, task.id);
-        if (t) M.updateTask(s, t.id, { steps: fn((t.steps || []).slice()) }, A.now());
-      });
-    }
+    function setSteps(fn, label) { setTaskSteps(task.id, function (l) { return fn(l.slice()); }, label); }
     var add = h('input.input.task-step-add', {
       placeholder: '+ 세부 할 일 추가 (Enter)', 'aria-label': '‘' + task.title + '’ 세부 할 일 추가',
       onclick: stop,
@@ -487,18 +533,10 @@
         setSteps(function (list) { return list.concat({ id: M.uid('step'), title: v.slice(0, 120), done: false, estimateMinutes: null }); }, '세부 할 일 추가');
       }
     });
-    var done = steps.filter(function (x) { return x.done; }).length;
+    var cnt = ST.count(steps);
     var panel = h('div.task-steps', { onclick: stop, onkeydown: stop },
-      steps.length ? h('div.task-steps-head.meta', '세부 할 일 ' + done + '/' + steps.length) : null,
-      steps.length ? h('ul', steps.map(function (x) {
-        return h('li' + (x.done ? '.is-done' : ''),
-          h('label',
-            h('input', { type: 'checkbox', checked: !!x.done, onchange: function () {
-              setSteps(function (list) { return list.map(function (y) { return y.id === x.id ? Object.assign({}, y, { done: !y.done }) : y; }); }, '세부 할 일 체크');
-            } }),
-            h('span.task-step-title', x.title),
-            x.estimateMinutes ? h('span.meta', x.estimateMinutes + '분') : null));
-      })) : h('div.task-steps-empty',
+      steps.length ? h('div.task-steps-head.meta', '세부 할 일 ' + cnt.done + '/' + cnt.total) : null,
+      steps.length ? stepTree(task, { editable: true }) : h('div.task-steps-empty',
         h('span.meta', '세부 할 일이 아직 없어요.'),
         task.status === 'done' ? null : h('button.btn.btn-xs', { type: 'button', onclick: function () {
           if (A.current().view !== 'today') A.go('today');
@@ -545,7 +583,7 @@
   window.Daynote.ui = {
     h: h, icon: icon, toast: toast, undoToast: undoToast, modal: modal, confirm: confirmDialog, menu: menu, closeMenu: closeMenu, popover: popover,
     kindChip: kindChip, KIND_LABEL: KIND_LABEL, KIND_ICON: KIND_ICON, josa: josa,
-    stepsPanel: stepsPanel, stepsToggle: stepsToggle,
+    stepsPanel: stepsPanel, stepsToggle: stepsToggle, stepTree: stepTree,
     projectChip: projectChip, dueChip: dueChip, postponeOverdue: postponeOverdue, scheduleChip: scheduleChip, estimateChip: estimateChip,
     statusChips: statusChips, sourceChip: sourceChip, taskRow: taskRow, projectOptions: projectOptions, highlight: highlight
   };
