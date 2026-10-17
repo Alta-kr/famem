@@ -75,7 +75,7 @@
 
     var unfinished = open.filter(function (t) {
       if (t.createdAt && t.createdAt > weekEndEod) return false;
-      return (t.dueDate && t.dueDate <= r.weekEnd) || t.status === 'in_progress' || t.status === 'waiting';
+      return (t.dueDate && t.dueDate <= r.weekEnd) || t.status === 'in_progress' || t.status === 'paused' || t.status === 'waiting';
     }).sort(function (a, b) {
       return (a.dueDate || '9999') < (b.dueDate || '9999') ? -1 : (a.dueDate || '9999') > (b.dueDate || '9999') ? 1 : 0;
     }).map(function (t) {

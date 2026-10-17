@@ -291,8 +291,8 @@
   }
 
   // ------------------------------------------------------------------ 종류 칩 (할 일 · 일정 · 메모 · 아이디어 · 링크)
-  var KIND_LABEL = { task: '할 일', event: '일정', memo: '메모', idea: '아이디어', link: '링크' };
-  var KIND_ICON = { task: 'task', event: 'calendar', memo: 'note', idea: 'idea', link: 'link' };
+  var KIND_LABEL = { task: '할 일', event: '일정', memo: '메모', idea: '아이디어', link: '링크', done: '완료', moved: '날짜 변경' };
+  var KIND_ICON = { task: 'task', event: 'calendar', memo: 'note', idea: 'idea', link: 'link', done: 'check', moved: 'calendar' };
   function kindChip(kind, extra) {
     var k = KIND_LABEL[kind] ? kind : 'memo';
     return h('span.chip.chip-kind.kind-' + k, icon(KIND_ICON[k]), KIND_LABEL[k] + (extra || ''));

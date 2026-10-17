@@ -408,8 +408,10 @@
     var reported = completed.length + updated.length;
     if (entryType === 'done' || entryType === 'update') entryType = reported ? (created.length ? 'mixed' : entryType) : 'memo';
     else if (reported && entryType === 'memo') entryType = 'mixed';
-    // 명령만 있는 글("할 일 추천해줘")은 메모로 남기지 않는다 — 채팅 말풍선에 글은 그대로 있다
-    if (entryType === 'command') entryType = created.length || reported ? 'mixed' : 'command';
+    // 명령만 있는 글("할 일 추천해줘")은 메모로 남기지 않는다 — 채팅 말풍선에 글은 그대로 있다.
+    //   단, 검증을 통과한 명령이 실제로 있고(args.commands) 채팅에서 보낸 글일 때만. 아니면 원문을 메모로 지킨다
+    var validCmds = Array.isArray(args.commands) ? args.commands : [];
+    if (entryType === 'command') entryType = created.length || reported ? 'mixed' : (validCmds.length ? 'command' : 'memo');
     if (entryType === 'done' && !completed.length) entryType = 'update';
     if (entryType === 'update' && !updated.length) entryType = 'done';
 
@@ -623,7 +625,8 @@
   // 바꾼 것은 사용자 결정이라 다음 AI 정리가 덮지 않는다 (kindByUser · changedByUser).
   // 할 일 ↔ 일정을 오가도 원래 값(마감·완료·단계·소요 시간·장소·길이)을 잃지 않게 바꾸기 전 값을 함께 둔다.
   var KINDS = { task: 1, event: 1, memo: 1, idea: 1, link: 1 };
-  var TASK_KEEP = ['dueDate', 'dueTime', 'memo', 'priority', 'estimateMinutes', 'estimateSource', 'steps', 'breakdown', 'blockedBy', 'waitingFor', 'snoozedUntil', 'proposalId', 'sortOrder', 'elaboratedAt'];
+  var TASK_KEEP = ['dueDate', 'dueTime', 'memo', 'priority', 'estimateMinutes', 'estimateSource', 'steps', 'breakdown', 'blockedBy', 'waitingFor', 'snoozedUntil', 'proposalId', 'sortOrder', 'elaboratedAt',
+    'workedMs', 'pausedAt', 'resumeNote', 'weekGoal', 'postponedCount', 'sample'];
 
   function hm(d) { return ('0' + d.getHours()).slice(-2) + ':' + ('0' + d.getMinutes()).slice(-2); }
   // 시각이 없으면 그날 9시, 오늘이면 다음 정시(자정을 넘기면 지금) — '시각 확인 필요' 로 표시한다
@@ -661,6 +664,7 @@
       start = g.start; uncertain = g.uncertain;
       end = new Date(start.getTime() + (back ? new Date(back.end) - new Date(back.start) : 60 * 60000));
     }
+    if (t.runningSince) { t.workedMs = (t.workedMs || 0) + Math.max(0, new Date(now) - new Date(t.runningSince)); t.runningSince = null; }
     var saved = { kind: 'task', blockStart: start.toISOString(), hadWork: !!work, status: t.status, completedAt: t.completedAt, startedAt: t.startedAt, origin: t.origin, createdAt: t.createdAt };
     TASK_KEEP.forEach(function (k) { saved[k] = t[k]; });
     var b = M.addBlock(state, {
@@ -684,6 +688,7 @@
     if (back) {
       TASK_KEEP.forEach(function (k) { if (back[k] !== undefined) fields[k] = back[k]; });
       ['status', 'completedAt', 'startedAt', 'origin', 'createdAt'].forEach(function (k) { if (back[k] !== undefined) fields[k] = back[k]; });
+      if (fields.status === 'in_progress') fields.runningSince = M.iso(now);   // 진행 중이던 일은 지금부터 다시 센다
       // 일정에서 날짜·시각을 직접 바꿨으면 그 값을 마감으로. 그대로면 원래 마감(없었으면 없음)
       if (b.start !== back.blockStart) { fields.dueDate = D.ymd(s); fields.dueTime = b.timeUncertain ? null : hm(s); }
     } else {
@@ -779,7 +784,9 @@
         if (NOTE_KIND[kind]) {
           captureRemoveItem(state, noteId, ref, now);
           note.captureRole = 'memo'; note.kind = kind; note.kindByUser = true;
-        } else if (kind === 'event' && ref.kind === 'task') swap(cur.id, { kind: 'block', id: taskToBlock(state, cur, now, 0).id });
+        } else if (kind === 'event' && ref.kind === 'task') {
+          if (cur.status !== 'done') swap(cur.id, { kind: 'block', id: taskToBlock(state, cur, now, 0).id });   // 끝낸 일은 일정으로 바꾸지 않는다
+        }
         else if (kind === 'task' && ref.kind === 'block') swap(cur.id, { kind: 'task', id: blockToTask(state, cur, now).id });
       }
     } finally { delete state.__holdReveal; }

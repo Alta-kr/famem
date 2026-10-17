@@ -38,9 +38,20 @@
       ['todo', 'in_progress', 'paused', 'waiting'].map(function (k) { return h('option', { value: k, selected: t.status === k }, M.TASK_STATUS[k]); }),
       done ? h('option', { value: 'done', selected: true }, '완료') : null);
     status.addEventListener('change', function () {
-      if (status.value === 'in_progress') { A.startTask(taskId); return; }
-      if (status.value === 'paused') { A.pauseTask(taskId); return; }
-      save({ status: status.value }, '상태 변경');
+      var v = status.value, cur = M.byId(S.state.tasks, taskId);
+      // 대기 중이던 일도 '진행 중' 으로 바로 시작할 수 있게 — 먼저 할 일로 돌리고 시작
+      if (v === 'in_progress') {
+        if (cur && cur.status === 'waiting') S.mutate(null, function (s) { M.updateTask(s, taskId, { status: 'todo' }, A.now()); }, { silent: true });
+        A.startTask(taskId).then(function (ok) { if (!ok) status.value = cur ? cur.status : 'todo'; });
+        return;
+      }
+      if (v === 'paused') {
+        if (cur && cur.status === 'in_progress') A.pauseTask(taskId);
+        else save({ status: 'paused', pausedAt: A.now().toISOString() }, '상태 변경');
+        return;
+      }
+      if (v === 'todo' && cur && (cur.status === 'in_progress' || cur.status === 'paused')) { A.returnToTodo(taskId); return; }
+      save({ status: v }, '상태 변경');   // 진행 중을 떠나면 model.updateTask 가 시계를 멈춘다
     });
     var waitingFor = h('input.input', { value: t.waitingFor || '', placeholder: '무엇을 기다리나요? (예: 재무팀 회신)', 'aria-label': '대기 사유' });
     waitingFor.addEventListener('change', function () { save({ waitingFor: waitingFor.value.trim() }); });

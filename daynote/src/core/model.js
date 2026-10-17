@@ -70,7 +70,7 @@
   }
 
   function normalizeTask(t) {
-    return Object.assign({
+    var n = Object.assign({
       id: uid('task'), title: '', memo: '', projectId: null, status: 'todo', priority: null,
       dueDate: null, dueTime: null,
       // 남은 예상 소요 시간(분). null 은 "미정" — 0분과 다르다.
@@ -84,6 +84,9 @@
       createdAt: iso(), updatedAt: iso(), startedAt: null, completedAt: null, deletedAt: null, archivedAt: null,
       sample: false
     }, t);
+    // 진행 중인데 시계가 없으면(예전 데이터·샘플) 시작 시각부터 센다
+    if (n.status === 'in_progress' && !n.runningSince) n.runningSince = n.startedAt || n.updatedAt || iso();
+    return n;
   }
 
   // ------------------------------------------------------------------ 조회
@@ -186,6 +189,11 @@
     var t = byId(state.tasks, id);
     if (!t) return null;
     var p = Object.assign({}, patch);
+    // 상태를 바꾸면 한 시간 시계도 맞춘다 — 진행 중을 떠나면 멈추고, 진행 중이 되면 돌린다
+    if ('status' in p && p.status !== t.status) {
+      if (t.status === 'in_progress' && p.status !== 'in_progress') stopClock(t, now);
+      if (p.status === 'in_progress' && !p.runningSince) { p.runningSince = iso(now); p.startedAt = t.startedAt || iso(now); }
+    }
     // 사용자가 소요 시간을 직접 고치면 더 이상 추정값이 아니다
     if ('estimateMinutes' in p && !('estimateSource' in p)) p.estimateSource = p.estimateMinutes == null ? null : 'user';
     Object.assign(t, p, { updatedAt: iso(now) });
@@ -502,6 +510,17 @@
     if (state.emailConnection.provider === 'sample') {
       state.emailConnection = { status: 'disconnected', provider: null, lastSyncAt: null, error: null };
     }
+    // 채팅에서 지워진 할 일·메모를 가리키던 카드도 정리 (빈 카드가 남지 않게)
+    var liveTask = {}, liveNote = {};
+    state.tasks.forEach(function (t) { liveTask[t.id] = true; });
+    state.notes.forEach(function (n) { liveNote[n.id] = true; });
+    state.chat = (state.chat || []).filter(function (m) {
+      if (m.taskId && !liveTask[m.taskId]) return false;
+      if (m.noteId && !liveNote[m.noteId]) return false;
+      if (m.taskIds) { m.taskIds = m.taskIds.filter(function (id) { return liveTask[id]; }); if (!m.taskIds.length && (m.kind === 'overdue' || m.kind === 'weekstart')) return false; }
+      if (m.doneIds) m.doneIds = m.doneIds.filter(function (id) { return liveTask[id]; });
+      return true;
+    });
     state.meta.sampleLoaded = false;
     return state;
   }

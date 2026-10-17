@@ -123,7 +123,7 @@
       }[tab];
       body = h('div.empty', h('h3', EMPTY[0]), h('p', EMPTY[1]),
         tab === 'pending' && !st.meta.sampleLoaded && !st.notes.length && !st.emails.length
-          ? h('button.btn', { type: 'button', onclick: function () { A().loadSample(); } }, '샘플 데이터로 둘러보기') : null);
+          ? h('button.btn', { type: 'button', onclick: function () { A().loadSample(); rescan(true); } }, '샘플 데이터로 둘러보기') : null);
     } else {
       body = h('div', list.map(function (s) { return card(st, s, now); }));
     }

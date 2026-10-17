@@ -58,7 +58,6 @@
     if (local) { runCommand(local); return null; }
     var note = DN.capture.submit(text, projectId, function (r, noteId) {
       if (!r || !r.ok || !r.capture) return;
-      (r.commands || []).forEach(runCommand);
       var large = (r.capture.largeTasks || []).map(function (id) { return M.byId(S.state.tasks, id); }).filter(Boolean);
       if (large.length) {
         post({ kind: 'text', text: '‘' + large[0].title + '’' + (large.length > 1 ? ' 외 ' + (large.length - 1) + '개' : '') +
@@ -109,7 +108,7 @@
   function runCommand(c) {
     var A = DN.app;
     var t = c.taskId ? M.byId(S.state.tasks, c.taskId) : null;
-    if (DN.aiCommands.NEEDS_TASK[c.action] && !t) {
+    if ((DN.aiCommands.NEEDS_TASK[c.action] && !t) || c.missing) {
       post({ kind: 'text', text: typeof c.missing === 'string' ? '‘' + c.missing + '’라는 할 일을 찾지 못했어요. 할 일 목록에서 채팅으로 끌어 와 주시면 그 일로 할게요.'
         : '어떤 할 일인지 알려 주세요. 할 일을 채팅으로 끌어 와도 돼요.' });
       return;

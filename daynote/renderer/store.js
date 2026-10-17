@@ -89,26 +89,33 @@
     saveTimer = setTimeout(flush, SAVE_DELAY);
   }
 
+  // 쓰는 중인 저장 — 창을 닫을 때 flush() 가 이것이 끝날 때까지 기다리게 (쓰기 도중 종료 방지)
+  var savingPromise = null;
   function flush() {
     clearTimeout(saveTimer);
-    if (!dirty) return Promise.resolve(true);
+    if (!dirty) return savingPromise || Promise.resolve(true);
     dirty = false;
     var json = JSON.stringify(state);
     setStatus({ phase: 'saving' });
-    return host.save(json).then(function (res) {
+    var p = host.save(json).then(function (res) {
       if (res && res.ok) {
         try { localStorage.removeItem(EMERGENCY_KEY); } catch (e) {}
-        setStatus({ phase: dirty ? 'pending' : 'saved', at: res.savedAt || new Date().toISOString(), error: null });
+        if (savingPromise === p) savingPromise = null;
+        if (dirty) return flush();   // 쓰는 동안 또 바뀌었으면 이어서 한 번 더
+        setStatus({ phase: 'saved', at: res.savedAt || new Date().toISOString(), error: null });
         return true;
       }
       throw new Error((res && res.error) || '알 수 없는 오류');
     }).catch(function (e) {
+      if (savingPromise === p) savingPromise = null;
       dirty = true;   // 다음 시도에 다시 쓴다
       // 파일 저장이 안 되면 브라우저 저장소에 비상 사본을 둔다 — 작성한 내용을 잃지 않게
       try { localStorage.setItem(EMERGENCY_KEY, json); } catch (_) {}
       setStatus({ phase: 'error', error: e.message });
       return false;
     });
+    savingPromise = p;
+    return p;
   }
 
   var store = {

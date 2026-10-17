@@ -21,10 +21,14 @@
     el.lastChild.textContent = s && s.configured ? 'AI가 자동으로 나눠요' : 'AI 미연결 · 메모로 저장';
   }
 
+  var sending = false;   // Enter 연타로 같은 글이 두 번 가지 않게
   function send() {
     var text = ta.value.trim();
     if (!text) { Q.hide(); return; }
+    if (sending) return;
+    sending = true;
     Q.submit(text).then(function (r) {
+      sending = false;
       if (!r || !r.ok) { document.getElementById('sent-text').textContent = '보내지 못했어요. Daynote 창에서 다시 시도해 주세요.'; }
       else { document.getElementById('sent-text').textContent = '보냈어요. 정리 결과는 Daynote 오늘 화면에 있어요.'; ta.value = ''; }
       document.body.classList.add('is-sent');

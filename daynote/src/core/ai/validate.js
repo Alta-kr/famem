@@ -164,14 +164,17 @@
   function checkDuration(ai, w, quote, startTime) {
     var src = [w.text || '', quote || ''].join(' ');
     // "2시~4시", "14:00~15:30", "2시~3시 반", "2시 10분~3시 40분" — 끝 시각의 분까지 읽는다
-    var range = src.match(/(\d{1,2})\s*(?:시(?:\s*(\d{1,2})\s*분|\s*(반))?|:(\d{2}))?\s*[~\-–]\s*(\d{1,2})\s*(?:시(?:\s*(\d{1,2})\s*분|\s*(반))?|:(\d{2}))/);
+    //   끝 시각 앞의 오전·오후도 읽는다 ("오후 2시~오후 4시")
+    var range = src.match(/(\d{1,2})\s*(?:시(?:\s*(\d{1,2})\s*분|\s*(반))?|:(\d{2}))?\s*[~\-–]\s*(?:(오전|오후|아침|저녁|밤)\s*)?(\d{1,2})\s*(?:시(?:\s*(\d{1,2})\s*분|\s*(반))?|:(\d{2}))/);
     var span = null;
     if (range && startTime) {
       var sh = +startTime.slice(0, 2), sm = +startTime.slice(3);
-      var eh = +range[5];
-      var em = range[6] != null ? +range[6] : range[7] ? 30 : range[8] != null ? +range[8] : 0;
-      // 끝이 오후 표기인 경우: 시작이 오후이거나("2시~4시" @14:00), 정오를 넘기는 경우("11시~1시")
-      if (eh <= 12 && (sh >= 12 || (eh < 12 && eh < sh))) eh += 12;
+      var eMer = range[5], eh = +range[6];
+      var em = range[7] != null ? +range[7] : range[8] ? 30 : range[9] != null ? +range[9] : 0;
+      if (eMer === '오전' || eMer === '아침') { if (eh === 12) eh = 0; }
+      else if (eMer === '오후' || eMer === '저녁' || eMer === '밤') { if (eh < 12) eh += 12; }
+      // 표기가 없으면: 시작이 오후("2시~4시" @14:00)이거나 정오를 넘기면("11시~1시") 오후. 12시는 그대로(정오)
+      else if (eh < 12 && (sh >= 12 || eh < sh)) eh += 12;
       if (eh * 60 + em > sh * 60 + sm) span = (eh * 60 + em) - (sh * 60 + sm);
     }
     var len = src.match(/(\d+)\s*시간(?:\s*(\d+)\s*분)?|(\d+)\s*분\s*(?:간|동안)/);
@@ -326,7 +329,8 @@
   // "두 시간 미뤄줘", "30분 더 늦춰", "1시간 반 연장" — 지금이 아니라 지금 마감에서 몇 분 뒤로 (후로·뒤로 가 없을 때)
   function shiftMinutes(text) {
     var s = String(text || '');
-    if (/(후|뒤|있다가|이따)\s*(로|에)?/.test(s.replace(/(미뤄|늦춰|연장|미루|늦추)[^\s]*/g, ''))) return null;
+    // 시간 표현 바로 뒤에 후·뒤가 붙을 때만 "지금부터" — 제목 속 '후보'·'오후'·'뒤풀이' 에는 반응하지 않는다
+    if (/(\d+|한|두|세|네|다섯|여섯|반)\s*(?:시간(?:\s*반)?(?:\s*\d+\s*분)?|분)\s*(?:후|뒤|있다가|이따)/.test(s)) return null;
     var m = s.match(/(\d+|한|두|세|네|다섯|여섯|반)\s*시간\s*(반)?\s*(?:(\d+)\s*분)?\s*(?:더\s*|만\s*|정도\s*)?(?:미뤄|미루|늦춰|늦추|연장)/);
     if (m) {
       var h = m[1] === '반' ? 0.5 : (KNUM[m[1]] || +m[1]);

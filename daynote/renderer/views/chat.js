@@ -426,7 +426,9 @@
     var fri = D.addDays(mon, 4);
     if (fri >= today) opts.push(['이번 주 금요일', fri]);
     opts.push(['다음 주 월요일', D.addDays(mon, 7)]);
-    var curYmd = it.kind === 'task' ? it.item.dueDate : D.ymd(it.item.start);
+    // 시간 정한 할 일은 작업 시간의 날짜가 지금 날짜
+    var curWork = it.kind === 'task' ? M.blocksForTask(S.state, it.item.id).filter(function (b) { return b.kind === 'work' && new Date(b.end) > now; })[0] : null;
+    var curYmd = it.kind === 'task' ? (curWork ? D.ymd(curWork.start) : it.item.dueDate) : D.ymd(it.item.start);
     var items = [{ label: it.kind === 'task' ? '언제까지 할까요?' : '언제로 옮길까요?' }].concat(opts.map(function (o) {
       var ymd = D.ymd(o[1]);
       return { label: o[0], sub: D.shortDay(o[1]), checked: curYmd === ymd, onClick: function () { setDate(it, ymd, null); } };
@@ -440,7 +442,8 @@
   // 날짜(일정은 + 시각) 직접 고르기 — 메뉴 자리에 작은 입력 칸을 띄운다
   function pickForm(pop, it, now) {
     var x = it.item, isEvent = it.kind === 'event';
-    var curYmd = isEvent ? D.ymd(x.start) : (x.dueDate || D.ymd(now));
+    var pfWork = isEvent ? null : M.blocksForTask(S.state, x.id).filter(function (b) { return b.kind === 'work' && new Date(b.end) > now; })[0];
+    var curYmd = isEvent ? D.ymd(x.start) : (pfWork ? D.ymd(pfWork.start) : (x.dueDate || D.ymd(now)));
     var dateIn = h('input.input', { type: 'date', value: curYmd, 'aria-label': '날짜' });
     var timeIn = isEvent ? h('input.input', { type: 'time', value: x.timeUncertain ? '' : D.hm(x.start), 'aria-label': '시각' }) : null;
     function apply() {
@@ -716,7 +719,8 @@
     return h('div.when-chips', DN.habits.whenChoices(now).map(function (c) {
       return h('button.chip.chip-btn', { type: 'button', onclick: function () {
         var at = DN.assistant.planAt(taskId, c.at);
-        if (at && onPicked) onPicked(c.label + ' ' + D.hm(at));
+        // 그날 빈 시간이 없어 다른 날로 밀렸으면 실제 날을 알려 준다 ("오늘 저녁 08:00" 같은 모순 없이)
+        if (at && onPicked) onPicked((D.ymd(at) === D.ymd(c.at) ? c.label : dayLabel(D.ymd(at), now)) + ' ' + D.hm(at));
       } }, c.label);
     }).concat(extra || []));
   }

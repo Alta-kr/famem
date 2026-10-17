@@ -16,7 +16,9 @@
     if (params && params.noteId) { mem.noteId = params.noteId; params.noteId = null; }
     var st = S.state;
     var notes = M.liveNotes(st);
-    if (!M.byId(notes, mem.noteId)) mem.noteId = notes[0] ? sortNotes(notes)[0].id : null;
+    // 처음 고를 때는 할 일 전용으로 숨긴 원문(task_source)은 빼고
+    var visible = notes.filter(function (n) { return n.captureRole !== 'task_source'; });
+    if (!M.byId(notes, mem.noteId)) mem.noteId = visible[0] ? sortNotes(visible)[0].id : null;
 
     var listBox = h('div.notes-items', { 'data-keep-scroll': 'notes', role: 'list' });
     var search = h('input.input', { type: 'search', placeholder: '메모 검색', 'aria-label': '메모 검색', value: mem.query });

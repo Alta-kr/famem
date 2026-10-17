@@ -541,3 +541,17 @@ test('날짜 바꾸기: 할 시각(do_at)이면 작업 시간을 옮기거나 �
   assert.strictEqual(t.dueDate, null);
   assert.strictEqual(note.capture.entryType, 'memo');
 });
+
+test('BUG-NEW-09: 빠른 모델이 끝내지 못함(incomplete)을 돌려줘도 3.8 Flash 로 대체한다', async () => {
+  await withEnv({ GEMINI_API_KEY: 'g' }, async () => {
+    const ai = freshAi();
+    const models = [];
+    ai._setClients({ retryDelayMs: 0, gemini: { interactions: { create: async (req) => {
+      models.push(req.model);
+      return req.model === 'gemini-3.5-flash-lite' ? { status: 'incomplete', output_text: '{"x' } : { status: 'completed', output_text: JSON.stringify(OUT) };
+    } } } });
+    const r = await ai.organize(capInput('inc'));
+    assert.ok(r.ok);
+    assert.deepStrictEqual(models, ['gemini-3.5-flash-lite', 'gemini-3.8-flash']);
+  });
+});

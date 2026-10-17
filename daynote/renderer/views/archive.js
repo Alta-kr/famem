@@ -9,7 +9,8 @@
   var DN = window.Daynote;
   var M = DN.model, D = DN.dates, S = DN.store, ui = DN.ui, h = ui.h;
   var KINDS = ['all', 'task', 'event', 'memo', 'idea', 'link'];
-  var ORDER = ['memo', 'idea', 'link', 'task', 'event'];
+  var ORDER = ['memo', 'idea', 'link', 'task', 'done', 'moved', 'event'];
+  var TASKISH = { task: 1, done: 1, moved: 1 };   // 완료 보고·날짜 변경도 할 일에 대한 기록
   var NONE = '__none';
   var PAGE = 150;
 
@@ -38,7 +39,7 @@
   }
 
   function matchesFilter(e, f) {
-    if (f.kind !== 'all' && !e.items.some(function (it) { return it.kind === f.kind; })) return false;
+    if (f.kind !== 'all' && !e.items.some(function (it) { return it.kind === f.kind || (f.kind === 'task' && TASKISH[it.kind]); })) return false;
     if (f.projectId) {
       var ids = projectIds(e);
       if (f.projectId === NONE ? ids.some(Boolean) : ids.indexOf(f.projectId) === -1) return false;
@@ -68,7 +69,7 @@
     var n = e.note;
     var made = e.items.filter(function (it) { return it.ref.kind !== 'note'; });
     if (n.captureRole === 'task_source' && made.length === 1) {
-      if (made[0].kind === 'task') { A.openTask(made[0].item.id); return; }
+      if (TASKISH[made[0].kind]) { A.openTask(made[0].item.id); return; }
       if (made[0].kind === 'event') { DN.views.schedule.open({ blockId: made[0].item.id }); return; }
     }
     A.go('notes', { noteId: n.id });
@@ -190,7 +191,7 @@
         h('div.arc-main',
           h('div.arc-text', ui.highlight(original(n), q)),
           e.hits.length ? h('div.arc-hits', e.hits.slice(0, 2).map(function (it) {
-            return h('span', ui.KIND_LABEL[it.kind] + ': ', ui.highlight(it.item.title || '', q));
+            return h('span', (ui.KIND_LABEL[it.kind] || '할 일') + ': ', ui.highlight(it.item.title || '', q));
           })) : null,
           h('div.arc-meta',
             running ? h('span.chip', h('span.spinner', { 'aria-hidden': 'true' }), ' 정리 중') : chips,

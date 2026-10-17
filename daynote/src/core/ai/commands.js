@@ -81,7 +81,10 @@
     if (/오늘\s*(할\s*일|할일|일정|해야\s*할\s*(일|거))\s*(이\s*)?(뭐|뭔|알려|보여|정리|있)|오늘\s*뭐\s*(해야|있)/.test(s)) return { action: 'list_today' };
     // 작게 나누기 — "견적서 작게 나눠줘" / "이거 쪼개줘"
     if ((m = s.match(/^(.*?)\s*(작게\s*나눠|잘게\s*나눠|쪼개|세분화|단계로\s*나눠|나눠\s*줘|나눠줘)/))) {
-      var bt = taskInText(state, m[1]);
+      var named = m[1].replace(/^(이거|이것|이|그거|저거|좀)\s*/, '').trim();
+      var bt = (named && findTask(state, named)) || taskInText(state, m[1]);   // 이름 전체로 먼저, 안 되면 낱말로
+      // 이름을 말했는데 못 찾으면 엉뚱한 일을 나누지 않고 되묻는다
+      if (!bt && named.length >= 2) return { action: 'breakdown', missing: named };
       return { action: 'breakdown', taskId: bt ? bt.id : (focus ? focus.id : null) };
     }
     // 화면 열기 — "캘린더 보여줘"
@@ -117,7 +120,7 @@
       if (c.target || NEEDS_TASK[c.action] || c.action === 'breakdown') {
         var t = c.target ? findTask(state, String(c.target)) : null;
         if (!t && !c.target && focus) t = focus;
-        if (!t && NEEDS_TASK[c.action]) { cmd.missing = c.target || true; }
+        if (!t && (NEEDS_TASK[c.action] || (c.action === 'breakdown' && c.target))) { cmd.missing = c.target || true; }
         if (t) cmd.taskId = t.id;
       }
       if (c.action === 'open') { if (VIEWS.indexOf(c.view) === -1) return; cmd.view = c.view; }

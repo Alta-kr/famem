@@ -34,6 +34,8 @@
         captureRole: 'memo', capture: { status: 'pending', at: now().toISOString(), entryType: null, created: [] }
       }, now());
     }, { source: 'capture' });
+    // 채팅(홈 입력·빠른 메모 창)에서 보낸 글만 명령으로 실행한다. Ctrl+N 메모 창은 늘 메모로 지킨다
+    if (onDone) S.mutate(null, function (s) { var n = M.byId(s.notes, note.id); if (n) n.capture.viaChat = true; }, { source: 'capture', silent: true });
     classify(note.id).then(function (r) { if (onDone) onDone(r, note.id); });
     return note;
   }
@@ -91,11 +93,12 @@
         var r = M.byId(s.aiRuns, run.id);
         Object.assign(r, { provider: res.provider || r.provider, model: res.model || r.model });
         P.finishRun(s, run.id, { status: 'succeeded', rawOutput: res.raw || JSON.stringify(res.output), usage: res.usage || null, dropped: v.dropped }, t);
-        cap = P.applyCapture(s, { note: sent, run: r, validated: v, output: res.output }, t);
-        // 채팅 명령 — 근거·대상을 확인한 것만 (실행은 assistant 가)
-        cmds = DN.aiCommands.resolve(s, sent, res.output.commands, focus);
+        // 채팅 명령 — 근거·대상을 확인한 것만, 채팅에서 보낸 글일 때만 (실행은 아래에서)
+        cmds = sent.capture && sent.capture.viaChat ? DN.aiCommands.resolve(s, sent, res.output.commands, focus) : [];
+        cap = P.applyCapture(s, { note: sent, run: r, validated: v, output: res.output, commands: cmds }, t);
       }, { source: 'capture' });
       notify();
+      if (cmds.length && DN.assistant && DN.assistant.runCommand) cmds.forEach(function (c) { DN.assistant.runCommand(c); });
       return { ok: true, capture: cap, commands: cmds };
     });
   }

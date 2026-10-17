@@ -212,15 +212,20 @@ async function callGemini(input, model) {
 // 분류는 빠른 모델 먼저, 그 밖은 3.8 Flash 먼저. 일시 오류(또는 모델 없음 404)면 다른 모델로 한 번 더.
 async function callGeminiTiered(input) {
   const order = input && input.purpose === 'capture' ? [MODELS.geminiFast, MODELS.gemini] : [MODELS.gemini, MODELS.geminiFast];
-  try { return await callGemini(input, order[0]); }
-  catch (e) {
+  let first;
+  try {
+    first = await callGemini(input, order[0]);
+    // 예외 없이 '끝내지 못함(incomplete·failed)' 을 돌려줘도 다시 할 만한 실패면 다른 모델로
+    if (first.ok || !first.error || !first.error.retryable || first.error.type === 'invalid_json') return first;   // JSON 을 못 읽은 건 organize 가 한 번 더 부른다
+  } catch (e) {
     const c = classifyGemini(e);
     if (!c.retryable && e.status !== 404) throw Object.assign(e, { _classified: c });
-    // 잠깐 끊긴 연결이면 바로 다시 해도 실패하니 조금 쉬었다가 (한도 초과는 다른 모델이라 짧게)
-    await new Promise((r) => setTimeout(r, retryDelayMs != null ? retryDelayMs : c.type === 'rate_limit' ? 300 : 1200));
-    try { return await callGemini(input, order[1]); }
-    catch (e2) { throw Object.assign(e2, { _classified: classifyGemini(e2) }); }
+    first = { ok: false, error: c };
   }
+  // 잠깐 끊긴 연결이면 바로 다시 해도 실패하니 조금 쉬었다가 (한도 초과는 다른 모델이라 짧게)
+  await new Promise((r) => setTimeout(r, retryDelayMs != null ? retryDelayMs : first.error.type === 'rate_limit' ? 300 : 1200));
+  try { return await callGemini(input, order[1]); }
+  catch (e2) { throw Object.assign(e2, { _classified: classifyGemini(e2) }); }
 }
 
 async function organize(input) {

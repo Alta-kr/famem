@@ -248,8 +248,8 @@
   function signature(state) {
     var parts = [];
     state.tasks.forEach(function (t) {
-      parts.push([t.id, t.status, t.priority, t.dueDate, t.dueTime, t.estimateMinutes, (t.blockedBy || []).join('+'),
-        t.snoozedUntil, t.deletedAt, t.archivedAt, (t.steps || []).map(function (s) { return s.done ? 1 : 0; }).join('')].join('|'));
+      parts.push([t.id, t.status, t.priority, t.sortOrder, t.dueDate, t.dueTime, t.estimateMinutes, (t.blockedBy || []).join('+'),
+        t.snoozedUntil, t.deletedAt, t.archivedAt, (t.steps || []).map(function (s) { return (s.done ? 1 : 0) + ':' + (s.estimateMinutes || ''); }).join(',')].join('|'));
     });
     state.blocks.forEach(function (b) { parts.push([b.id, b.start, b.end, b.taskId].join('|')); });
     return parts.sort().join('\n');

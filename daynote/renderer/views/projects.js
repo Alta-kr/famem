@@ -114,7 +114,7 @@
     var wk = D.startOfWeek(now()).toISOString();
     var stat = function (k, v) { return h('div.card.stat', h('div.k', k), h('div.v', String(v))); };
     return h('div.proj-overview',
-      stat('진행 중', tasks.filter(function (t) { return t.status === 'in_progress'; }).length),
+      stat('진행 중', tasks.filter(function (t) { return t.status === 'in_progress' || t.status === 'paused'; }).length),
       stat('남은 할 일', tasks.filter(function (t) { return t.status !== 'done'; }).length),
       stat('이번 주 완료', tasks.filter(function (t) { return t.status === 'done' && t.completedAt && t.completedAt >= wk; }).length));
   }
@@ -122,7 +122,7 @@
   function renderTasks(st, sel) {
     var open = M.liveTasks(st).filter(function (t) { return inProject(t, sel) && t.status !== 'done'; })
       .sort(function (a, b) {
-        var ar = a.status === 'in_progress' ? 0 : 1, br = b.status === 'in_progress' ? 0 : 1;
+        var ar = a.status === 'in_progress' ? 0 : a.status === 'paused' ? 1 : 2, br = b.status === 'in_progress' ? 0 : b.status === 'paused' ? 1 : 2;
         if (ar !== br) return ar - br;
         var ad = a.dueDate || '9999', bd = b.dueDate || '9999';
         return ad < bd ? -1 : ad > bd ? 1 : (a.createdAt < b.createdAt ? -1 : 1);
