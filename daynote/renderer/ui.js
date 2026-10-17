@@ -51,6 +51,8 @@
     x: '<path d="M6 6l12 12M18 6L6 18"/>',
     search: '<circle cx="11" cy="11" r="7"/><path d="M20 20l-3.5-3.5"/>',
     play: '<path d="M7 5l12 7-12 7z"/>',
+    pause: '<path d="M8 5v14M16 5v14"/>',
+    info: '<circle cx="12" cy="12" r="9"/><path d="M12 11v6M12 7.5v.5"/>',
     clock: '<circle cx="12" cy="12" r="9"/><path d="M12 7v5l3 2"/>',
     snooze: '<path d="M12 21a9 9 0 1 1 0-18 9 9 0 0 1 0 18zM9 9h6l-6 6h6"/>',
     refresh: '<path d="M20 11a8 8 0 1 0-2.3 5.7M20 4v7h-7"/>',
@@ -315,15 +317,31 @@
     return h('span.chip.chip-project', { style: { '--pc': p.color } }, p.name);
   }
 
+  // 마감 칩 — "마감 내일 18:00 · 21시간 남음" / 지났으면 "마감 지남 · 10월 3일 (토) · 2일 지남"
+  // 지난 칩은 Alt+클릭으로 지금부터 24시간 뒤로 미룬다 (postponeOverdue)
   function dueChip(task, now) {
     if (!task.dueDate) return null;
     now = now || window.Daynote.app.now();
-    var due = D.parseYmd(task.dueDate, task.dueTime || '23:59');
+    var due = D.dueAt(task.dueDate, task.dueTime);
     var diff = D.dayDiff(now, D.parseYmd(task.dueDate));
-    var txt = '마감 ' + D.relDay(task.dueDate, now) + (task.dueTime ? ' ' + task.dueTime : '');
-    if (task.status !== 'done' && due.getTime() < now.getTime()) return h('span.chip.chip-overdue', icon('flag'), '기한 지남 · ' + txt.replace('마감 ', ''));
-    if (task.status !== 'done' && diff === 0) return h('span.chip.chip-today', icon('flag'), txt);
-    return h('span.chip.chip-due', icon('flag'), txt);
+    var when = D.relDay(task.dueDate, now) + (task.dueTime ? ' ' + task.dueTime : '');
+    if (task.status === 'done') return h('span.chip.chip-due', icon('flag'), '마감 ' + when);
+    var left = D.remainText(due, now);
+    if (due.getTime() < now.getTime()) {
+      return h('span.chip.chip-overdue.is-postponable', {
+        title: 'Alt+클릭: 마감을 지금부터 ' + M.POSTPONE_HOURS + '시간 뒤로 미루기',
+        onclick: function (e) { if (e.altKey) { e.preventDefault(); e.stopPropagation(); postponeOverdue(task.id); } }
+      }, icon('flag'), '마감 지남 · ' + when + ' · ' + left);
+    }
+    return h('span.chip.' + (diff === 0 ? 'chip-today' : 'chip-due'), icon('flag'), '마감 ' + when + ' · ' + left);
+  }
+
+  // 마감 지난 할 일을 지금 + 24시간으로 (Ctrl+Z 로 되돌릴 수 있다)
+  function postponeOverdue(taskId) {
+    var S = window.Daynote.store, now = window.Daynote.app.now();
+    var t = S.mutate('마감 미루기', function (s) { return M.postponeTask(s, taskId, now); });
+    if (t) undoToast('‘' + t.title + '’ 마감을 ' + D.relDay(t.dueDate, now) + ' ' + t.dueTime + '까지로 미뤘어요.');
+    return t;
   }
 
   // 실제 작업 시간 — 마감일과 다른 정보임을 아이콘과 문구로 구분한다
@@ -344,6 +362,7 @@
   function statusChips(state, task, now) {
     var out = [];
     if (task.status === 'in_progress') out.push(h('span.chip.chip-progress', '진행 중'));
+    if (task.status === 'paused') out.push(h('span.chip.chip-paused', '일시 정지'));
     if (task.status === 'waiting') out.push(h('span.chip.chip-waiting', '대기' + (task.waitingFor ? ' · ' + task.waitingFor : '')));
     var blockers = M.unmetBlockers(state, task);
     if (blockers.length && task.status !== 'done') out.push(h('span.chip.chip-waiting', '선행: ' + blockers[0].title + (blockers.length > 1 ? ' 외 ' + (blockers.length - 1) : '')));
@@ -391,13 +410,15 @@
       h('button.icon-btn', { type: 'button', title: '더 보기', 'aria-label': '‘' + task.title + '’ 메뉴', onclick: function (e) { e.stopPropagation(); A.taskMenu(task.id, e.currentTarget); } }, icon('more'))
     );
     var title = h('div.task-title', task.title || '(제목 없음)');
+    var main = h('div.task-main', title, chips);
     var li = h('li.task-row' + (done ? '.is-done' : '') + (opts.selected ? '.is-selected' : ''), {
       tabindex: '0', 'data-task-id': task.id,
-      'aria-label': task.title + (done ? ', 완료됨' : ''),
-      onclick: function () { A.openTask(task.id); },
+      'aria-label': task.title + (done ? ', 완료됨' : '') + ' — 누르면 세부 할 일',
+      onclick: function () { toggle(); },
+      oncontextmenu: function (e) { e.preventDefault(); A.taskMenu(task.id, li); },
       onkeydown: function (e) {
         if (e.target !== li) return;
-        if (e.key === 'Enter') { e.preventDefault(); A.openTask(task.id); }
+        if (e.key === 'Enter') { e.preventDefault(); toggle(); }
         if (e.key === ' ') { e.preventDefault(); A.toggleDone(task.id); }
         if (e.key === 'F2') { e.preventDefault(); startRename(); }
         if (e.key === 'ArrowDown' || e.key === 'ArrowUp') {
@@ -408,7 +429,8 @@
           if (next) next.focus();
         }
       }
-    }, check, h('div.task-main', title, chips), actions);
+    }, check, main, actions);
+    var toggle = stepsToggle(li, task, main);
 
     // 제목 더블클릭 → 그 자리에서 고치기
     function startRename() {
@@ -434,6 +456,69 @@
     return li;
   }
 
+  // ------------------------------------------------------------------ 세부 할 일 (할 일을 누르면 펼쳐진다)
+  // 할 일 행을 누르면 상세 화면 대신 그 자리에서 세부 할 일(작게 나눈 단계)이 펼쳐진다. 체크·추가 가능.
+  // 펼친 상태는 다시 그려도(체크 → 저장 → 다시 그림) 유지된다. 상세 편집은 오른쪽 클릭 메뉴의 '자세히 편집'.
+  var expanded = {};
+  var refocusAdd = null;
+  function stepsPanel(task) {
+    var S = window.Daynote.store, A = window.Daynote.app;
+    var steps = task.steps || [];
+    var stop = function (e) { e.stopPropagation(); };
+    function setSteps(fn, label) {
+      S.mutate(label, function (s) {
+        var t = M.byId(s.tasks, task.id);
+        if (t) M.updateTask(s, t.id, { steps: fn((t.steps || []).slice()) }, A.now());
+      });
+    }
+    var add = h('input.input.task-step-add', {
+      placeholder: '+ 세부 할 일 추가 (Enter)', 'aria-label': '‘' + task.title + '’ 세부 할 일 추가',
+      onclick: stop,
+      onkeydown: function (e) {
+        e.stopPropagation();
+        if (e.key !== 'Enter' || e.isComposing || e.keyCode === 229) return;
+        e.preventDefault();
+        var v = add.value.trim();
+        if (!v) return;
+        refocusAdd = task.id;
+        setSteps(function (list) { return list.concat({ id: M.uid('step'), title: v.slice(0, 120), done: false, estimateMinutes: null }); }, '세부 할 일 추가');
+      }
+    });
+    var done = steps.filter(function (x) { return x.done; }).length;
+    var panel = h('div.task-steps', { onclick: stop, onkeydown: stop },
+      steps.length ? h('div.task-steps-head.meta', '세부 할 일 ' + done + '/' + steps.length) : null,
+      steps.length ? h('ul', steps.map(function (x) {
+        return h('li' + (x.done ? '.is-done' : ''),
+          h('label',
+            h('input', { type: 'checkbox', checked: !!x.done, onchange: function () {
+              setSteps(function (list) { return list.map(function (y) { return y.id === x.id ? Object.assign({}, y, { done: !y.done }) : y; }); }, '세부 할 일 체크');
+            } }),
+            h('span.task-step-title', x.title),
+            x.estimateMinutes ? h('span.meta', x.estimateMinutes + '분') : null));
+      })) : h('div.task-steps-empty',
+        h('span.meta', '세부 할 일이 아직 없어요.'),
+        task.status === 'done' ? null : h('button.btn.btn-xs', { type: 'button', onclick: function () {
+          if (A.current().view !== 'today') A.go('today');
+          window.Daynote.assistant.breakdown(task.id, null, { force: true });
+        } }, icon('task'), '작업 작게 나누기')),
+      task.status === 'done' ? null : add);
+    if (refocusAdd === task.id) { refocusAdd = null; setTimeout(function () { var x = document.querySelector('[data-steps-for="' + task.id + '"] .task-step-add'); if (x) x.focus(); }, 0); }
+    panel.setAttribute('data-steps-for', task.id);
+    return panel;
+  }
+  // 행을 누르면 펼치기/접기 — mount 는 패널이 들어갈 곳(제목 아래)
+  function stepsToggle(li, task, mount) {
+    li.setAttribute('aria-expanded', expanded[task.id] ? 'true' : 'false');
+    if (expanded[task.id]) mount.appendChild(stepsPanel(task));
+    return function () {
+      expanded[task.id] = !expanded[task.id];
+      li.setAttribute('aria-expanded', expanded[task.id] ? 'true' : 'false');
+      var old = mount.querySelector('.task-steps');
+      if (old) old.remove();
+      if (expanded[task.id]) mount.appendChild(stepsPanel(task));
+    };
+  }
+
   function projectOptions(state, selected, emptyLabel) {
     var opts = [h('option', { value: '' }, emptyLabel || '프로젝트 없음')];
     M.liveProjects(state).forEach(function (p) { opts.push(h('option', { value: p.id, selected: p.id === selected }, p.name)); });
@@ -448,10 +533,17 @@
     return out;
   }
 
+  // Alt 를 누르고 있는 동안만 '마감 지남' 칩이 눌러지는 모양으로 (Alt+클릭 = 24시간 미루기)
+  function altState(e) { document.documentElement.classList.toggle('alt-down', !!e.altKey); }
+  document.addEventListener('keydown', altState, true);
+  document.addEventListener('keyup', altState, true);
+  window.addEventListener('blur', function () { document.documentElement.classList.remove('alt-down'); });
+
   window.Daynote.ui = {
     h: h, icon: icon, toast: toast, undoToast: undoToast, modal: modal, confirm: confirmDialog, menu: menu, closeMenu: closeMenu, popover: popover,
     kindChip: kindChip, KIND_LABEL: KIND_LABEL, KIND_ICON: KIND_ICON, josa: josa,
-    projectChip: projectChip, dueChip: dueChip, scheduleChip: scheduleChip, estimateChip: estimateChip,
+    stepsPanel: stepsPanel, stepsToggle: stepsToggle,
+    projectChip: projectChip, dueChip: dueChip, postponeOverdue: postponeOverdue, scheduleChip: scheduleChip, estimateChip: estimateChip,
     statusChips: statusChips, sourceChip: sourceChip, taskRow: taskRow, projectOptions: projectOptions, highlight: highlight
   };
 })();

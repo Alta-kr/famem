@@ -84,7 +84,37 @@
     return (s.getMonth() + 1) + '월 ' + s.getDate() + '일 – ' + (e.getMonth() + 1) + '월 ' + e.getDate() + '일';
   }
 
+  // 마감 시각 — 시각이 없으면 그날 23:59 까지
+  function dueAt(dueDate, dueTime) { return dueDate ? parseYmd(dueDate, dueTime || '23:59') : null; }
+
+  // 남은 시간(또는 지난 시간)을 짧게 — "45분 남음" · "5시간 남음" · "1일 3시간 남음" · "4일 남음" · "2시간 지남"
+  function remainText(due, now) {
+    var ms = toDate(due).getTime() - toDate(now).getTime();
+    var over = ms < 0;
+    var min = Math.floor(Math.abs(ms) / 60000);
+    var d = Math.floor(min / 1440), h = Math.floor((min % 1440) / 60), m = min % 60;
+    var t = d >= 2 ? d + '일' : d === 1 ? '1일' + (h ? ' ' + h + '시간' : '') : h ? h + '시간' : (m || 1) + '분';
+    return t + (over ? ' 지남' : ' 남음');
+  }
+
+  // 한 달 달력 — 일요일부터 시작하는 주 단위 칸 (앞뒤 달 날짜 포함, 4~6주)
+  //   [[{ ymd, day, inMonth, weekday }, … 7개], …]
+  function monthGrid(year, month) {
+    var first = new Date(year, month, 1);
+    var start = addDays(first, -first.getDay());
+    var last = new Date(year, month + 1, 0);
+    var end = addDays(last, 6 - last.getDay());
+    var weeks = [], d = start;
+    while (d <= end) {
+      var row = [];
+      for (var i = 0; i < 7; i++) { row.push({ ymd: ymd(d), day: d.getDate(), inMonth: d.getMonth() === month, weekday: d.getDay() }); d = addDays(d, 1); }
+      weeks.push(row);
+    }
+    return weeks;
+  }
+
   return {
+    dueAt: dueAt, remainText: remainText, monthGrid: monthGrid,
     DAY: DAY, WEEKDAYS: WEEKDAYS, pad: pad, ymd: ymd, parseYmd: parseYmd,
     startOfDay: startOfDay, endOfDay: endOfDay, addDays: addDays, addMinutes: addMinutes,
     startOfWeek: startOfWeek, dayDiff: dayDiff, minutesBetween: minutesBetween,

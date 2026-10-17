@@ -48,7 +48,11 @@
       return Promise.resolve({ ok: false, reason: 'not_configured' });
     }
     var sent = JSON.parse(JSON.stringify(note));
-    var input = C.buildInput(sent, DN.aiFlow.contextOpts(sent));
+    var opts = DN.aiFlow.contextOpts(sent);
+    // 작업 공간(채팅)에 올려 둔 할 일이 있으면 "마감 두 시간 후로 미뤄줘" 의 대상이 된다
+    var focus = DN.assistant && DN.assistant.focusTask && DN.assistant.focusTask();
+    if (focus) opts.focusTask = focus.title;
+    var input = C.buildInput(sent, opts);
     var run = S.mutate(null, function (s) {
       var n = M.byId(s.notes, noteId);
       if (n) n.capture = Object.assign({}, n.capture, { status: 'pending', error: null });
@@ -82,15 +86,17 @@
         notify();
         return { ok: false, reason: 'invalid' };
       }
-      var cap;
+      var cap, cmds = [];
       S.mutate('AI 분류', function (s) {
         var r = M.byId(s.aiRuns, run.id);
         Object.assign(r, { provider: res.provider || r.provider, model: res.model || r.model });
         P.finishRun(s, run.id, { status: 'succeeded', rawOutput: res.raw || JSON.stringify(res.output), usage: res.usage || null, dropped: v.dropped }, t);
         cap = P.applyCapture(s, { note: sent, run: r, validated: v, output: res.output }, t);
+        // 채팅 명령 — 근거·대상을 확인한 것만 (실행은 assistant 가)
+        cmds = DN.aiCommands.resolve(s, sent, res.output.commands, focus);
       }, { source: 'capture' });
       notify();
-      return { ok: true, capture: cap };
+      return { ok: true, capture: cap, commands: cmds };
     });
   }
 

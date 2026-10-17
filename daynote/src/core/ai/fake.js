@@ -105,7 +105,7 @@
         }) }],
         tasks: tasks, events: events,
         open_questions: tasks.filter(function (t) { return !t.due.text; }).slice(0, 2).map(function (t) { return { text: '‘' + t.title + '’은(는) 언제까지인가요?', line: t.evidence.line }; }),
-        entry_type: extra.entry_type, note_title: extra.note_title, note_project_hint: extra.note_project_hint, note_kind: extra.note_kind, done_tasks: extra.done_tasks, updated_tasks: extra.updated_tasks
+        entry_type: extra.entry_type, note_title: extra.note_title, note_project_hint: extra.note_project_hint, note_kind: extra.note_kind, done_tasks: extra.done_tasks, updated_tasks: extra.updated_tasks, bulk_updates: extra.bulk_updates, commands: []
       },
       usage: null
     };
@@ -129,14 +129,36 @@
     var UPDATE_RE = /(할게|할께|보낼게|낼게|하기로|미룸|미뤘|미루|미뤄|옮김|옮겼|연기|변경)/;
     var updated = [];
     var used = {};
+    // 묶음: "마감 지난 것 전부 두 시간 후로 미뤄줘" — 어떤 묶음인지만 고르고 대상은 앱이 고른다
+    var bulk = [];
+    var BULK_SETS = [[/(마감|기한)\s*(이\s*)?지난|밀린/, 'overdue'], [/오늘\s*마감/, 'due_today'], [/마감\s*(이\s*)?없는/, 'no_due'],
+      [/진행\s*중/, 'in_progress'], [/일시\s*정지|멈춘/, 'paused'], [/남은\s*(할\s*일|거)|할\s*일\s*(전부|다|모두)/, 'all_open']];
+    body.forEach(function (l) {
+      if (!UPDATE_RE.test(l) || !/(전부|모두|다\s|다$|싹|몽땅|일괄)/.test(l)) return;
+      var set = BULK_SETS.filter(function (x) { return x[0].test(l); })[0];
+      if (!set) return;
+      var hint = SG.parseDueHint(l, ref);
+      var rel = l.match(/(\d+\s*분|(?:\d+|한|두|세|네)\s*시간(?:\s*반)?)\s*(?:더\s*)?(?:후|뒤|미뤄|미루|늦춰|연장)/);
+      if (!hint && !rel) return;
+      bulk.push({ filter: set[1], project_hint: null, evidence: { quote: l.trim(), line: input.lines.indexOf(l) + 1 },
+        due: hint && !rel ? { text: hint.phrase, date: hint.dueDate, time: null } : { text: rel[0], date: null, time: null },
+        do_at: { text: null, date: null, time: null } });
+      used[l] = true;
+    });
     body.forEach(function (l) {
       if (!UPDATE_RE.test(l)) return;
+      // 날짜 표현: "내일" 같은 날, "두 시간 후로" 같은 상대 시각, "두 시간 미뤄" 같은 마감 기준 미루기 (계산은 앱 검증기가)
       var hint = SG.parseDueHint(l, ref);
-      if (!hint) return;
-      matchOpen(input, l.replace(hint.phrase, ' '), UPDATE_RE).forEach(function (title) {
+      var rel = l.match(/(\d+\s*분|(?:\d+|한|두|세|네)\s*시간(?:\s*반)?)\s*(?:더\s*)?(?:후|뒤|미뤄|미루|늦춰|연장)/);
+      if (!hint && !rel) return;
+      var due = hint ? { text: hint.phrase, date: hint.dueDate, time: null } : { text: rel[0], date: null, time: null };
+      var targets = matchOpen(input, hint ? l.replace(hint.phrase, ' ') : l, UPDATE_RE);
+      // 대상을 말하지 않았으면 작업 공간에 올려 둔 할 일
+      if (!targets.length && input.focusTask) targets = [input.focusTask];
+      targets.forEach(function (title) {
         if (updated.some(function (u) { return u.title === title; })) return;
         updated.push({ title: title, evidence: { quote: l.trim(), line: input.lines.indexOf(l) + 1 },
-          due: { text: hint.phrase, date: hint.dueDate, time: null }, do_at: { text: null, date: null, time: null } });
+          due: due, do_at: { text: null, date: null, time: null } });
         used[l] = true;
       });
     });
@@ -172,7 +194,9 @@
     var done = [];
     body.forEach(function (l) {
       if (!DONE_RE.test(l) || used[l]) return;
-      matchOpen(input, l, DONE_RE).forEach(function (title) {
+      var hits = matchOpen(input, l, DONE_RE);
+      if (!hits.length && input.focusTask) hits = [input.focusTask];   // "이거 끝났어" — 작업 공간의 할 일
+      hits.forEach(function (title) {
         if (!done.some(function (d) { return d.title === title; })) done.push({ title: title, evidence: { quote: l.trim(), line: input.lines.indexOf(l) + 1 } });
       });
     });
@@ -181,8 +205,9 @@
     return {
       done_tasks: done,
       updated_tasks: updated,
-      entry_type: (done.length || updated.length) && !items && body.length <= done.length + updated.length ? (done.length ? 'done' : 'update')
-        : !items ? (done.length || updated.length ? 'mixed' : 'memo') : body.length <= items ? 'task' : 'mixed',
+      bulk_updates: bulk,
+      entry_type: (done.length || updated.length || bulk.length) && !items && body.length <= done.length + updated.length + bulk.length ? (done.length ? 'done' : 'update')
+        : !items ? (done.length || updated.length || bulk.length ? 'mixed' : 'memo') : body.length <= items ? 'task' : 'mixed',
       note_title: first.length > 20 ? first.slice(0, 19) + '…' : first,
       note_project_hint: ph,
       note_kind: /https?:\/\//.test(full) ? 'link' : /(어떨까|해 보면|하면 좋|아이디어)/.test(full) ? 'idea' : 'memo'

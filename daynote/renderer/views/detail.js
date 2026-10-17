@@ -35,10 +35,11 @@
 
     // 상태
     var status = h('select.select', { 'aria-label': '상태', disabled: done },
-      ['todo', 'in_progress', 'waiting'].map(function (k) { return h('option', { value: k, selected: t.status === k }, M.TASK_STATUS[k]); }),
+      ['todo', 'in_progress', 'paused', 'waiting'].map(function (k) { return h('option', { value: k, selected: t.status === k }, M.TASK_STATUS[k]); }),
       done ? h('option', { value: 'done', selected: true }, '완료') : null);
     status.addEventListener('change', function () {
       if (status.value === 'in_progress') { A.startTask(taskId); return; }
+      if (status.value === 'paused') { A.pauseTask(taskId); return; }
       save({ status: status.value }, '상태 변경');
     });
     var waitingFor = h('input.input', { value: t.waitingFor || '', placeholder: '무엇을 기다리나요? (예: 재무팀 회신)', 'aria-label': '대기 사유' });

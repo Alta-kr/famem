@@ -37,7 +37,7 @@
   function groupOf(st, t, now) {
     var today = D.ymd(now);
     if (t.status === 'done') return t.completedAt && D.ymd(t.completedAt) === today ? 'doneToday' : 'done';
-    if (t.status === 'in_progress') return 'progress';
+    if (t.status === 'in_progress' || t.status === 'paused') return 'progress';
     if (t.status === 'waiting' || M.unmetBlockers(st, t).length) return 'waiting';
     if (t.snoozedUntil && new Date(t.snoozedUntil) > now) return 'snoozed';
     if (!t.dueDate) return 'nodue';

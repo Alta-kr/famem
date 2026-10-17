@@ -10,13 +10,13 @@
 // 여기에 "이 입력은 무엇인가" 와 "어느 프로젝트 이야기인가" 만 더한다.
 
 (function (factory) {
-  var dep = (typeof module !== 'undefined' && module.exports) ? require('./organizeNote') : window.Daynote.aiOrganize;
-  var api = factory(dep);
-  if (typeof module !== 'undefined' && module.exports) module.exports = api;
+  var node = typeof module !== 'undefined' && module.exports;
+  var api = factory(node ? require('./organizeNote') : window.Daynote.aiOrganize, node ? require('./commands') : window.Daynote.aiCommands);
+  if (node) module.exports = api;
   if (typeof window !== 'undefined') { window.Daynote = window.Daynote || {}; window.Daynote.aiCapture = api; }
-})(function (O) {
-  var PROMPT_VERSION = 'capture.v6';   // v2: 큰 할 일 감지 + 단계 초안(보관만) · v3: 메모 종류(메모/아이디어/링크) · v4: 시간 정한 할 일(do_at) · v5: 완료 보고(done_tasks) · v6: 날짜 바꾸기(updated_tasks)
-  var ENTRY_TYPES = ['memo', 'task', 'mixed', 'done', 'update'];
+})(function (O, CMD) {
+  var PROMPT_VERSION = 'capture.v7';   // v2: 큰 할 일 감지 + 단계 초안(보관만) · v3: 메모 종류(메모/아이디어/링크) · v4: 시간 정한 할 일(do_at) · v5: 완료 보고(done_tasks) · v6: 날짜 바꾸기(updated_tasks) · v7: 채팅 명령(commands)
+  var ENTRY_TYPES = ['memo', 'task', 'mixed', 'done', 'update', 'command'];
   var NOTE_KINDS = ['memo', 'idea', 'link'];
 
   var SYSTEM = O.SYSTEM + '\n\n' + [
@@ -48,7 +48,14 @@
     'I. 날짜 바꾸기: 글이 "이미 있는 할 일" 의 날짜·시각을 바꾸겠다고 말하면(예: "견적서는 내일 보낼게", "보고서 다음 주 월요일로 미룸", "운동은 저녁 7시에 할게") updated_tasks 에 그 할 일 제목(목록 글자 그대로)과 근거 문장, 새 날짜·시각을 넣습니다.',
     '   날짜만 정하면 due 에(마감을 그날로), 할 시각을 정하면 do_at 에 넣고 다른 쪽은 text·date·time 모두 null 입니다. 표현은 text 에 글자 그대로, date·time 은 기준 시각으로 계산합니다.',
     '   목록에 없는 일, 바꿀 날짜가 분명하지 않은 말("나중에 할게", "좀 미뤄야겠다")은 넣지 않습니다. 같은 일을 새 할 일(tasks)로 또 만들지 마세요.',
-    '   날짜 바꾸기만 있는 글이면 entry_type "update", 다른 기록·할 일이 섞이면 "mixed". 없으면 updated_tasks 는 빈 배열입니다.'
+    '   날짜 바꾸기만 있는 글이면 entry_type "update", 다른 기록·할 일이 섞이면 "mixed". 없으면 updated_tasks 는 빈 배열입니다.',
+    '   "~후로·~뒤로 미뤄" 는 기준 시각부터, "두 시간 미뤄줘"·"30분 더 늦춰" 처럼 후·뒤가 없으면 지금 마감에서 미루는 것입니다. 표현은 due.text 에 글자 그대로 넣습니다(앱이 다시 계산합니다).',
+    'K. 묶음으로 바꾸기: "마감 지난 것 전부 두 시간 후로 미뤄줘", "오늘 마감인 거 다 내일로", "온보딩 프로젝트 할 일 전부 다음 주 월요일로" 처럼 여러 할 일을 묶어서 말하면 bulk_updates 에 넣습니다.',
+    '   filter: overdue(마감 지난 것) · due_today(오늘 마감) · no_due(마감 없는 것) · in_progress(진행 중) · paused(일시 정지) · all_open(남은 할 일 전부). project_hint: 특정 프로젝트로 좁히면 그 이름, 아니면 null.',
+    '   due·do_at 은 I 와 같은 규칙입니다. 어떤 할 일이 그 묶음인지는 앱이 고르니 updated_tasks 에 하나씩 나열하지 마세요. 묶음 지시가 없으면 빈 배열입니다.',
+    'J. 작업 공간의 할 일: <context> 에 "작업 공간에 올려 둔 할 일" 이 있으면, 사용자가 대상을 말하지 않고 "마감 두 시간 후로 미뤄줘", "이거 끝났어", "이거 내일로" 처럼 쓴 글은 그 할 일 이야기입니다.',
+    '   이때 done_tasks·updated_tasks 의 title 은 그 할 일 제목을 그대로 씁니다. 다른 할 일 이름이 분명히 적혀 있으면 그쪽입니다. 이런 지시를 새 할 일로 만들지 마세요.',
+    CMD.PROMPT
   ].join('\n');
 
   function clone(o) { return JSON.parse(JSON.stringify(o)); }
@@ -71,14 +78,29 @@
   SCHEMA.properties.updated_tasks = { type: 'array', items: { type: 'object', additionalProperties: false, required: ['title', 'evidence', 'due', 'do_at'],
     properties: { title: { type: 'string' }, evidence: clone(SCHEMA.properties.tasks.items.properties.evidence),
       due: clone(SCHEMA.properties.tasks.items.properties.due), do_at: clone(SCHEMA.properties.tasks.items.properties.due) } } };
+  // 묶음 날짜 바꾸기 — 어떤 묶음인지만 (대상 할 일은 앱이 고른다)
+  SCHEMA.properties.bulk_updates = { type: 'array', items: { type: 'object', additionalProperties: false, required: ['filter', 'project_hint', 'evidence', 'due', 'do_at'],
+    properties: { filter: { type: 'string', enum: ['overdue', 'due_today', 'no_due', 'in_progress', 'paused', 'all_open'] },
+      project_hint: { anyOf: [{ type: 'string' }, { type: 'null' }] }, evidence: clone(SCHEMA.properties.tasks.items.properties.evidence),
+      due: clone(SCHEMA.properties.tasks.items.properties.due), do_at: clone(SCHEMA.properties.tasks.items.properties.due) } } };
+  // 채팅 명령 (추천·작게 나누기·시작·휴식·화면 열기·찾기 …) — 검증·실행은 commands.js · assistant.js
+  SCHEMA.properties.commands = JSON.parse(JSON.stringify(CMD.SCHEMA_PART));
   SCHEMA.required = Object.keys(SCHEMA.properties);
 
   function buildInput(note, opts) {
     var input = O.buildInput(note, opts);
     input.promptVersion = PROMPT_VERSION;
     input.purpose = 'capture';
+    // 지금 작업 공간(채팅)에 올려 둔 할 일 — "이거 미뤄줘" 의 대상
+    input.focusTask = opts && opts.focusTask ? String(opts.focusTask).slice(0, 200) : null;
+    if (input.focusTask && input.openTasks.indexOf(input.focusTask) === -1) input.openTasks = [input.focusTask].concat(input.openTasks);
     return input;
   }
+  function userText(input) {
+    var t = O.userText(input);
+    if (!input.focusTask) return t;
+    return t.replace('</context>', '작업 공간에 올려 둔 할 일: ' + input.focusTask + '\n</context>');
+  }
 
-  return { PROMPT_VERSION: PROMPT_VERSION, ENTRY_TYPES: ENTRY_TYPES, NOTE_KINDS: NOTE_KINDS, SYSTEM: SYSTEM, SCHEMA: SCHEMA, buildInput: buildInput, userText: O.userText };
+  return { PROMPT_VERSION: PROMPT_VERSION, ENTRY_TYPES: ENTRY_TYPES, NOTE_KINDS: NOTE_KINDS, SYSTEM: SYSTEM, SCHEMA: SCHEMA, buildInput: buildInput, userText: userText };
 });

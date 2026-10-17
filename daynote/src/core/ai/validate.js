@@ -323,6 +323,19 @@
     return { ok: true, errors: [], items: items, dropped: dropped, digest: digest };
   }
 
+  // "두 시간 미뤄줘", "30분 더 늦춰", "1시간 반 연장" — 지금이 아니라 지금 마감에서 몇 분 뒤로 (후로·뒤로 가 없을 때)
+  function shiftMinutes(text) {
+    var s = String(text || '');
+    if (/(후|뒤|있다가|이따)\s*(로|에)?/.test(s.replace(/(미뤄|늦춰|연장|미루|늦추)[^\s]*/g, ''))) return null;
+    var m = s.match(/(\d+|한|두|세|네|다섯|여섯|반)\s*시간\s*(반)?\s*(?:(\d+)\s*분)?\s*(?:더\s*|만\s*|정도\s*)?(?:미뤄|미루|늦춰|늦추|연장)/);
+    if (m) {
+      var h = m[1] === '반' ? 0.5 : (KNUM[m[1]] || +m[1]);
+      return Math.round(h * 60) + (m[2] ? 30 : 0) + (m[3] ? +m[3] : 0);
+    }
+    m = s.match(/(\d+)\s*분\s*(?:더\s*|만\s*|정도\s*)?(?:미뤄|미루|늦춰|늦추|연장)/);
+    return m ? +m[1] : null;
+  }
+
   // 기존 할 일의 날짜·시각을 바꾸라는 보고("견적서는 내일 보낼게")에 쓴다 — 새 항목과 같은 검증을 거친다.
   // 날짜(·시각)가 원문 표현으로 확인될 때만 값을 준다. 시각만 있고 날짜 표현이 없으면 기준일(오늘).
   function verifyWhen(w, quote, note, now) {
@@ -342,7 +355,7 @@
   }
 
   return {
-    verifyWhen: verifyWhen,
+    verifyWhen: verifyWhen, shiftMinutes: shiftMinutes, relativeAt: relativeAt,
     validateOrganizeNote: validateOrganizeNote, shapeErrors: shapeErrors, timeCandidates: timeCandidates, sanitizeSteps: sanitizeSteps,
     noteLines: noteLines, locate: locate, DATE_RE: DATE_RE, TIME_RE: TIME_RE
   };

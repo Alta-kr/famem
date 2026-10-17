@@ -15,7 +15,9 @@
 
     var chatHost = h('div.home-chat');
     var listsHost = h('div.home-lists');
-    root.appendChild(h('div.home', chatHost, listsHost));
+    var home = h('div.home', chatHost, colBar(), listsHost);
+    applyCols(home, S.state.prefs.homeCols);
+    root.appendChild(home);
 
     var chat = DN.views.chat.render(chatHost);
     function paint() {
@@ -57,10 +59,10 @@
     var open = [], done = [];
     M.liveTasks(st).forEach(function (t) {
       if (t.status === 'done') { if (t.completedAt && D.ymd(t.completedAt) === today) done.push(t); return; }
-      if (t.status === 'in_progress' || blockToday[t.id] || (t.dueDate && t.dueDate <= today) || D.ymd(t.createdAt) === today) open.push(t);
+      if (t.status === 'in_progress' || t.status === 'paused' || blockToday[t.id] || (t.dueDate && t.dueDate <= today) || D.ymd(t.createdAt) === today) open.push(t);
     });
     function rank(t) {
-      if (t.status === 'in_progress') return 0;
+      if (t.status === 'in_progress' || t.status === 'paused') return 0;
       if (t.dueDate && t.dueDate < today) return 1;
       if (t.dueDate === today) return 2;
       return 3;
@@ -120,6 +122,20 @@
         memos.length ? memoUl : h('div.empty.home-empty', '오늘 적은 메모가 여기에 모여요.')));
     secTasks.id = 'home-sec-tasks';
     secMemos.id = 'home-sec-memos';
+    // 작업 공간(채팅)의 작업 카드를 여기로 끌어 놓으면 '할 일' 로 돌려보낸다 (진행 중·일시 정지 → 할 일)
+    function isWork(e) { return e.dataTransfer && Array.prototype.indexOf.call(e.dataTransfer.types || [], 'application/x-daynote-work') !== -1; }
+    secTasks.addEventListener('dragover', function (e) {
+      if (!isWork(e)) return;
+      e.preventDefault(); e.dataTransfer.dropEffect = 'move';
+      secTasks.classList.add('is-drop-target');
+    });
+    secTasks.addEventListener('dragleave', function (e) { if (!secTasks.contains(e.relatedTarget)) secTasks.classList.remove('is-drop-target'); });
+    secTasks.addEventListener('drop', function (e) {
+      if (!isWork(e)) return;
+      e.preventDefault();
+      secTasks.classList.remove('is-drop-target');
+      DN.assistant.returnWork(e.dataTransfer.getData('application/x-daynote-work'));
+    });
     var secs = [secTasks, secMemos, agenda(st, now)];
     secs.bars = [];
     var bar0 = splitter(secs, 0), bar1 = splitter(secs, 1);
@@ -259,19 +275,27 @@
     var proj = t.projectId && M.byId(st.projects, t.projectId);
     var pendingDraft = !done && t.breakdown && (t.breakdown.status === 'pending' || t.breakdown.status === 'later') && !steps.length;
     var meta = h('div.home-meta',
-      t.status === 'in_progress' ? h('span.chip.chip-progress', '진행 중') : null,
+      t.status === 'in_progress' ? h('span.chip.chip-progress', ui.icon('play'), '진행 중') : null,
+      t.status === 'paused' ? h('span.chip.chip-paused', ui.icon('pause'), '일시 정지') : null,
       ui.dueChip(t, now),
-      steps.length ? h('span.chip', '단계 ' + stepsDone + '/' + steps.length) : null,
+      DN.habits && DN.habits.isWeekGoal(t, now) ? h('span.chip.chip-goal', { title: '이번 주 꼭 끝낼 일' }, '★ 이번 주') : null,
+      steps.length ? h('span.chip.chip-steps', '단계 ' + stepsDone + '/' + steps.length, h('span.mini-bar', h('span', { style: { width: Math.round(stepsDone / steps.length * 100) + '%' } }))) : null,
       pendingDraft ? h('button.chip.chip-guess.chip-btn', { type: 'button', title: 'AI가 나눠 둔 단계 보기', onclick: function (e) { e.stopPropagation(); DN.assistant.breakdown(t.id); } }, '나눠 둔 단계 있음') : null,
       proj ? h('span.chip.chip-project', { style: { '--pc': proj.color } }, proj.name) : null);
-    return h('li.home-row' + (done ? '.is-done' : '') + (selected ? '.is-selected' : ''), {
-      'data-id': done ? null : t.id, draggable: done ? null : 'true', tabindex: '0',
-      onclick: function () { A.openTask(t.id); },
-      onkeydown: function (e) { if (e.target !== e.currentTarget) return; if (e.key === 'Enter') { e.preventDefault(); A.openTask(t.id); } else if (e.key === ' ') { e.preventDefault(); A.toggleDone(t.id); } }
+    var main = h('div.home-main', h('div.home-row-title', t.title || '(제목 없음)'), meta.childNodes.length ? meta : null);
+    var li = h('li.home-row' + (done ? '.is-done' : '') + (selected ? '.is-selected' : ''), {
+      'data-id': done ? null : t.id, 'data-task-id': done ? null : t.id, draggable: done ? null : 'true', tabindex: '0',
+      title: done ? null : '끌어서 순서 바꾸기 · 채팅으로 끌어 놓으면 작업 공간에 올라가요',
+      // 누르면 세부 할 일이 펼쳐진다 (상세 편집은 오른쪽 클릭 → 자세히 편집)
+      onclick: function () { toggle(); },
+      oncontextmenu: function (e) { e.preventDefault(); A.taskMenu(t.id, e.currentTarget); },
+      onkeydown: function (e) { if (e.target !== e.currentTarget) return; if (e.key === 'Enter') { e.preventDefault(); toggle(); } else if (e.key === ' ') { e.preventDefault(); A.toggleDone(t.id); } }
     },
       done ? h('span.drag-handle.is-off', { 'aria-hidden': 'true' }) : h('span.drag-handle', { 'aria-hidden': 'true', title: '끌어서 순서 바꾸기' }, '⋮⋮'),
       check,
-      h('div.home-main', h('div.home-row-title', t.title || '(제목 없음)'), meta.childNodes.length ? meta : null));
+      main);
+    var toggle = ui.stepsToggle(li, t, main);
+    return li;
   }
 
   // 링크 메모의 첫 주소 → { url, host } (주소가 없으면 null)
@@ -312,6 +336,64 @@
           proj ? h('span.chip.chip-project', { style: { '--pc': proj.color } }, proj.name) : null)));
   }
 
+  // ------------------------------------------------------------------ 좌우 비율 (채팅 | 오늘 패널)
+  // 막대를 끌면 채팅 쪽 비율이 바뀐다. 끄는 동안은 화면만 바꾸고 놓을 때 한 번 저장(prefs.homeCols).
+  // ←/→ 5%씩, 더블클릭·Enter 는 반반으로. 양쪽 모두 최소 320px.
+  function applyCols(home, r) {
+    var SP = DN.split;
+    r = typeof r === 'number' ? r : SP.COL_DEFAULT;
+    home.style.gridTemplateColumns = 'minmax(' + SP.COL_MIN_PX + 'px, ' + r + 'fr) 16px minmax(' + SP.COL_MIN_PX + 'px, ' + (1 - r) + 'fr)';
+    var bar = home.querySelector('.home-colbar');
+    if (bar) {
+      bar.setAttribute('aria-valuenow', String(Math.round(r * 100)));
+      bar.setAttribute('aria-valuetext', '채팅 ' + Math.round(r * 100) + '%, 오늘 ' + (100 - Math.round(r * 100)) + '%');
+    }
+  }
+  function colBar() {
+    var SP = DN.split;
+    var drag = null;
+    function homeEl() { return el.parentNode; }
+    function width() { var hm = homeEl(); var cs = getComputedStyle(hm); return hm.clientWidth - parseFloat(cs.paddingLeft) - parseFloat(cs.paddingRight) - 16; }
+    function current() { var r = S.state.prefs.homeCols; return typeof r === 'number' ? r : SP.COL_DEFAULT; }
+    function save(r) {
+      r = SP.clampCol(r, width());
+      S.mutate(null, function (s) { if (Math.abs(r - SP.COL_DEFAULT) < 1e-3) delete s.prefs.homeCols; else s.prefs.homeCols = r; }, { silent: true });
+      applyCols(homeEl(), r);
+    }
+    function finish() {
+      if (!drag) return;
+      var r = drag.last; drag = null;
+      el.classList.remove('is-dragging');
+      document.documentElement.classList.remove('is-col-resizing');
+      if (r != null) save(r);
+    }
+    var el = h('div.home-colbar', {
+      role: 'separator', 'aria-orientation': 'vertical', tabindex: '0', 'aria-valuemin': '0', 'aria-valuemax': '100',
+      'aria-label': '채팅과 오늘 패널 너비 조정', title: '끌어서 너비 조정 · ←/→ 5%씩 · 더블클릭: 반반',
+      onpointerdown: function (e) {
+        if (e.button !== 0) return;
+        e.preventDefault();
+        var hm = homeEl(), rect = hm.getBoundingClientRect(), cs = getComputedStyle(hm);
+        drag = { left: rect.left + parseFloat(cs.paddingLeft), total: width(), last: null };
+        try { el.setPointerCapture(e.pointerId); } catch (x) {}
+        el.classList.add('is-dragging');
+        document.documentElement.classList.add('is-col-resizing');
+      },
+      onpointermove: function (e) {
+        if (!drag) return;
+        drag.last = SP.clampCol((e.clientX - drag.left - 8) / drag.total, drag.total);
+        applyCols(homeEl(), drag.last);
+      },
+      onpointerup: finish, onpointercancel: finish, onlostpointercapture: finish,
+      ondblclick: function () { save(SP.COL_DEFAULT); },
+      onkeydown: function (e) {
+        if (e.key === 'ArrowLeft' || e.key === 'ArrowRight') { e.preventDefault(); save(current() + (e.key === 'ArrowLeft' ? -0.05 : 0.05)); }
+        else if (e.key === 'Enter') { e.preventDefault(); save(SP.COL_DEFAULT); }
+      }
+    });
+    return el;
+  }
+
   // ------------------------------------------------------------------ 끌어 놓아 순서 바꾸기 (+ Alt+↑/↓)
   function sortable(ul, ids, commit) {
     var dragId = null;
@@ -329,8 +411,11 @@
       if (!li) return;
       dragId = li.getAttribute('data-id');
       li.classList.add('is-dragging');
-      e.dataTransfer.effectAllowed = 'move';
+      // 할 일은 채팅(작업 공간)으로도 끌어 놓을 수 있다
+      var tid = li.getAttribute('data-task-id');
+      e.dataTransfer.effectAllowed = tid ? 'copyMove' : 'move';
       e.dataTransfer.setData('text/plain', dragId);
+      if (tid) e.dataTransfer.setData('application/x-daynote-task', tid);
     });
     ul.addEventListener('dragover', function (e) {
       if (!dragId) return;
@@ -389,7 +474,7 @@
           return h('div' + cls,
             h('span.time', D.hm(b.start) + '–' + D.hm(b.end)),
             h('span.t', h('button.link-btn', { type: 'button', style: { color: 'inherit', textDecoration: t && t.status === 'done' ? 'line-through' : 'none' },
-              onclick: function () { if (t) A.openTask(t.id); else DN.views.schedule.open({ blockId: b.id }); } }, t ? t.title : (b.title || '일정')),
+              onclick: function () { if (t) DN.assistant.work(t.id); else DN.views.schedule.open({ blockId: b.id }); } }, t ? t.title : (b.title || '일정')),
               conflict ? h('span.meta', { style: { color: 'var(--warning)', marginLeft: '6px' } }, '· 겹침') : null));
         }) : h('div.empty.home-empty', '오늘 잡힌 일정이 없어요.')));
   }

@@ -132,6 +132,7 @@
     }
     if (due.text) r.push(due.text);
     if (t.status === 'in_progress') r.push('이미 진행 중인 업무라 이어서 하기 좋습니다.');
+    if (t.status === 'paused') r.push('잠시 멈춰 둔 일이라 이어서 하기 좋습니다.');
     else if (cal.workingNow.indexOf(t.id) !== -1) r.push('지금 이 업무의 작업 시간이 잡혀 있습니다.');
     if (t.priority === 'high') r.push('우선순위가 높음입니다.');
     return r;
@@ -190,7 +191,7 @@
         taskId: t.id, fit: fit.fit, step: fit.step || null,
         fitGroup: fit.fit === 'unknown' ? 1 : 0,
         urgency: due.bucket,
-        cont: (t.status === 'in_progress' || cal.workingNow.indexOf(t.id) !== -1) ? 0 : 1,
+        cont: (t.status === 'in_progress' || t.status === 'paused' || cal.workingNow.indexOf(t.id) !== -1) ? 0 : 1,
         manual: typeof t.sortOrder === 'number' ? t.sortOrder : Number.MAX_SAFE_INTEGER,
         prio: PRIORITY_RANK[t.priority] != null ? PRIORITY_RANK[t.priority] : 1,
         dueKey: due.key,

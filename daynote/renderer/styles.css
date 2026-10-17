@@ -1330,3 +1330,176 @@ kbd {
 .cap-row.is-done .cap-title { text-decoration: line-through; text-decoration-color: var(--text-secondary); color: var(--text-secondary); }
 /* 날짜 바꾸기 줄 ("견적서는 내일 보낼게" → 기존 할 일 마감 변경) */
 .kind-moved, [data-kind="moved"] { --kind: var(--kind-event); --kind-soft: var(--kind-event-soft); --kind-ink: var(--kind-event-ink); }
+
+/* 마감 지난 칩 — Alt 를 누르고 있으면 눌러서 24시간 미룰 수 있다는 표시 */
+.alt-down .is-postponable, .alt-down .cap-date.chip-overdue { cursor: pointer; box-shadow: 0 0 0 1.5px var(--error); }
+
+/* ---------------------------------------------------------------- 할 일 작업 공간 (채팅 = 작업 공간) */
+.chip-paused { background: var(--warning-soft); color: var(--warning); }
+.chip-progress svg, .chip-paused svg { width: 12px; height: 12px; }
+/* 끌어 놓을 수 있는 곳 */
+.chat-list.is-drop-target, .home-sec-tasks.is-drop-target { outline: 2px dashed var(--primary); outline-offset: -6px; background: var(--primary-soft); }
+.chat-spacer { flex: none; }
+/* 작업 카드 */
+.msg-work .msg-body { width: 100%; max-width: 560px; }
+.work { display: flex; flex-direction: column; gap: 8px; border-left: 3px solid var(--border); padding-left: 12px; cursor: grab; }
+.work:active { cursor: grabbing; }
+.work.is-running { border-left-color: var(--secondary); }
+.work.is-paused { border-left-color: var(--warning); }
+.work.is-done { border-left-color: var(--success); cursor: default; }
+.work.is-done .work-title { text-decoration: line-through; color: var(--text-secondary); }
+.work.is-closed { border: 0; padding: 0; cursor: default; flex-direction: row; align-items: baseline; gap: 0; }
+.work-head { display: flex; align-items: center; gap: 8px; flex-wrap: wrap; }
+.work-state { display: inline-flex; align-items: center; gap: 4px; font-size: 12px; font-weight: 600; color: var(--text-secondary); }
+.work-state svg { width: 13px; height: 13px; }
+.work.is-running .work-state { color: var(--secondary); }
+.work.is-paused .work-state { color: var(--warning); }
+.work-time { font-weight: 500; font-variant-numeric: tabular-nums; }
+.work-title { all: unset; cursor: pointer; font-size: 16px; font-weight: 600; letter-spacing: -0.01em; line-height: 1.4; }
+.work-title:hover { text-decoration: underline; }
+.work-title:focus-visible { outline: 2px solid var(--focus); outline-offset: 2px; border-radius: 4px; }
+.work-steps ul { list-style: none; margin: 4px 0 0; padding: 0; display: flex; flex-direction: column; gap: 2px; }
+.work-steps li label { display: flex; align-items: baseline; gap: 8px; padding: 3px 0; cursor: pointer; font-size: 14px; }
+.work-steps li.is-done span:not(.meta) { text-decoration: line-through; color: var(--text-secondary); }
+.work .msg-actions { align-items: center; flex-wrap: wrap; }
+.work-sep { width: 1px; height: 18px; background: var(--border); margin: 0 2px; }
+
+/* 단계 시간 — 숫자를 잡고 위아래로 끌어 맞춘다 (옆에 작게 '분') */
+.bd-min-wrap { display: inline-flex; align-items: center; gap: 4px; flex: 0 0 auto; }
+.bd-step .bd-min-wrap .bd-min { width: 52px; flex: 0 0 52px; text-align: right; font-variant-numeric: tabular-nums; cursor: ns-resize; user-select: none; }
+.bd-step .bd-min-wrap .bd-min:focus { cursor: text; user-select: text; }
+.bd-step .bd-min.is-scrubbing { border-color: var(--primary); background: var(--primary-soft); }
+.bd-min-unit { font-size: 12px; color: var(--text-secondary); }
+html.is-scrubbing, html.is-scrubbing * { cursor: ns-resize !important; user-select: none !important; }
+
+/* 홈 좌우 비율 — 채팅 | 오늘 패널 사이 막대를 끌어 조정 */
+.home { column-gap: 0; }
+.home-colbar { position: relative; width: 16px; cursor: col-resize; touch-action: none; }
+.home-colbar::after { content: ''; position: absolute; top: 50%; left: 50%; width: 4px; height: 40px; margin: -20px 0 0 -2px; border-radius: 999px; background: var(--border); transition: background var(--t-fast), height var(--t-fast); }
+.home-colbar:hover::after, .home-colbar.is-dragging::after, .home-colbar:focus-visible::after { background: var(--primary); height: 64px; margin-top: -32px; }
+.home-colbar:focus-visible { outline: none; }
+html.is-col-resizing, html.is-col-resizing * { cursor: col-resize !important; user-select: none !important; }
+@media (max-width: 860px) {
+  .home { grid-template-columns: 1fr !important; }
+  .home-colbar { display: none; }
+}
+
+/* 세부 할 일 — 할 일을 누르면 제목 아래에 펼쳐진다 */
+.task-steps { margin-top: 8px; padding: 8px 10px; border-radius: var(--r-control); background: var(--surface-subtle); display: flex; flex-direction: column; gap: 6px; cursor: default; }
+.task-steps ul { list-style: none; margin: 0; padding: 0; display: flex; flex-direction: column; gap: 2px; }
+.task-steps li label { display: flex; align-items: baseline; gap: 8px; padding: 3px 0; cursor: pointer; font-size: 13.5px; }
+.task-steps li label .meta { margin-left: auto; font-variant-numeric: tabular-nums; }
+.task-steps li.is-done .task-step-title { text-decoration: line-through; color: var(--text-secondary); }
+.task-steps-empty { display: flex; align-items: center; gap: 10px; flex-wrap: wrap; }
+.task-steps .task-step-add { height: 28px; font-size: 13px; background: var(--surface); }
+li[aria-expanded="true"] { background: var(--surface-subtle); }
+li[aria-expanded="true"] .task-steps { background: var(--surface); }
+
+/* 데모 AI 초안 표시 */
+.bd-demo { display: flex; align-items: flex-start; gap: 6px; margin: 6px 0 2px; padding: 6px 10px; border-radius: var(--r-control); background: var(--warning-soft); color: var(--warning); font-size: 12.5px; line-height: 1.5; }
+.bd-demo svg { flex: none; width: 14px; height: 14px; margin-top: 2px; }
+
+/* ---------------------------------------------------------------- 월간 달력 (일요일 시작) */
+.cal-month-main { min-height: 0; }
+.cal-month { flex: 1; min-height: 0; display: grid; grid-template-columns: repeat(7, minmax(0, 1fr)); border-top: 1px solid var(--border-deco); }
+.cal-m-head { padding: 8px 10px; font-size: 12px; font-weight: 600; color: var(--text-secondary); text-align: left; border-bottom: 1px solid var(--border-deco); }
+.cal-m-head.is-sun { color: var(--error); }
+.cal-m-head.is-sat { color: var(--kind-task-ink); }
+.cal-m-cell { position: relative; min-height: 0; overflow: hidden; display: flex; flex-direction: column; gap: 2px; padding: 4px 6px 6px; border-right: 1px solid var(--border-deco); border-bottom: 1px solid var(--border-deco); cursor: pointer; }
+.cal-m-cell:nth-child(7n + 7) { border-right: 0; }
+.cal-m-cell:hover { background: var(--surface-subtle); }
+.cal-m-cell.is-out { background: var(--bg-app); }
+.cal-m-cell.is-out .cal-m-date { color: var(--text-faint); }
+.cal-m-cell.is-drop { background: var(--primary-soft); box-shadow: inset 0 0 0 2px var(--primary); }
+.cal-m-date { all: unset; cursor: pointer; align-self: flex-start; min-width: 24px; height: 24px; padding: 0 6px; box-sizing: border-box; border-radius: 999px; display: inline-flex; align-items: center; justify-content: center; font-size: 13px; font-weight: 600; font-variant-numeric: tabular-nums; }
+.cal-m-date:hover { background: var(--surface-subtle); }
+.cal-m-date:focus-visible { outline: 2px solid var(--focus); }
+.cal-m-cell.is-sun .cal-m-date { color: var(--error); }
+.cal-m-cell.is-sat .cal-m-date { color: var(--kind-task-ink); }
+.cal-m-cell.is-today .cal-m-date { background: var(--primary); color: #fff; }
+.cal-m-items { display: flex; flex-direction: column; gap: 2px; min-height: 0; }
+.cal-m-item { all: unset; box-sizing: border-box; display: block; width: 100%; padding: 1px 6px; border-radius: 4px; font-size: 12px; line-height: 18px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; cursor: pointer; }
+.cal-m-item:focus-visible { outline: 2px solid var(--focus); }
+.cal-m-item.event { background: var(--kind-event-soft); color: var(--kind-event-ink); }
+.cal-m-item.work { background: var(--kind-task-soft); color: var(--kind-task-ink); }
+.cal-m-item.work.is-done { text-decoration: line-through; opacity: .7; }
+.cal-m-item.due { color: var(--text-secondary); padding-left: 4px; }
+.cal-m-item.due svg { width: 11px; height: 11px; vertical-align: -1px; }
+.cal-m-item.due.is-over { color: var(--error); }
+.cal-m-time { font-variant-numeric: tabular-nums; opacity: .8; }
+.cal-m-more { all: unset; cursor: pointer; font-size: 11.5px; color: var(--text-secondary); padding: 0 6px; }
+.cal-m-more:hover { color: var(--text-primary); text-decoration: underline; }
+
+/* 월간에서 끌어 놓을 때 뜨는 그날 24시간 시간표 */
+.day-picker { position: fixed; z-index: 90; width: 260px; max-height: calc(100vh - 16px); display: flex; flex-direction: column; background: var(--surface); border: 1px solid var(--border-deco); border-radius: var(--r-panel); box-shadow: var(--shadow-float); overflow-y: auto; padding-bottom: 8px; animation: slideIn var(--t-fast) var(--ease); }
+.dp-head { display: flex; align-items: baseline; gap: 8px; padding: 8px 12px; border-bottom: 1px solid var(--border-deco); font-size: 13px; }
+.dp-head .meta { font-size: 11.5px; }
+.dp-area { position: relative; margin: 0 8px 0 44px; flex: none; }
+.day-picker > .dp-area { overflow: visible; }
+.dp-hour { position: absolute; left: 0; right: 0; border-top: 1px solid var(--border-deco); }
+.dp-hour.is-work { background: var(--surface-subtle); }
+.dp-hlabel { position: absolute; left: -40px; top: -7px; width: 34px; text-align: right; font-size: 10.5px; color: var(--text-secondary); font-variant-numeric: tabular-nums; }
+.dp-block { position: absolute; left: 2px; right: 2px; border-radius: 4px; padding: 0 5px; font-size: 10.5px; line-height: 12px; overflow: hidden; white-space: nowrap; text-overflow: ellipsis; opacity: .85; pointer-events: none; }
+.dp-block.event { background: var(--kind-event-soft); color: var(--kind-event-ink); }
+.dp-block.work { background: var(--kind-task-soft); color: var(--kind-task-ink); }
+.dp-now { position: absolute; left: 0; right: 0; height: 2px; background: var(--error); pointer-events: none; }
+.dp-ghost { position: absolute; left: 0; right: 0; border-radius: 4px; background: var(--primary); color: #fff; font-size: 11px; font-weight: 600; padding: 1px 6px; pointer-events: none; box-shadow: 0 2px 8px rgba(0,0,0,.2); font-variant-numeric: tabular-nums; }
+.dp-ghost.is-conflict { background: var(--warning); }
+/* 고정 자리(왼쪽)에 뜬 시간표 + 지금 고르는 날짜 칸 */
+.day-picker.is-docked { animation: none; }
+.dp-date { font-size: 15px; letter-spacing: -0.01em; }
+.dp-head { flex-direction: column; align-items: flex-start; gap: 2px; }
+.cal-m-cell.is-picking { box-shadow: inset 0 0 0 2px var(--primary); background: var(--primary-soft); }
+.cal-m-cell.is-picking .cal-m-date { background: var(--primary); color: #fff; }
+/* 끄는 동안 커서 옆 알약 */
+.drag-pill { position: fixed; top: -1000px; left: -1000px; display: inline-flex; align-items: center; gap: 6px; max-width: 220px; padding: 4px 10px; border-radius: 999px; background: var(--primary); color: #fff; font-size: 12px; font-weight: 600; box-shadow: 0 4px 12px rgba(0,0,0,.25); }
+.drag-pill-t { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.drag-pill-m { opacity: .8; font-weight: 500; font-variant-numeric: tabular-nums; }
+/* 시간표 머리: 위에 고정, 놓을 시각을 크게 */
+.day-picker .dp-head { position: sticky; top: 0; z-index: 2; background: var(--surface); }
+.dp-target { font-size: 13px; color: var(--text-secondary); font-variant-numeric: tabular-nums; }
+.dp-target.is-set { font-size: 15px; font-weight: 700; color: var(--primary); }
+.dp-target.is-conflict { color: var(--warning); }
+.dp-ghost { opacity: 1; z-index: 1; border: 2px solid var(--surface); }
+.dp-ghost.is-conflict { background: var(--warning); color: #fff; }
+/* 시간표가 왼쪽 자리를 위아래 꽉 채운다 — 모서리 없이 그 자리에 붙어서 */
+.day-picker.is-docked { max-height: none; border-radius: 0; border-top: 0; border-bottom: 0; box-shadow: 4px 0 16px rgba(0,0,0,.12); padding-bottom: 8px; }
+.day-picker.is-docked .dp-area { margin-top: 8px; }
+.dp-hour { border-top-color: var(--border); }
+.dp-hour::after { content: ''; position: absolute; left: 0; right: 0; top: 50%; border-top: 1px dashed var(--border); opacity: .6; }
+
+/* ---------------------------------------------------------------- 연구 기반 도움들 */
+/* 진행 막대 (작업 카드) · 미니 막대 (오늘 목록) */
+.pbar { height: 6px; border-radius: 999px; background: var(--surface-subtle); overflow: hidden; margin: 4px 0 6px; }
+.pbar-fill { height: 100%; background: var(--success); border-radius: 999px; transition: width var(--t-mid) var(--ease); }
+.chip-steps { gap: 6px; }
+.mini-bar { display: inline-block; width: 28px; height: 4px; border-radius: 999px; background: var(--border); overflow: hidden; vertical-align: middle; }
+.mini-bar > span { display: block; height: 100%; background: var(--success); }
+.chip-goal { background: var(--warning-soft); color: var(--warning); font-weight: 600; }
+/* 작업 카드: 예상·현실 시간, 이어서 할 첫 행동 */
+.work-est { display: flex; align-items: center; gap: 4px; flex-wrap: wrap; }
+.work-est svg, .work-resume svg { width: 13px; height: 13px; }
+.work-resume { display: flex; align-items: center; gap: 6px; padding: 6px 10px; border-radius: var(--r-control); background: var(--primary-soft); color: var(--primary); font-size: 13px; }
+.work-resume-box { display: flex; flex-direction: column; gap: 4px; }
+.work-resume-in { height: 30px; font-size: 13px; }
+/* 다음 시각 고르기 칩 */
+.when-chips { display: flex; gap: 6px; flex-wrap: wrap; }
+.chip-btn { cursor: pointer; border: 1px solid var(--border); background: var(--surface); }
+.chip-btn:hover { border-color: var(--primary); color: var(--primary); }
+.chip-btn.is-ghost { border-style: dashed; color: var(--text-secondary); }
+.cap-row-wrap { display: flex; flex-direction: column; }
+.cap-when { display: flex; align-items: center; gap: 8px; flex-wrap: wrap; padding: 2px 8px 8px 36px; }
+/* 하루 마무리 · 밀린 일 · 새 주 */
+.dayclose, .overdue-card, .weekstart { display: flex; flex-direction: column; gap: 10px; }
+.dc-title { font-size: 15px; font-weight: 700; letter-spacing: -0.01em; }
+.dc-sub { font-size: 13px; color: var(--text-secondary); }
+.dc-list { list-style: none; margin: 0; padding: 0; display: flex; flex-direction: column; gap: 3px; font-size: 13.5px; }
+.dc-list li { display: flex; align-items: center; gap: 6px; }
+.dc-list svg { width: 13px; height: 13px; color: var(--success); }
+.dc-left { display: flex; flex-direction: column; gap: 8px; }
+.dc-row { display: flex; flex-direction: column; gap: 4px; padding: 8px 10px; border-radius: var(--r-control); background: var(--surface-subtle); }
+.dc-row.is-set { opacity: .75; }
+.dc-row-title { font-weight: 600; font-size: 14px; }
+.dc-end { font-weight: 600; color: var(--success); }
+.ws-list { display: flex; flex-direction: column; gap: 2px; }
+.ws-row { display: flex; align-items: center; gap: 8px; padding: 4px 0; cursor: pointer; font-size: 14px; }

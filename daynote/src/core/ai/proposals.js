@@ -334,7 +334,7 @@
   //  - 이미 있는 것과 비슷한 할 일은 만들지 않고 초안으로 남긴다
   //  - 시각·소요 시간이 다 있는 일정만 캘린더 블록, 아니면 할 일로 만든다
   //  - 적은 글 자체가 할 일뿐이면 원문은 출처로만 남기고 메모 목록에서는 숨긴다(captureRole 'task_source')
-  var ENTRY = { memo: 1, task: 1, mixed: 1, done: 1, update: 1 };
+  var ENTRY = { memo: 1, task: 1, mixed: 1, done: 1, update: 1, command: 1 };
   var NOTE_KIND = { memo: 1, idea: 1, link: 1 };
   function matchProject(state, hint) {
     if (!hint) return null;
@@ -404,9 +404,12 @@
     var completed = completeReported(state, note, out.done_tasks, created, now);
     // 날짜 바꾸기 ("견적서는 내일 보낼게") — 앱이 날짜를 다시 계산해 맞을 때만 기존 할 일을 고친다
     var updated = updateReported(state, note, out.updated_tasks, created, completed, now);
+    updated = updated.concat(bulkReported(state, note, out.bulk_updates, created, completed.concat(updated), now));
     var reported = completed.length + updated.length;
     if (entryType === 'done' || entryType === 'update') entryType = reported ? (created.length ? 'mixed' : entryType) : 'memo';
     else if (reported && entryType === 'memo') entryType = 'mixed';
+    // 명령만 있는 글("할 일 추천해줘")은 메모로 남기지 않는다 — 채팅 말풍선에 글은 그대로 있다
+    if (entryType === 'command') entryType = created.length || reported ? 'mixed' : 'command';
     if (entryType === 'done' && !completed.length) entryType = 'update';
     if (entryType === 'update' && !updated.length) entryType = 'done';
 
@@ -419,6 +422,7 @@
     if (!note.title && note.captureRole === 'memo' && out.note_title) note.title = String(out.note_title).trim().slice(0, 80);
     // 메모 종류(메모/아이디어/링크) — 사용자가 직접 바꾼 적이 있으면 그대로 둔다
     if (!note.kindByUser) note.kind = NOTE_KIND[out.note_kind] ? out.note_kind : (note.kind || 'memo');
+    if (entryType === 'command') { note.captureRole = 'memo'; note.deletedAt = iso(now); }
     note.capture = Object.assign({}, note.capture, {
       status: 'done', entryType: entryType, runId: args.run.id, doneAt: iso(now),
       created: created, skipped: skipped, completed: completed, updated: updated, projectByAi: !!(proj && !userProject), largeTasks: large
@@ -439,6 +443,38 @@
     return near.length === 1 ? near[0] : null;
   }
   // 날짜 바꾸기: due(마감) 또는 do_at(할 시각). 바꾸기 전 값을 함께 둬서 카드의 × 로 되돌린다
+  // 할 일 하나의 마감(due) 또는 할 시각(do_at)을 바꾼다. 바꾸기 전 값을 함께 돌려줘 카드의 × 로 되돌린다
+  function changeDue(state, t, dueRaw, atRaw, q, note, now) {
+    var due = V.verifyWhen(dueRaw, q, note, now);
+    var at = V.verifyWhen(atRaw, q, note, now);
+    // "두 시간 미뤄줘" 처럼 지금 마감에서 미루는 말이면 앱이 직접 계산한다 (마감이 없으면 지금부터)
+    var shift = V.shiftMinutes(q);
+    if (shift) {
+      var base = t.dueDate ? D.parseYmd(t.dueDate, t.dueTime || '23:59') : new Date(note.updatedAt || now);
+      var nd = new Date(base.getTime() + shift * 60000);
+      due = { date: D.ymd(nd), time: D.pad(nd.getHours()) + ':' + D.pad(nd.getMinutes()) };
+      at = null;
+    }
+    if (at && !at.time) { due = due || at; at = null; }   // 시각 없는 '할 날' 은 마감으로
+    // "마감 … 미뤄줘" 처럼 마감·미루기 말이면 마감을 바꾸는 것 — AI 가 할 시각(do_at) 칸에 넣어도 마감으로 (실측: 가끔 그렇게 줌)
+    if (at && !due && /(마감|기한|미뤄|미루|늦춰|늦추|연장|까지)/.test(q)) { due = at; at = null; }
+    if (!due && !at) return null;
+    // "내일로 미뤄" 처럼 날만 바꾸면 원래 마감 시각은 그대로 둔다 (17:00 마감 → 내일 17:00)
+    if (due && !due.time && t.dueTime && !shift) due = { date: due.date, time: t.dueTime };
+    var work = M.blocksForTask(state, t.id).filter(function (b) { return b.kind === 'work' && new Date(b.end) > new Date(now); })[0] || null;
+    var rec = { kind: 'task', id: t.id, prev: { dueDate: t.dueDate, dueTime: t.dueTime }, prevWork: work ? { id: work.id, start: work.start, end: work.end } : null, newWorkId: null };
+    if (due) M.updateTask(state, t.id, { dueDate: due.date, dueTime: due.time || null }, now);
+    if (at) {
+      var s = D.parseYmd(at.date, at.time);
+      var len = work ? new Date(work.end) - new Date(work.start) : 30 * 60000;
+      if (work) M.updateBlock(state, work.id, { start: s.toISOString(), end: new Date(s.getTime() + len).toISOString() });
+      else rec.newWorkId = M.addBlock(state, { taskId: t.id, title: t.title, start: s.toISOString(), end: new Date(s.getTime() + len).toISOString(), origin: 'user', durationGuessed: true }).id;
+    }
+    rec.to = { dueDate: due ? due.date : null, dueTime: due ? due.time || null : null, at: at ? at.date + ' ' + at.time : null };
+    return rec;
+  }
+
+  // 날짜 바꾸기: due(마감) 또는 do_at(할 시각). 바꾸기 전 값을 함께 둬서 카드의 × 로 되돌린다
   function updateReported(state, note, list, created, completed, now) {
     var exclude = {};
     (created || []).concat(completed || []).forEach(function (c) { exclude[c.id] = true; });
@@ -450,22 +486,49 @@
       if (!q || body.indexOf(nospace(q)) === -1) return;
       var t = findOpenTask(state, String(d.title), exclude);
       if (!t) return;
-      var due = V.verifyWhen(d.due, q, note, now);
-      var at = V.verifyWhen(d.do_at, q, note, now);
-      if (at && !at.time) { due = due || at; at = null; }   // 시각 없는 '할 날' 은 마감으로
-      if (!due && !at) return;
-      var work = M.blocksForTask(state, t.id).filter(function (b) { return b.kind === 'work' && new Date(b.end) > new Date(now); })[0] || null;
-      var rec = { kind: 'task', id: t.id, prev: { dueDate: t.dueDate, dueTime: t.dueTime }, prevWork: work ? { id: work.id, start: work.start, end: work.end } : null, newWorkId: null };
-      if (due) M.updateTask(state, t.id, { dueDate: due.date, dueTime: due.time || null }, now);
-      if (at) {
-        var s = D.parseYmd(at.date, at.time);
-        var len = work ? new Date(work.end) - new Date(work.start) : 30 * 60000;
-        if (work) M.updateBlock(state, work.id, { start: s.toISOString(), end: new Date(s.getTime() + len).toISOString() });
-        else rec.newWorkId = M.addBlock(state, { taskId: t.id, title: t.title, start: s.toISOString(), end: new Date(s.getTime() + len).toISOString(), origin: 'user', durationGuessed: true }).id;
-      }
-      rec.to = { dueDate: due ? due.date : null, dueTime: due ? due.time || null : null, at: at ? at.date + ' ' + at.time : null };
+      var rec = changeDue(state, t, d.due, d.do_at, q, note, now);
+      if (!rec) return;
       exclude[t.id] = true;
       out.push(rec);
+    });
+    return out;
+  }
+
+  // 묶음 날짜 바꾸기 — "마감 지난 것 전부 두 시간 후로 미뤄줘".
+  //   AI 는 어떤 묶음인지(filter)와 새 날짜만 말하고, 어떤 할 일이 그 묶음인지는 앱이 고른다 (빠뜨리지 않게)
+  var BULK_FILTERS = ['overdue', 'due_today', 'no_due', 'in_progress', 'paused', 'all_open'];
+  function bulkTargets(state, filter, projectHint, now, exclude) {
+    var n = new Date(now), today = D.ymd(n);
+    var proj = projectHint ? matchProject(state, projectHint) : null;
+    if (projectHint && !proj) return [];
+    return M.liveTasks(state).filter(function (t) {
+      if (t.status === 'done' || exclude[t.id]) return false;
+      if (proj && t.projectId !== proj.id) return false;
+      var due = t.dueDate ? D.parseYmd(t.dueDate, t.dueTime || '23:59') : null;
+      if (filter === 'overdue') return !!due && due < n;
+      if (filter === 'due_today') return t.dueDate === today;
+      if (filter === 'no_due') return !t.dueDate;
+      if (filter === 'in_progress') return t.status === 'in_progress';
+      if (filter === 'paused') return t.status === 'paused';
+      return filter === 'all_open';
+    });
+  }
+  function bulkReported(state, note, list, created, done, now) {
+    var exclude = {};
+    (created || []).concat(done || []).forEach(function (c) { exclude[c.id] = true; });
+    var body = nospace([note.title, note.body].join('\n'));
+    var out = [];
+    (Array.isArray(list) ? list : []).forEach(function (bk) {
+      if (!bk || BULK_FILTERS.indexOf(bk.filter) === -1) return;
+      var q = bk.evidence && bk.evidence.quote;
+      if (!q || body.indexOf(nospace(q)) === -1) return;
+      bulkTargets(state, bk.filter, bk.project_hint, note.updatedAt || now, exclude).forEach(function (t) {
+        var rec = changeDue(state, t, bk.due, bk.do_at, q, note, now);
+        if (!rec) return;
+        rec.bulk = bk.filter;
+        exclude[t.id] = true;
+        out.push(rec);
+      });
     });
     return out;
   }

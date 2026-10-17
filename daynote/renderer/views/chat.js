@@ -20,9 +20,24 @@
     ta.value = st.quickDraft.text || '';
 
     // ---------------------------------------------------------------- 메시지 (입력창과 따로 다시 그린다)
-    var list = h('div.chat-list', { role: 'log', 'aria-live': 'polite', 'aria-label': '적은 것과 정리 결과' });
+    var list = h('div.chat-list', { role: 'log', 'aria-live': 'polite', 'aria-label': '적은 것과 정리 결과 · 할 일을 끌어 놓으면 작업 공간에 올라가요' });
+    // 보낸 글·끌어 온 할 일은 채팅 화면 맨 위로 올리고, 답은 그 아래에 채운다 (AI 채팅처럼)
+    var pinnedId = null;
+    var spacer = h('div.chat-spacer', { 'aria-hidden': 'true' });
+    function lastPin(msgs) { for (var i = msgs.length - 1; i >= 0; i--) if (msgs[i].pin) return msgs[i].id; return null; }
+    function placePin(scroll) {
+      var el = pinnedId && list.querySelector('[data-mid="' + pinnedId + '"]');
+      spacer.style.height = '0px';
+      if (!el) return false;
+      var top = el.getBoundingClientRect().top - list.getBoundingClientRect().top + list.scrollTop - 12;
+      var below = list.scrollHeight - top;
+      spacer.style.height = Math.max(0, list.clientHeight - below) + 'px';
+      if (scroll) list.scrollTop = top;
+      return true;
+    }
     function paintList() {
       var st = S.state, now = A.now();
+      var keepTop = list.scrollTop;
       var nearBottom = list.scrollHeight - list.scrollTop - list.clientHeight < 80;
       list.textContent = '';
       var msgs = (st.chat || []).slice(-SHOW);
@@ -33,11 +48,29 @@
         var day = D.ymd(m.at);
         if (day !== lastDay) { list.appendChild(h('div.chat-day', D.relDay(day, now))); lastDay = day; }
         var node = message(m, st, now);
-        if (node) list.appendChild(node);
+        if (node) { node.setAttribute('data-mid', m.id); list.appendChild(node); }
       });
-      if (nearBottom) list.scrollTop = list.scrollHeight;
+      list.appendChild(spacer);
+      var pin = lastPin(msgs);
+      if (pin && pin !== pinnedId) { pinnedId = pin; placePin(true); }
+      else if (pinnedId && placePin(false)) list.scrollTop = keepTop;
+      else if (nearBottom) list.scrollTop = list.scrollHeight;
       startTimers();
     }
+    // 할 일을 끌어 놓으면 작업 공간(채팅)에 작업 카드로 올린다
+    function hasType(e, type) { return e.dataTransfer && Array.prototype.indexOf.call(e.dataTransfer.types || [], type) !== -1; }
+    list.addEventListener('dragover', function (e) {
+      if (!hasType(e, 'application/x-daynote-task')) return;
+      e.preventDefault(); e.dataTransfer.dropEffect = 'copy';
+      list.classList.add('is-drop-target');
+    });
+    list.addEventListener('dragleave', function (e) { if (!list.contains(e.relatedTarget)) list.classList.remove('is-drop-target'); });
+    list.addEventListener('drop', function (e) {
+      if (!hasType(e, 'application/x-daynote-task')) return;
+      e.preventDefault();
+      list.classList.remove('is-drop-target');
+      AS.work(e.dataTransfer.getData('application/x-daynote-task'));
+    });
 
     // 첫 화면 — 무엇을 하는 앱인지 30초 안에 보이게. 예시는 입력창에 채우기만 한다 (보내지 않음)
     function onboarding() {
@@ -57,13 +90,15 @@
       ta.focus();
       try { ta.setSelectionRange(text.length, text.length); } catch (e) {}
     }
+    pinnedId = lastPin((st.chat || []).slice(-SHOW));
     paintList();
 
     // ---------------------------------------------------------------- 도우미 버튼 + 입력
     var tools = h('div.chat-tools', { role: 'group', 'aria-label': '도우미' },
       h('button.chat-tool', { type: 'button', onclick: function () { AS.next(); } }, ui.icon('spark'), '다음 할 일'),
-      h('button.chat-tool', { type: 'button', onclick: function () { AS.breakdown(); } }, ui.icon('task'), '작게 나누기'),
-      h('button.chat-tool', { type: 'button', onclick: function () { AS.rest(); } }, ui.icon('clock'), '휴식'));
+      h('button.chat-tool', { type: 'button', onclick: function () { AS.breakdown(); } }, ui.icon('task'), '작업 작게 나누기'),
+      h('button.chat-tool', { type: 'button', onclick: function () { AS.rest(); } }, ui.icon('clock'), '휴식'),
+      h('button.chat-tool', { type: 'button', title: '오늘 끝낸 일을 보고, 남은 일마다 다음 시각을 정해요', onclick: function () { AS.dayClose(); } }, ui.icon('check'), '하루 마무리'));
 
     var t;
     function grow() { ta.style.height = 'auto'; ta.style.height = Math.min(ta.scrollHeight, 160) + 'px'; }
@@ -96,7 +131,8 @@
       h('div.chat-head', h('h2.panel-title', '적어 두기'), h('span.meta', '할 일·일정·메모는 Daynote가 나눠요')),
       list, tools, input));
     setTimeout(function () {
-      list.scrollTop = list.scrollHeight; grow();
+      if (!placePin(true)) list.scrollTop = list.scrollHeight;
+      grow();
       // 창이 뜨면 커서가 이미 입력창에 있게 — 다른 곳을 보고 있으면 건드리지 않는다
       var a = document.activeElement;
       if (!a || a === document.body || a.id === 'view') ta.focus();
@@ -143,6 +179,10 @@
     if (m.kind === 'capture') return captureCard(m, st, now);
     if (m.kind === 'breakdown') return breakdownCard(m, st, now);
     if (m.kind === 'next') return nextCard(m, st, now);
+    if (m.kind === 'work') return workCard(m, st, now);
+    if (m.kind === 'dayclose') return dayCloseCard(m, st, now);
+    if (m.kind === 'overdue') return overdueCard(m, st, now);
+    if (m.kind === 'weekstart') return weekStartCard(m, st, now);
     if (m.kind === 'elaborate') return elaborateCard(m, st, now);
     if (m.kind === 'rest') return restCard(m, st, now);
     return null;
@@ -161,6 +201,7 @@
     var c = n.capture || {};
     var running = CP.isRunning(n.id) || c.status === 'pending';
 
+    if (n.deletedAt && c.entryType === 'command') return null;   // 명령은 결과 카드 대신 그 명령의 답이 뜬다
     if (n.deletedAt) return bubble('assistant', h('div.cap', h('div.cap-head.meta', '이 글은 메모에서 지웠어요.')), 'msg-cap');
     if (running) {
       return bubble('assistant', h('div.cap.is-pending', { 'aria-busy': 'true' },
@@ -210,7 +251,7 @@
         var m0 = moved[0], mt = m0.item.title, to = m0.change.to || {};
         parts.push(moved.length > 1 ? '할 일 ' + moved.length + '개의 날짜를 바꿨어요'
           : to.at ? '‘' + mt + '’' + ui.josa(mt, '를/을').slice(mt.length) + ' ' + movedText(m0.change, now).replace(/에 하기$/, '에 하기로 했어요')
-          : '‘' + mt + '’ 마감을 ' + ui.josa(dayLabel(to.dueDate, now) + (to.dueTime ? ' ' + to.dueTime : ''), '로/으로') + ' 옮겼어요');
+          : '‘' + mt + '’ 마감을 옮겼어요 → ' + dayLabel(to.dueDate, now) + (to.dueTime ? ' ' + to.dueTime : ''));
       }
       var others = items.filter(function (it) { return it.kind !== 'done' && it.kind !== 'moved' && it.ref.kind !== 'note'; });
       if (others.length) parts.unshift(summary(others, now));
@@ -240,7 +281,7 @@
     if (it.kind === 'moved') {
       return h('div.cap-row.is-moved', { role: 'listitem', 'data-kind': 'moved' },
         h('span.chip.chip-kind.kind-moved', ui.icon('calendar'), '날짜 변경'),
-        h('button.cap-title', { type: 'button', title: '할 일 열기', onclick: function () { A.openTask(item.id); } }, title),
+        h('button.cap-title', { type: 'button', title: '작업 공간에서 보기 (세부 할 일)', onclick: function () { DN.assistant.work(item.id); } }, title),
         h('span.chip.cap-date.chip-today', '→ ' + movedText(it.change, now)),
         h('button.icon-btn.cap-x', {
           type: 'button', title: '원래 날짜로 되돌리기', 'aria-label': '‘' + title + '’ 날짜 변경 되돌리기',
@@ -254,7 +295,7 @@
     if (it.kind === 'done') {
       return h('div.cap-row.is-done', { role: 'listitem', 'data-kind': 'done' },
         h('span.chip.chip-kind.kind-done', ui.icon('check'), '완료'),
-        h('button.cap-title', { type: 'button', title: '할 일 열기', onclick: function () { A.openTask(item.id); } }, title),
+        h('button.cap-title', { type: 'button', title: '작업 공간에서 보기 (세부 할 일)', onclick: function () { DN.assistant.work(item.id); } }, title),
         h('button.icon-btn.cap-x', {
           type: 'button', title: '완료 취소', 'aria-label': '‘' + title + '’ 완료 취소',
           onclick: function () {
@@ -274,7 +315,7 @@
       type: 'button', title: isNote ? '메모 열기' : it.kind === 'task' ? '할 일 열기' : '일정 열기',
       onclick: function () {
         if (isNote) A.go('notes', { noteId: n.id });
-        else if (it.kind === 'task') A.openTask(item.id);
+        else if (it.kind === 'task') DN.assistant.work(item.id);
         else DN.views.schedule.open({ blockId: item.id });
       }
     }, title);
@@ -284,8 +325,12 @@
       var d = dateInfo(it, now);
       dateBtn = h('button.chip.cap-date' + (d.cls ? '.' + d.cls : ''), {
         type: 'button', 'aria-haspopup': 'menu', 'data-focus-key': fk + ':date',
-        'aria-label': (it.kind === 'task' ? '마감: ' : '날짜: ') + d.label + ' — 바꾸기', title: '날짜 바꾸기',
-        onclick: function (e) { dateMenu(e.currentTarget, it, now); }
+        'aria-label': (it.kind === 'task' ? '마감: ' : '날짜: ') + d.label + ' — 바꾸기',
+        title: d.overdue ? '날짜 바꾸기 · Alt+클릭: 지금부터 ' + M.POSTPONE_HOURS + '시간 뒤로 미루기' : '날짜 바꾸기',
+        onclick: function (e) {
+          if (d.overdue && e.altKey) { e.preventDefault(); ui.postponeOverdue(item.id); return; }
+          dateMenu(e.currentTarget, it, now);
+        }
       }, ui.icon(it.kind === 'task' ? 'flag' : 'clock'), d.label);
       if (it.kind === 'event' && item.timeUncertain) {
         uncertain = h('button.chip.chip-guess.cap-uncertain', {
@@ -313,7 +358,14 @@
       }
     }, ui.icon('x'));
 
-    return h('div.cap-row', { role: 'listitem', 'data-kind': it.kind }, kindBtn, titleBtn, dateBtn, uncertain, projBtn, removeBtn);
+    var row = h('div.cap-row', { role: 'listitem', 'data-kind': it.kind }, kindBtn, titleBtn, dateBtn, uncertain, projBtn, removeBtn);
+    // 방금(30분 안) 만든 할 일인데 마감도 작업 시간도 없으면 — "언제 할까요?" 를 바로 고르게
+    var fresh = n.capture && n.capture.at && now - new Date(n.capture.at) < 30 * 60000;
+    if (it.kind === 'task' && fresh && item.status !== 'done' && !item.dueDate &&
+        !M.blocksForTask(st, item.id).some(function (b) { return new Date(b.end) > now; })) {
+      return h('div.cap-row-wrap', row, h('div.cap-when', h('span.meta', '언제 할까요?'), whenChips(item.id, function (label) { ui.toast('‘' + item.title + '’ ' + label + '에 하기로 했어요.'); })));
+    }
+    return row;
   }
 
   // 날짜 칩 문구 — "오늘" · "내일(토)" · "10월 9일 (금)" (+ 일정·마감 시각)
@@ -337,9 +389,12 @@
         };
       }
       if (!x.dueDate) return { label: '날짜 없음', cls: 'is-none' };
-      var due = D.parseYmd(x.dueDate, x.dueTime || '23:59');
-      var cls = x.status !== 'done' && due < now ? 'chip-overdue' : x.dueDate === D.ymd(now) ? 'chip-today' : '';
-      return { label: dayLabel(x.dueDate, now) + (x.dueTime ? ' ' + x.dueTime : ''), cls: cls };
+      var due = D.dueAt(x.dueDate, x.dueTime);
+      var when = dayLabel(x.dueDate, now) + (x.dueTime ? ' ' + x.dueTime : '');
+      if (x.status === 'done') return { label: when, cls: '' };
+      // 남은 시간도 같이 — 지났으면 "마감 지남" (Alt+클릭으로 24시간 미루기)
+      if (due < now) return { label: '마감 지남 · ' + when + ' · ' + D.remainText(due, now), cls: 'chip-overdue', overdue: true };
+      return { label: when + ' · ' + D.remainText(due, now), cls: x.dueDate === D.ymd(now) ? 'chip-today' : '' };
     }
     var s = new Date(x.start);
     // 길이를 짐작해 넣은 일정은 길이도 보여 준다 (캘린더에서 끌어 고치면 된다)
@@ -460,7 +515,7 @@
     if (m.resolved) {
       var txt = m.resolved === 'applied' ? '‘' + t.title + '’를 ' + (m.resolvedCount || '') + '단계로 나눴어요.'
         : m.resolved === 'later' ? '좋아요, 나중에 다시 보여 드릴게요.' : '알겠어요. 이 할 일은 나누지 않을게요.';
-      return bubble('assistant', h('div.msg-text', txt, m.resolved === 'applied' ? h('button.link-btn', { type: 'button', style: { marginLeft: '6px' }, onclick: function () { DN.app.openTask(t.id); } }, '할 일 보기') : null));
+      return bubble('assistant', h('div.msg-text', txt, m.resolved === 'applied' ? h('button.link-btn', { type: 'button', style: { marginLeft: '6px' }, onclick: function () { DN.assistant.work(t.id); } }, '작업 공간에서 보기') : null));
     }
     var draft = (m.draft || []).map(function (x) { return { title: x.title, minutes: x.minutes }; });
     var rows = h('ol.bd-steps');
@@ -470,9 +525,7 @@
       draft.forEach(function (s, i) {
         var tIn = h('input.input', { value: s.title || '', placeholder: '단계 ' + (i + 1), 'aria-label': (i + 1) + '번째 단계' });
         tIn.addEventListener('change', function () { s.title = tIn.value; save(); });
-        var mIn = h('input.input.bd-min', { type: 'number', min: '1', max: '480', value: s.minutes != null ? s.minutes : '', placeholder: '분', 'aria-label': (i + 1) + '번째 단계 예상 시간(분)' });
-        mIn.addEventListener('change', function () { s.minutes = mIn.value ? Number(mIn.value) : null; save(); });
-        rows.appendChild(h('li.bd-step', tIn, mIn,
+        rows.appendChild(h('li.bd-step', tIn, minuteScrub(s, i, save),
           h('button.icon-btn', { type: 'button', 'aria-label': (i + 1) + '번째 단계 지우기', onclick: function () { draft.splice(i, 1); save(); paint(); } }, ui.icon('x'))));
       });
     }
@@ -481,6 +534,8 @@
     return bubble('assistant', h('div.bd',
       m.intro ? h('div.msg-text', m.intro) : null,
       h('div.bd-title', '‘' + t.title + '’를 이렇게 나눠 보면 어떨까요?'),
+      // 데모 모드(브라우저 미리보기·스크린샷)의 초안은 규칙으로 만든 일반 예시다 — 실제 AI 결과로 착각하지 않게
+      DN.aiFlow.status().provider === 'fake' ? h('div.bd-demo', ui.icon('info'), '데모 AI 예시예요 — 어떤 일이든 같은 틀로 나눠요. 실제 앱에서는 Gemini가 이 일에 맞게 나눠 드려요.') : null,
       m.reason ? h('div.meta', m.reason) : null,
       rows,
       h('button.link-btn.bd-add', { type: 'button', onclick: function () { draft.push({ title: '', minutes: null }); save(); paint(); var ins = rows.querySelectorAll('input:not(.bd-min)'); if (ins.length) ins[ins.length - 1].focus(); } }, '+ 단계 추가'),
@@ -508,10 +563,237 @@
       h('ul.next-reasons', (m.reasons || []).slice(0, 2).map(function (r) { return h('li', r); })),
       done ? h('div.meta', '이미 끝낸 일이에요.') : h('div.msg-actions',
         t.status === 'in_progress'
-          ? h('button.btn.btn-primary.btn-xs', { type: 'button', onclick: function () { A.openTask(t.id); } }, '이어하기')
-          : h('button.btn.btn-primary.btn-xs', { type: 'button', onclick: function () { A.startTask(t.id); } }, ui.icon('play'), '지금 시작'),
+          ? h('button.btn.btn-primary.btn-xs', { type: 'button', onclick: function () { AS.work(t.id); } }, '작업 공간에서 보기')
+          : h('button.btn.btn-primary.btn-xs', { type: 'button', onclick: function () { A.startTask(t.id); AS.work(t.id); } }, ui.icon('play'), '지금 시작'),
         h('button.btn.btn-xs', { type: 'button', onclick: function () { AS.next((m.skip || []).concat(t.id)); } }, '다른 추천'),
-        !(t.steps || []).length ? h('button.btn.btn-xs', { type: 'button', onclick: function () { AS.breakdown(t.id); } }, hasDraft ? '나눠 둔 단계 보기' : '작게 나누기') : null)));
+        !(t.steps || []).length ? h('button.btn.btn-xs', { type: 'button', onclick: function () { AS.breakdown(t.id, null, { force: true }); } }, hasDraft ? '나눠 둔 단계 보기' : '작업 작게 나누기') : null)));
+  }
+
+  // ------------------------------------------------------------------ 단계 시간 — 숫자를 잡고 위아래로 끌어 맞추기
+  // 위로 끌면 늘고 아래로 끌면 준다 (60분까지 5분, 그 위 10분씩). ↑/↓ 키도 같은 눈금.
+  // 그냥 누르면(움직이지 않으면) 숫자를 직접 고칠 수 있다. 끄는 동안에는 저장하지 않고 놓을 때 한 번만.
+  var SCRUB_PX = 8;   // 이만큼 움직일 때마다 한 눈금
+  function minuteScrub(s, i, save) {
+    var SP = DN.split;
+    var input = h('input.input.bd-min', {
+      type: 'text', inputmode: 'numeric', value: s.minutes != null ? String(s.minutes) : '', placeholder: '–',
+      'aria-label': (i + 1) + '번째 단계 예상 시간(분) — 위아래로 끌거나 ↑/↓ 키로 조정', title: '위아래로 끌어서 조정 · ↑/↓ 키'
+    });
+    function set(v, commit) {
+      s.minutes = v;
+      input.value = v != null ? String(v) : '';
+      if (commit) save();
+    }
+    input.addEventListener('change', function () {
+      var n = parseInt(String(input.value).replace(/[^\d]/g, ''), 10);
+      set(isFinite(n) && n > 0 ? Math.min(480, n) : null, true);
+    });
+    input.addEventListener('keydown', function (e) {
+      if (e.key !== 'ArrowUp' && e.key !== 'ArrowDown') return;
+      e.preventDefault();
+      set(SP.stepMinutes(s.minutes, e.key === 'ArrowUp' ? 1 : -1), true);
+    });
+    var drag = null;
+    input.addEventListener('pointerdown', function (e) {
+      if (e.button !== 0 || document.activeElement === input) return;   // 이미 고치는 중이면 글자 선택
+      e.preventDefault();
+      drag = { y: e.clientY, base: s.minutes, moved: false };
+      try { input.setPointerCapture(e.pointerId); } catch (x) {}
+      input.classList.add('is-scrubbing');
+      document.documentElement.classList.add('is-scrubbing');
+    });
+    input.addEventListener('pointermove', function (e) {
+      if (!drag) return;
+      var steps = Math.trunc((drag.y - e.clientY) / SCRUB_PX);
+      if (steps) drag.moved = true;
+      if (drag.moved) set(steps ? SP.stepMinutesBy(drag.base, steps) : drag.base, false);
+    });
+    function end() {
+      if (!drag) return;
+      var d = drag; drag = null;
+      input.classList.remove('is-scrubbing');
+      document.documentElement.classList.remove('is-scrubbing');
+      if (d.moved) save();
+      else { input.focus(); input.select(); }   // 그냥 눌렀으면 직접 입력
+    }
+    input.addEventListener('pointerup', end);
+    input.addEventListener('pointercancel', end);
+    input.addEventListener('lostpointercapture', end);
+    return h('span.bd-min-wrap', input, h('span.bd-min-unit', { 'aria-hidden': 'true' }, '분'));
+  }
+
+  // ------------------------------------------------------------------ 작업 카드 (할 일 작업 공간)
+  // 할 일을 채팅으로 끌어 오면 생긴다. 상태 버튼(지금 시작 · 일시 정지 · 이어서 하기 · 완료)은 이 일 하나만 바꾼다
+  // — 다른 진행 중인 일은 그대로. 카드를 할 일 목록으로 끌어 놓으면 할 일로 돌아간다.
+  var WORK_STATE = { todo: '할 일', in_progress: '진행 중', paused: '일시 정지', waiting: '대기', done: '완료' };
+  function workCard(m, st, now) {
+    var A = DN.app, AS = DN.assistant;
+    var t = M.byId(st.tasks, m.taskId);
+    if (!t || t.deletedAt) return bubble('assistant', h('div.msg-text.meta', '지워진 할 일이에요.'));
+    if (m.closed) {
+      return bubble('assistant', h('div.work.is-closed',
+        h('span.meta', m.closed === 'returned' ? '할 일로 돌려보냈어요 · ' : '아래에서 이어서 보고 있어요 · '),
+        h('button.link-btn', { type: 'button', onclick: function () { AS.work(t.id); } }, t.title)));
+    }
+    var done = t.status === 'done';
+    var mins = M.workedMinutes(t, now);
+    var steps = t.steps || [];
+    var stepsDone = steps.filter(function (x) { return x.done; }).length;
+    function toggleStep(id) {
+      S.mutate('단계 체크', function (s) {
+        var tk = M.byId(s.tasks, t.id);
+        if (tk) M.updateTask(s, tk.id, { steps: tk.steps.map(function (x) { return x.id === id ? Object.assign({}, x, { done: !x.done }) : x; }) }, A.now());
+      });
+    }
+    var stateBtn = done ? null
+      : t.status === 'in_progress'
+        ? h('button.btn.btn-sm', { type: 'button', onclick: function () { A.pauseTask(t.id); } }, ui.icon('pause'), '일시 정지')
+        : h('button.btn.btn-primary.btn-sm', { type: 'button', onclick: function () { A.startTask(t.id); } }, ui.icon('play'), t.status === 'paused' ? '이어서 하기' : '지금 시작');
+    var card = h('div.work' + (t.status === 'in_progress' ? '.is-running' : t.status === 'paused' ? '.is-paused' : done ? '.is-done' : ''), {
+      draggable: done ? null : 'true',
+      title: done ? null : '끌어서 할 일 목록에 놓으면 할 일로 돌아가요',
+      ondragstart: function (e) {
+        e.dataTransfer.effectAllowed = 'move';
+        e.dataTransfer.setData('application/x-daynote-work', m.id);
+        e.dataTransfer.setData('text/plain', t.title);
+      }
+    },
+      h('div.work-head',
+        h('span.work-state', ui.icon(t.status === 'in_progress' ? 'play' : t.status === 'paused' ? 'pause' : done ? 'check' : 'task'), WORK_STATE[t.status] || '할 일',
+          mins ? h('span.work-time', ' · ' + (mins >= 60 ? Math.floor(mins / 60) + '시간 ' + (mins % 60) + '분' : mins + '분')) : null),
+        ui.dueChip(t, now)),
+      h('div.work-title', { title: '오른쪽 클릭: 자세히 편집·미루기·삭제', oncontextmenu: function (e) { e.preventDefault(); A.taskMenu(t.id, e.currentTarget); } }, t.title || '(제목 없음)'),
+      timeLine(st, t),
+      t.status === 'paused' ? resumeBox(t) : (t.resumeNote && t.status === 'in_progress' ? h('div.work-resume', ui.icon('info'), '이어서: ' + t.resumeNote) : null),
+      steps.length ? h('div.work-steps',
+        h('div.meta', '단계 ' + stepsDone + '/' + steps.length),
+        progressBar(stepsDone, steps.length),
+        h('ul', steps.map(function (x) {
+          return h('li' + (x.done ? '.is-done' : ''),
+            h('label', h('input', { type: 'checkbox', checked: !!x.done, onchange: function () { toggleStep(x.id); } }),
+              h('span', x.title), x.estimateMinutes ? h('span.meta', ' · ' + x.estimateMinutes + '분') : null));
+        }))) : null,
+      done
+        ? h('div.msg-actions', h('span.meta', '완료했어요.'), h('button.btn.btn-xs.btn-ghost', { type: 'button', onclick: function () { A.toggleDone(t.id); } }, '완료 취소'))
+        : h('div.msg-actions',
+            stateBtn,
+            h('button.btn.btn-sm', { type: 'button', onclick: function () { A.toggleDone(t.id); } }, ui.icon('check'), '완료'),
+            h('span.work-sep', { 'aria-hidden': 'true' }),
+            h('button.btn.btn-xs', { type: 'button', onclick: function () { AS.breakdown(t.id, null, { force: true }); } }, ui.icon('task'), '작업 작게 나누기'),
+            h('button.btn.btn-xs.btn-ghost', { type: 'button', onclick: function () { AS.next([t.id]); } }, '다른 추천')));
+    return bubble('assistant', card, 'msg-work');
+  }
+
+  // ------------------------------------------------------------------ 연구 기반 도움들 (src/core/habits.js · DAYNOTE_UX_RESEARCH.md)
+  // 진행 막대 — 끝에 가까울수록 힘이 난다 (목표 기울기 효과)
+  function progressBar(done, total) {
+    var pct = total ? Math.round(done / total * 100) : 0;
+    return h('div.pbar', { role: 'progressbar', 'aria-valuemin': '0', 'aria-valuemax': '100', 'aria-valuenow': String(pct), 'aria-label': '진행 ' + pct + '%' },
+      h('div.pbar-fill', { style: { width: pct + '%' } }));
+  }
+  // 예상 시간과 현실적인 시간 (계획 오류 보정) — "예상 40분 · 평소엔 1.5배쯤 걸려요 → 약 60분"
+  function timeLine(st, t) {
+    if (!(t.estimateMinutes > 0)) return null;
+    var r = DN.habits.realistic(st, t);
+    return h('div.work-est.meta', ui.icon('clock'), '예상 ' + D.duration(t.estimateMinutes),
+      r ? h('span', ' · 지금까지 끝낸 일을 보면 평소 ' + r.ratio + '배쯤 걸려요 → ', h('b', '약 ' + D.duration(r.minutes))) : null);
+  }
+  // 멈출 때 '이어서 할 첫 행동' 한 줄 — 다시 시작이 쉬워지고 머릿속 잔상이 줄어든다 (ready-to-resume plan)
+  function resumeBox(t) {
+    var ta = h('input.input.work-resume-in', { value: t.resumeNote || '', placeholder: '다음에 이어서 할 첫 행동 (예: 3번 슬라이드 그래프부터)', 'aria-label': '이어서 할 첫 행동' });
+    function save() {
+      var v = ta.value.trim();
+      if (v === (t.resumeNote || '')) return;
+      S.mutate('이어서 할 일 적기', function (s) { M.updateTask(s, t.id, { resumeNote: v || null }, DN.app.now()); });
+    }
+    ta.addEventListener('change', save);
+    ta.addEventListener('keydown', function (e) { if (e.key === 'Enter' && !e.isComposing && e.keyCode !== 229) { e.preventDefault(); save(); ta.blur(); } });
+    return h('div.work-resume-box', h('div.meta', '멈춘 김에 — 어디서부터 이어서 할지 한 줄 적어 두면 다시 시작이 쉬워요.'), ta);
+  }
+  // 다음 시각 고르기 칩 (실행 의도) — 고르면 그때부터 빈 시간에 작업 시간을 잡는다
+  function whenChips(taskId, onPicked, extra) {
+    var now = DN.app.now();
+    return h('div.when-chips', DN.habits.whenChoices(now).map(function (c) {
+      return h('button.chip.chip-btn', { type: 'button', onclick: function () {
+        var at = DN.assistant.planAt(taskId, c.at);
+        if (at && onPicked) onPicked(c.label + ' ' + D.hm(at));
+      } }, c.label);
+    }).concat(extra || []));
+  }
+
+  // 하루 마무리 / 하나씩 다시 정하기 — 남은 일마다 다음 시각
+  function dayCloseCard(m, st, now) {
+    var AS = DN.assistant;
+    var done = (m.doneIds || []).map(function (id) { return M.byId(st.tasks, id); }).filter(Boolean);
+    var left = (m.taskIds || []).map(function (id) { return M.byId(st.tasks, id); }).filter(function (t) { return t && !t.deletedAt; });
+    var picked = m.picked || {};
+    function pick(id, label) { var p = Object.assign({}, picked); p[id] = label; AS.update(m.id, { picked: p }); }
+    var open = left.filter(function (t) { return !picked[t.id] && t.status !== 'done'; });
+    return bubble('assistant', h('div.dayclose',
+      m.replan ? h('div.msg-text', m.intro || '하나씩 다시 정해 볼게요. 언제 하면 좋을까요?')
+        : h('div.dc-done',
+            h('div.dc-title', done.length ? '오늘 끝낸 일 ' + done.length + '개 — 수고했어요!' : '오늘 하루도 수고했어요.'),
+            done.length ? h('ul.dc-list', done.slice(0, 6).map(function (t) { return h('li', ui.icon('check'), t.title); }).concat(done.length > 6 ? [h('li.meta', '… 외 ' + (done.length - 6) + '개')] : [])) : null),
+      left.length ? h('div.dc-left',
+        m.replan ? null : h('div.dc-sub', '남은 일 — 다음에 언제 할지 정해 두면 마음 놓고 쉴 수 있어요.'),
+        left.map(function (t) {
+          var p = picked[t.id];
+          if (t.status === 'done') p = '끝냈어요';
+          return h('div.dc-row' + (p ? '.is-set' : ''),
+            h('div.dc-row-title', t.title),
+            p ? h('span.meta', '→ ' + p)
+              : whenChips(t.id, function (label) { pick(t.id, label); },
+                  [h('button.chip.chip-btn.is-ghost', { type: 'button', onclick: function () { pick(t.id, '그대로 두기'); } }, '그대로')]));
+        }),
+        !open.length ? h('div.dc-end', m.replan ? '다 정했어요.' : '다 정했어요. 오늘은 여기까지 — 푹 쉬어요.') : null)
+        : (m.replan ? null : h('div.dc-end', '남은 일도 없어요. 오늘은 여기까지 — 푹 쉬어요.'))));
+  }
+
+  // 밀린 일 — 탓하지 않고 한 번에 다시 정하기
+  function overdueCard(m, st, now) {
+    var AS = DN.assistant;
+    var list = (m.taskIds || []).map(function (id) { return M.byId(st.tasks, id); }).filter(function (t) { return t && !t.deletedAt && t.status !== 'done'; });
+    if (m.resolved) return bubble('assistant', h('div.msg-text', m.resolved));
+    return bubble('assistant', h('div.overdue-card',
+      h('div.msg-text', '밀린 일이 ' + list.length + '개 있어요. 괜찮아요 — 일정은 원래 밀리기 마련이에요. 지금 다시 정하면 돼요.'),
+      h('ul.dc-list', list.slice(0, 5).map(function (t) { return h('li', ui.dueChip(t, now), ' ', t.title); })),
+      h('div.msg-actions',
+        h('button.btn.btn-primary.btn-xs', { type: 'button', onclick: function () {
+          var n = 0;
+          S.mutate('밀린 일 내일로', function (s) { n = DN.habits.postponeOverdueToTomorrow(s, DN.app.now()).length; });
+          AS.update(m.id, { resolved: '밀린 일 ' + n + '개를 내일로 옮겼어요. (Ctrl+Z로 되돌릴 수 있어요)' });
+        } }, '전부 내일로'),
+        h('button.btn.btn-xs', { type: 'button', onclick: function () { AS.update(m.id, { resolved: '하나씩 정해 볼게요.' }); AS.replan(list.map(function (t) { return t.id; })); } }, '하나씩 정하기'),
+        h('button.btn.btn-xs.btn-ghost', { type: 'button', onclick: function () { AS.update(m.id, { resolved: '알겠어요. 나중에 다시 볼게요.' }); } }, '나중에'))));
+  }
+
+  // 새 주 시작 — 이번 주 꼭 끝낼 일 3가지
+  function weekStartCard(m, st, now) {
+    var AS = DN.assistant;
+    if (m.resolved) return bubble('assistant', h('div.msg-text', m.resolved));
+    var list = (m.taskIds || []).map(function (id) { return M.byId(st.tasks, id); }).filter(function (t) { return t && !t.deletedAt && t.status !== 'done'; });
+    var chosen = {};
+    var count = h('span.meta', '0/3');
+    var boxes = list.map(function (t) {
+      var cb = h('input', { type: 'checkbox', onchange: function () {
+        if (cb.checked && Object.keys(chosen).length >= 3) { cb.checked = false; ui.toast('3개까지만 골라 주세요. 적을수록 끝내기 쉬워요.'); return; }
+        if (cb.checked) chosen[t.id] = true; else delete chosen[t.id];
+        count.textContent = Object.keys(chosen).length + '/3';
+      } });
+      return h('label.ws-row', cb, h('span', t.title), t.dueDate ? ui.dueChip(t, now) : null);
+    });
+    return bubble('assistant', h('div.weekstart',
+      h('div.dc-title', '새로운 한 주예요!'),
+      h('div.msg-text', '이번 주에 꼭 끝낼 일을 3가지만 골라 볼까요? 오늘 목록에 ★로 표시해 둘게요.'),
+      h('div.ws-list', boxes),
+      h('div.msg-actions',
+        h('button.btn.btn-primary.btn-xs', { type: 'button', onclick: function () {
+          var ids = Object.keys(chosen);
+          if (!ids.length) { ui.toast('하나 이상 골라 주세요.'); return; }
+          S.mutate('이번 주 목표', function (s) { DN.habits.setWeekGoals(s, ids, DN.app.now()); });
+          AS.update(m.id, { resolved: '이번 주 목표: ' + ids.map(function (id) { var t = M.byId(S.state.tasks, id); return t ? '★ ' + t.title : ''; }).join(' · ') });
+        } }, '이렇게 정하기'), count,
+        h('button.btn.btn-xs.btn-ghost', { type: 'button', onclick: function () { AS.update(m.id, { resolved: '알겠어요. 이번 주도 화이팅이에요.' }); } }, '건너뛰기'))));
   }
 
   // 자세히 적기 제안

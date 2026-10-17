@@ -86,3 +86,29 @@ test('round 뒤 isDefault (허용 오차 1e-3)', () => {
   assert.ok(SP.isDefault([0.4505, 0.3298, 0.2197]));
   assert.ok(!SP.isDefault(SP.round([0.46, 0.32, 0.22])));
 });
+
+test('단계 시간: 60분까지 5분, 그 위 10분씩. 칸 사이 값은 가까운 눈금으로, 5~480분', () => {
+  const S2 = require('../src/core/split');
+  assert.strictEqual(S2.stepMinutes(20, 1), 25);
+  assert.strictEqual(S2.stepMinutes(55, 1), 60);
+  assert.strictEqual(S2.stepMinutes(60, 1), 70);
+  assert.strictEqual(S2.stepMinutes(70, -1), 60);
+  assert.strictEqual(S2.stepMinutes(60, -1), 55);
+  assert.strictEqual(S2.stepMinutes(47, 1), 50);
+  assert.strictEqual(S2.stepMinutes(47, -1), 45);
+  assert.strictEqual(S2.stepMinutes(73, 1), 80);
+  assert.strictEqual(S2.stepMinutes(5, -1), 5);
+  assert.strictEqual(S2.stepMinutes(480, 1), 480);
+  assert.strictEqual(S2.stepMinutes(null, 1), 15);
+  assert.strictEqual(S2.stepMinutesBy(50, 4), 80);       // 55, 60, 70, 80
+  assert.strictEqual(S2.stepMinutesBy(80, -4), 50);
+});
+
+test('좌우 비율: 양쪽 최소 폭을 지키고, 이상한 값은 기본값', () => {
+  const S2 = require('../src/core/split');
+  assert.strictEqual(S2.clampCol(0.5, 1200), 0.5);
+  assert.strictEqual(S2.clampCol(0.1, 1000), 0.32);
+  assert.strictEqual(S2.clampCol(0.95, 1000), 0.68);
+  assert.strictEqual(S2.clampCol(NaN, 1000), 0.5);
+  assert.strictEqual(S2.clampCol(0.7, 500), 0.5);      // 너무 좁으면 반반
+});

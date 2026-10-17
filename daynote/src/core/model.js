@@ -22,7 +22,7 @@
 })(function () {
   var SCHEMA_VERSION = 3;   // 2: AI 층(aiRuns·proposals·noteDigests) · 3: 홈 채팅(chat), 수동 순서(sortOrder), 단계 초안(breakdown)
 
-  var TASK_STATUS = { todo: '할 일', in_progress: '진행 중', waiting: '대기', done: '완료' };
+  var TASK_STATUS = { todo: '할 일', in_progress: '진행 중', paused: '일시 정지', waiting: '대기', done: '완료' };
   var PRIORITY = { high: '높음', normal: '보통', low: '낮음' };
   var HISTORY_TYPES = {
     task_done: '완료', task_reopened: '완료 취소', decision: '결정', update: '업데이트',
@@ -205,6 +205,7 @@
     var t = byId(state.tasks, id);
     if (!t || t.status === 'done') return null;
     var prevStatus = t.status;
+    stopClock(t, now);
     t.status = 'done';
     t.completedAt = iso(now);
     t.updatedAt = iso(now);
@@ -222,6 +223,7 @@
     if (!t || t.status !== 'done') return null;
     opts = opts || {};
     t.status = opts.prevStatus && opts.prevStatus !== 'done' ? opts.prevStatus : 'todo';
+    if (t.status === 'in_progress') t.runningSince = iso(now);   // 진행 중으로 돌아가면 시계도 다시
     t.completedAt = null;
     t.updatedAt = iso(now);
     if (opts.undoOf) {
@@ -239,24 +241,71 @@
 
   // 지금 시작: 기존 Task 의 상태만 바꾼다. 복제·자동 완료·일정 변경은 하지 않는다.
   // 다른 업무가 진행 중이면 그 업무는 '할 일' 로 돌린다 (호출 전에 화면이 사용자에게 확인한다).
+  // 할 일 작업 공간 — 여러 일을 함께 진행할 수 있다 (다른 진행 중 업무를 건드리지 않는다).
+  //   진행 중일 때만 시계가 돈다: runningSince 부터 쌓아 workedMs 에 더한다.
   function startTask(state, id, now) {
     var t = byId(state.tasks, id);
     if (!t || t.deletedAt || t.status === 'done') return null;
-    var switched = [];
-    state.tasks.forEach(function (o) {
-      if (o.id !== id && o.status === 'in_progress' && !o.deletedAt) {
-        o.status = 'todo';
-        o.updatedAt = iso(now);
-        switched.push(o.id);
-      }
-    });
     if (t.status !== 'in_progress') {
       t.status = 'in_progress';
       t.startedAt = t.startedAt || iso(now);
+      t.runningSince = iso(now);
+      t.pausedAt = null;
     }
     t.snoozedUntil = null;
     t.updatedAt = iso(now);
-    return { task: t, switchedFrom: switched };
+    return { task: t, switchedFrom: [] };
+  }
+  function stopClock(t, now) {
+    if (t.runningSince) {
+      var ms = new Date(iso(now)) - new Date(t.runningSince);
+      t.workedMs = (t.workedMs || 0) + Math.max(0, ms);
+      t.runningSince = null;
+    }
+  }
+  // 일시 정지 — 진행 중인 일만. 한 시간은 남긴다
+  function pauseTask(state, id, now) {
+    var t = byId(state.tasks, id);
+    if (!t || t.deletedAt || t.status !== 'in_progress') return null;
+    stopClock(t, now);
+    t.status = 'paused';
+    t.pausedAt = iso(now);
+    t.updatedAt = iso(now);
+    return t;
+  }
+  // 할 일로 돌려보내기 — 진행 중·일시 정지를 '할 일' 로 (한 시간은 남긴다)
+  function returnToTodo(state, id, now) {
+    var t = byId(state.tasks, id);
+    if (!t || t.deletedAt || t.status === 'done' || t.status === 'todo') return null;
+    stopClock(t, now);
+    t.status = 'todo';
+    t.pausedAt = null;
+    t.updatedAt = iso(now);
+    return t;
+  }
+  // 지금까지 한 시간(분) — 진행 중이면 지금까지 포함
+  function workedMinutes(t, now) {
+    var ms = t.workedMs || 0;
+    if (t.runningSince) ms += Math.max(0, new Date(iso(now)) - new Date(t.runningSince));
+    return Math.floor(ms / 60000);
+  }
+
+  // 마감 미루기 — 마감이 지난 할 일을 지금부터 24시간 뒤로 (마감 날짜·시각 모두)
+  //   지나지 않은 할 일·끝낸 할 일은 건드리지 않는다. 몇 번 미뤘는지 남겨 둔다.
+  var POSTPONE_HOURS = 24;
+  function postponeTask(state, id, now) {
+    var t = byId(state.tasks, id);
+    var n = now instanceof Date ? now : new Date(now || Date.now());
+    if (!t || t.deletedAt || t.status === 'done' || !t.dueDate) return null;
+    var due = new Date(t.dueDate.replace(/-/g, '/') + ' ' + (t.dueTime || '23:59'));
+    if (due.getTime() >= n.getTime()) return null;
+    var to = new Date(n.getTime() + POSTPONE_HOURS * 3600000);
+    var p2 = function (x) { return (x < 10 ? '0' : '') + x; };
+    return updateTask(state, id, {
+      dueDate: to.getFullYear() + '-' + p2(to.getMonth() + 1) + '-' + p2(to.getDate()),
+      dueTime: p2(to.getHours()) + ':' + p2(to.getMinutes()),
+      postponedCount: (t.postponedCount || 0) + 1
+    }, n);
   }
 
   function snoozeTask(state, id, untilIso, now) {
@@ -466,7 +515,7 @@
     unmetBlockers: unmetBlockers, noteTitle: noteTitle, resolveRef: resolveRef,
     addNote: addNote, updateNote: updateNote, deleteNote: deleteNote, addProject: addProject,
     addTask: addTask, updateTask: updateTask, completeTask: completeTask, reopenTask: reopenTask,
-    startTask: startTask, snoozeTask: snoozeTask, deleteTask: deleteTask,
+    startTask: startTask, pauseTask: pauseTask, returnToTodo: returnToTodo, workedMinutes: workedMinutes, snoozeTask: snoozeTask, postponeTask: postponeTask, POSTPONE_HOURS: POSTPONE_HOURS, deleteTask: deleteTask,
     addBlock: addBlock, updateBlock: updateBlock, deleteBlock: deleteBlock, conflictsFor: conflictsFor,
     liveCreated: liveCreated, liveCompleted: liveCompleted, liveUpdated: liveUpdated, captureHasResults: captureHasResults, revealSources: revealSources,
     addHistory: addHistory, updateHistory: updateHistory, deleteHistory: deleteHistory,

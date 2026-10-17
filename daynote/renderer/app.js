@@ -175,27 +175,32 @@
       ui.undoToast('‘' + t.title + '’ 완료를 취소했습니다. 이전 완료 기록은 히스토리에 ‘취소됨’으로 남습니다.');
     } else {
       S.mutate('완료', function (s) { M.completeTask(s, id, now()); });
-      ui.undoToast('‘' + t.title + '’ 완료 · 프로젝트 히스토리에 기록했습니다.');
+      var ve = DN.habits && DN.habits.actualVsEstimate(M.byId(S.state.tasks, id), now());
+      ui.undoToast('‘' + t.title + '’ 완료 · 프로젝트 히스토리에 기록했어요.' + (ve ? ' (예상 ' + ve.estimate + '분 · 실제 ' + ve.actual + '분)' : ''));
     }
   }
 
-  // 지금 시작 — 실행 직전 상태를 다시 확인하고, 다른 진행 중 업무가 있으면 전환할지 묻는다
+  // 지금 시작 — 실행 직전 상태를 다시 확인한다. 다른 진행 중 업무는 그대로 (여러 일을 함께 진행)
   function startTask(id) {
     var check = DN.recommend.checkStartable(S.state, id, now());
     if (!check.ok) { ui.toast('시작하지 않았습니다: ' + check.reason, { error: true }); return Promise.resolve(false); }
     var t = check.task;
-    if (t.status === 'in_progress') { openTask(id); ui.toast('이미 진행 중인 업무입니다. 관련 자료를 열었습니다.'); return Promise.resolve(true); }
-    var others = M.liveTasks(S.state).filter(function (o) { return o.id !== id && o.status === 'in_progress'; });
-    var ask = others.length
-      ? ui.confirm('진행 중인 업무 전환', '‘' + others[0].title + '’' + (others.length > 1 ? ' 외 ' + (others.length - 1) + '개' : '') + '가 진행 중입니다. ‘' + t.title + '’로 전환할까요? 기존 업무는 ‘할 일’ 상태로 돌아가며, 되돌릴 수 있습니다.', '전환하고 시작')
-      : Promise.resolve(true);
-    return ask.then(function (ok) {
-      if (!ok) return false;
-      S.mutate('지금 시작', function (s) { M.startTask(s, id, now()); });
-      openTask(id, { keepFocus: true });
-      ui.undoToast('‘' + t.title + '’ 진행 중으로 바꿨습니다.' + (others.length ? ' 이전 업무는 할 일로 돌렸습니다.' : ''));
-      return true;
-    });
+    if (t.status === 'in_progress') return Promise.resolve(true);
+    // 여러 일을 함께 진행할 수 있다 — 다른 진행 중 업무는 그대로 둔다
+    var resume = t.status === 'paused';
+    S.mutate(resume ? '이어서 하기' : '지금 시작', function (s) { M.startTask(s, id, now()); });
+    ui.undoToast('‘' + t.title + '’' + (resume ? ' 다시 시작했어요.' : ' 시작했어요.'));
+    return Promise.resolve(true);
+  }
+  function pauseTask(id) {
+    var t = S.mutate('일시 정지', function (s) { return M.pauseTask(s, id, now()); });
+    if (t) ui.undoToast('‘' + t.title + '’ 일시 정지했어요. 한 시간은 남겨 뒀어요.');
+    return t;
+  }
+  function returnToTodo(id) {
+    var t = S.mutate('할 일로 돌려보내기', function (s) { return M.returnToTodo(s, id, now()); });
+    if (t) ui.undoToast('‘' + t.title + '’ 할 일로 돌려보냈어요.');
+    return t;
   }
 
   function snoozeMenu(id, anchor, after) {
@@ -215,7 +220,7 @@
   function taskMenu(id, anchor) {
     var t = M.byId(S.state.tasks, id);
     if (!t) return;
-    var items = [{ label: '상세 열기', onClick: function () { openTask(id); } }];
+    var items = [{ label: '자세히 편집…', onClick: function () { openTask(id); } }];
     if (t.status !== 'done') {
       items.push({ label: '지금 시작', onClick: function () { startTask(id); } });
       items.push({ label: '일정에 배치…', onClick: function () { scheduleTask(id); } });
@@ -336,7 +341,7 @@
   }
 
   DN.app = {
-    now: now, go: go, refresh: function () { renderView(); renderNav(); }, openTask: openTask, closeDetail: closeDetail, toggleDone: toggleDone, startTask: startTask,
+    now: now, go: go, refresh: function () { renderView(); renderNav(); }, openTask: openTask, closeDetail: closeDetail, toggleDone: toggleDone, startTask: startTask, pauseTask: pauseTask, returnToTodo: returnToTodo,
     snoozeMenu: snoozeMenu, taskMenu: taskMenu, deleteTask: deleteTask, scheduleTask: scheduleTask, openRef: openRef, applyPrefs: applyPrefs,
     quickCapture: quickCapture, saveQuick: saveQuick, loadSample: loadSample, clearSample: clearSample,
     current: function () { return cur; }, detailTaskId: function () { return detailTaskId; },

@@ -77,7 +77,38 @@
     return n.every(function (x, i) { return Math.abs(x - DEFAULT[i]) < EPS; });
   }
 
+  // ---------------------------------------------------------------- 홈 좌우 (채팅 | 오늘 패널)
+  // 채팅 쪽 비율 하나만 둔다. 양쪽 모두 최소 폭(기본 320px)을 지킨다.
+  var COL_DEFAULT = 0.5;
+  var COL_MIN_PX = 320;
+  function clampCol(r, totalPx, minPx) {
+    var m = minPx == null ? COL_MIN_PX : minPx;
+    if (typeof r !== 'number' || !isFinite(r)) r = COL_DEFAULT;
+    if (!(totalPx > 0)) return Math.max(0.2, Math.min(0.8, r));
+    var lo = Math.min(m / totalPx, 0.5);
+    return Math.round(Math.max(lo, Math.min(1 - lo, r)) * 10000) / 10000;
+  }
+
+  // ---------------------------------------------------------------- 단계 시간 끌어 맞추기
+  // 60분까지는 5분, 그 위로는 10분씩. 칸에 걸쳐 있으면(47분) 첫 칸은 가까운 눈금으로 (↑50 · ↓45)
+  var MIN_STEP_MIN = 5, MAX_STEP_MIN = 480;
+  function stepMinutes(v, dir) {
+    v = typeof v === 'number' && isFinite(v) ? v : null;
+    if (v == null) return dir > 0 ? 15 : 5;            // 비어 있으면 15분부터
+    var step = function (x, up) { return up ? (x < 60 ? 5 : 10) : (x <= 60 ? 5 : 10); };
+    var s = step(v, dir > 0);
+    var snapped = dir > 0 ? Math.floor(v / s) * s + s : Math.ceil(v / s) * s - s;
+    return Math.max(MIN_STEP_MIN, Math.min(MAX_STEP_MIN, snapped));
+  }
+  // 여러 칸 한 번에 (끄는 거리만큼)
+  function stepMinutesBy(v, steps) {
+    var x = v;
+    for (var i = 0; i < Math.abs(steps); i++) x = stepMinutes(x, steps > 0 ? 1 : -1);
+    return x;
+  }
+
   return {
+    COL_DEFAULT: COL_DEFAULT, COL_MIN_PX: COL_MIN_PX, clampCol: clampCol, stepMinutes: stepMinutes, stepMinutesBy: stepMinutesBy,
     DEFAULT: DEFAULT, MIN_PX: MIN_PX, KEY_STEP: KEY_STEP,
     normalize: normalize, minRatio: minRatio, clampAll: clampAll, moveEdge: moveEdge, round: round, isDefault: isDefault
   };

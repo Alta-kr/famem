@@ -111,7 +111,7 @@ test('5. empty 값과 tasks 불변', () => {
   assert.equal(s.tasks.length, 1);
 });
 
-test('6. startTask 반복 호출해도 tasks 길이 불변, 다른 진행 중 업무는 todo', () => {
+test('6. startTask 반복 호출해도 tasks 길이 불변, 다른 진행 중 업무는 그대로 (여러 일을 함께 진행)', () => {
   const s = setup();
   const a = task(s, { title: 'a', status: 'in_progress' });
   const b = task(s, { title: 'b' });
@@ -119,8 +119,8 @@ test('6. startTask 반복 호출해도 tasks 길이 불변, 다른 진행 중 �
   M.startTask(s, b.id, NOW);
   M.startTask(s, b.id, NOW);
   assert.equal(s.tasks.length, 2);
-  assert.deepEqual(r1.switchedFrom, [a.id]);
-  assert.equal(a.status, 'todo');
+  assert.deepEqual(r1.switchedFrom, []);
+  assert.equal(a.status, 'in_progress');
   assert.equal(b.status, 'in_progress');
 });
 
