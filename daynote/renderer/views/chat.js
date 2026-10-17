@@ -407,17 +407,23 @@
   function setDate(it, ymd, time) {
     var now = DN.app.now();
     if (it.kind === 'task') {
-      S.mutate(ymd ? '마감일 바꾸기' : '마감일 지우기', function (s) {
-        // 시간 정한 할 일이면 작업 시간도 같은 날로 옮긴다 (날짜 없음이면 작업 시간을 지운다)
+      S.mutate(ymd ? '날짜 바꾸기' : '날짜 지우기', function (s) {
+        // 시간 정한 할 일이면 작업 시간을 같은 날로 옮긴다 (날짜 없음이면 작업 시간을 지운다)
         var work = M.blocksForTask(s, it.item.id).filter(function (b) { return b.kind === 'work' && new Date(b.end) > now; })[0];
         if (work) {
-          if (!ymd) M.deleteBlock(s, work.id);
-          else {
+          var t = M.byId(s.tasks, it.item.id);
+          if (!ymd) {
+            M.deleteBlock(s, work.id);
+            M.updateTask(s, it.item.id, { dueDate: null, dueTime: null }, now);
+          } else {
             var ws = new Date(work.start);
             var wlen = Math.max(15, Math.round((new Date(work.end) - ws) / 60000)) || 30;
             var wn = D.parseYmd(ymd, time || D.hm(ws));
             M.updateBlock(s, work.id, { start: wn.toISOString(), end: D.addMinutes(wn, wlen).toISOString() });
+            // 마감도 있던 할 일만 마감을 함께 옮긴다 — 할 시각만 있던 일에 마감을 새로 만들지 않는다
+            if (t && t.dueDate) M.updateTask(s, it.item.id, { dueDate: ymd }, now);
           }
+          return;
         }
         M.updateTask(s, it.item.id, ymd ? { dueDate: ymd } : { dueDate: null, dueTime: null }, now);
       }, { source: 'capture' });

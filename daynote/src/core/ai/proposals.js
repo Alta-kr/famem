@@ -490,13 +490,10 @@
   }
 
   // "메모로 바꾸기" — AI 가 만든 할 일·일정을 지우고 메모로만 둔다
-  function captureToMemo(state, noteId, now) {
-    var note = M.byId(state.notes, noteId);
-    if (!note || !note.capture) return null;
-    (note.capture.created || []).forEach(function (c) {
-      if (c.kind === 'task') M.deleteTask(state, c.id, now); else M.deleteBlock(state, c.id);
-    });
-    // 완료 보고·날짜 바꾸기로 손댄 기존 할 일도 원래대로 (메모일 뿐이었다)
+  // 완료 보고(completed)·날짜 바꾸기(updated)로 기존 할 일에 한 일을 되돌린다.
+  // 글의 종류를 다른 것(메모·할 일·일정)으로 바꾸면 그 보고는 없던 일이 된다.
+  function revertReported(state, note, now) {
+    if (!note || !note.capture) return;
     (note.capture.completed || []).forEach(function (d) {
       M.reopenTask(state, d.id, now, { undoOf: d.historyId, prevStatus: d.prevStatus });
     });
@@ -506,6 +503,17 @@
       if (u.prevWork) M.updateBlock(state, u.prevWork.id, { start: u.prevWork.start, end: u.prevWork.end });
       if (u.newWorkId) M.deleteBlock(state, u.newWorkId);
     });
+    note.capture = Object.assign({}, note.capture, { completed: [], updated: [] });
+  }
+
+  function captureToMemo(state, noteId, now) {
+    var note = M.byId(state.notes, noteId);
+    if (!note || !note.capture) return null;
+    (note.capture.created || []).forEach(function (c) {
+      if (c.kind === 'task') M.deleteTask(state, c.id, now); else M.deleteBlock(state, c.id);
+    });
+    // 완료 보고·날짜 바꾸기로 손댄 기존 할 일도 원래대로 (메모일 뿐이었다)
+    revertReported(state, note, now);
     state.proposals.forEach(function (p) {
       if (p.source && p.source.id === noteId && (p.status === 'accepted' || p.status === 'pending')) { p.status = 'dismissed'; p.reviewedAt = iso(now); }
     });
@@ -657,6 +665,8 @@
     // 바꾸는 동안 잠깐 비는 순간에 원문이 '메모로 드러나기' 가 일어나지 않게 막아 둔다
     state.__holdReveal = true;
     try {
+      // "샤워 완료"·"견적서는 내일 보낼게" 를 할 일·일정으로 바꾸면 그 보고는 없던 일 — 기존 할 일을 원래대로
+      revertReported(state, note, now);
       if (!live.length) {
         var t0 = captureToTask(state, noteId, now);
         role = note.captureRole;

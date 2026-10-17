@@ -170,7 +170,8 @@
       var sh = +startTime.slice(0, 2), sm = +startTime.slice(3);
       var eh = +range[5];
       var em = range[6] != null ? +range[6] : range[7] ? 30 : range[8] != null ? +range[8] : 0;
-      if (eh <= 12 && sh >= 12) eh += 12;
+      // 끝이 오후 표기인 경우: 시작이 오후이거나("2시~4시" @14:00), 정오를 넘기는 경우("11시~1시")
+      if (eh <= 12 && (sh >= 12 || (eh < 12 && eh < sh))) eh += 12;
       if (eh * 60 + em > sh * 60 + sm) span = (eh * 60 + em) - (sh * 60 + sm);
     }
     var len = src.match(/(\d+)\s*시간(?:\s*(\d+)\s*분)?|(\d+)\s*분\s*(?:간|동안)/);

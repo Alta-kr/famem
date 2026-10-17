@@ -74,3 +74,65 @@ test('BUG-05: 끝 시각에 분이 있는 범위의 소요 시간을 검증한�
   assert.deepStrictEqual(dur('월요일 오후 2시~3시 반 회의', '월요일 오후 2시', '14:00', 90), [90, 'ok']);
   assert.deepStrictEqual(dur('월요일 오후 2시~4시 회의', '월요일 오후 2시', '14:00', 120), [120, 'ok']);
 });
+
+// ---------------------------------------------------------------- 2차 보완 (리포트 5장)
+test('5.2: 완료 보고를 할 일·일정으로 바꾸면 기존 할 일 완료가 취소되고 새 항목만 남는다', () => {
+  for (const kind of ['task', 'event']) {
+    const st = M.emptyState();
+    const t = M.addTask(st, { title: '샤워하기' }, NOW);
+    const note = apply(st, '샤워 완료', { entry_type: 'done', done_tasks: [{ title: '샤워하기', evidence: { quote: '샤워 완료', line: 1 } }] });
+    assert.strictEqual(t.status, 'done');
+    P.captureSetKind(st, note.id, kind, NOW);
+    assert.strictEqual(t.status, 'todo', kind);
+    assert.ok(!st.history.some((h) => h.type === 'task_done'), kind);
+    const kinds = P.captureItems(st, note).map((i) => i.kind);
+    assert.ok(!kinds.includes('done'), kind + ': ' + kinds);
+    assert.strictEqual(kinds.filter((k) => k === kind).length, 1, kind + ': ' + kinds);
+  }
+});
+
+test('5.2: 날짜 바꾸기를 할 일로 바꾸면 기존 할 일 마감이 원래대로', () => {
+  const st = M.emptyState();
+  const t = M.addTask(st, { title: '견적서 보내기', dueDate: '2026-10-09' }, NOW);
+  const note = apply(st, '견적서는 내일 보낼게', { entry_type: 'update',
+    updated_tasks: [{ title: '견적서 보내기', evidence: { quote: '견적서는 내일 보낼게', line: 1 }, due: { text: '내일', date: '2026-10-10', time: null }, do_at: NUL }] });
+  assert.strictEqual(t.dueDate, '2026-10-10');
+  P.captureSetKind(st, note.id, 'task', NOW);
+  assert.strictEqual(t.dueDate, '2026-10-09');
+  assert.ok(!P.captureItems(st, note).some((i) => i.kind === 'moved'));
+});
+
+test('5.3: 정오를 넘기는 범위("11시~1시")의 소요 시간', () => {
+  function dur(body, text, time, ai) {
+    const note = { id: 'n', title: '', body, updatedAt: NOW.toISOString() };
+    const out = { summary: '', sections: [], tasks: [], open_questions: [],
+      events: [{ title: '회의', evidence: { quote: body, line: 1 }, start: { text, date: '2026-10-12', time }, duration_minutes: ai, location: null, basis: 'explicit' }] };
+    const f = V.validateOrganizeNote(out, { note, state: M.emptyState(), now: NOW }).items[0].fields.durationMinutes;
+    return [f.value, f.status];
+  }
+  assert.deepStrictEqual(dur('월요일 오전 11시~1시 회의', '월요일 오전 11시', '11:00', 120), [120, 'ok']);
+  assert.deepStrictEqual(dur('월요일 오전 10시~2시 워크숍', '월요일 오전 10시', '10:00', 240), [240, 'ok']);
+  assert.deepStrictEqual(dur('월요일 오전 9시~11시 회의', '월요일 오전 9시', '09:00', 120), [120, 'ok']);
+  assert.deepStrictEqual(dur('월요일 10시~12시 회의', '월요일 10시', '10:00', 120), [120, 'ok']);
+});
+
+test('BUG-04: onStatus 는 구독 해제 함수를 돌려주고, 해제 뒤에는 불리지 않는다', () => {
+  const fs = require('fs'), path = require('path'), vm = require('vm');
+  const mem = {};
+  const localStorage = { getItem: (k) => (k in mem ? mem[k] : null), setItem: (k, v) => { mem[k] = String(v); }, removeItem: (k) => { delete mem[k]; } };
+  const timers = [];
+  const window = { Daynote: { model: M }, addEventListener() {} };
+  const ctx = vm.createContext({ window, localStorage, setTimeout(fn) { timers.push(fn); return timers.length; }, clearTimeout() {}, console, JSON, Promise, Date });
+  vm.runInContext(fs.readFileSync(path.join(__dirname, '../renderer/store.js'), 'utf8'), ctx);
+  const S = window.Daynote.store;
+  let a = 0, b = 0;
+  const offA = S.onStatus(() => { a++; });
+  S.onStatus(() => { b++; });
+  assert.strictEqual(typeof offA, 'function');
+  offA();
+  const a0 = a, b0 = b;
+  S.mutate('메모', (s) => { M.addNote(s, { title: 'x' }); });   // 저장 상태가 바뀐다 (저장 대기)
+  timers.splice(0).forEach((fn) => fn());
+  assert.strictEqual(a, a0);
+  assert.ok(b > b0);
+});
