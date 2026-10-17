@@ -52,3 +52,34 @@ test('다시 실행: 되돌린 것을 다시, 새 작업을 하면 다시 실행
   assert.strictEqual(S.undo(), '메모 3');
   assert.strictEqual(S.undo(), '메모 1');                              // '메모 2' 를 되돌린 기록 다음은 메모 1
 });
+
+test('되돌리기 묶기: 보낸 글 · 메모 저장 · AI 정리 · 명령이 Ctrl+Z 한 번에 통째로 (중간에서 멈추지 않게)', () => {
+  const S = loadStore();
+  S.mutate('할 일 추가', (s) => { M.addTask(s, { title: '이전 작업' }); });
+  S.mutate('보낸 글', (s) => { s.chat = (s.chat || []).concat([{ id: 'u1', role: 'user', text: '사내 세미나 관련 할일은 마감 하루 미뤄줘' }]); }, { key: 'send1' });
+  const note = S.mutate('입력 저장', (s) => M.addNote(s, { body: 'x', capture: { status: 'pending' } }), { key: 'send1', join: 'send1' });
+  S.mutate(null, (s) => { s.chat.push({ id: 'c1', kind: 'capture', noteId: note.id }); });
+  S.mutate('AI 분류', (s) => { M.byId(s.notes, note.id).capture.status = 'done'; M.addTask(s, { title: 'AI가 만든 일' }); }, { join: 'send1' });
+  S.withJoin('send1', () => { S.mutate('삭제', (s) => { s.tasks[0].title = '명령으로 바뀜'; }); });
+  assert.strictEqual(S.undo(), '보낸 글');
+  assert.deepStrictEqual(S.state.tasks.map((t) => t.title), ['이전 작업']);
+  assert.strictEqual(S.state.notes.length, 0);
+  assert.strictEqual((S.state.chat || []).length, 0);
+  assert.strictEqual(S.undo(), '할 일 추가');
+  // 다시 실행도 통째로
+  S.redo();
+  assert.strictEqual(S.redo(), '보낸 글');
+  assert.strictEqual(S.state.notes[0].capture.status, 'done');
+  assert.strictEqual(S.state.tasks.length, 2);
+});
+
+test('되돌리기 묶기: 사이에 다른 작업이 끼면 합치지 않는다', () => {
+  const S = loadStore();
+  S.mutate('보낸 글', (s) => { M.addNote(s, { body: 'x', capture: { status: 'pending' } }); }, { key: 'k' });
+  S.mutate('완료', (s) => { M.addTask(s, { title: '다른 일' }); });
+  S.mutate('AI 분류', (s) => { s.notes[0].capture.status = 'done'; }, { join: 'k' });
+  assert.strictEqual(S.undo(), 'AI 분류');
+  assert.strictEqual(S.state.notes[0].capture.status, 'pending');   // 이 상태는 capture.settleOrphans 가 '다시 시도' 로 푼다
+  assert.strictEqual(S.undo(), '완료');
+  assert.strictEqual(S.undo(), '보낸 글');
+});

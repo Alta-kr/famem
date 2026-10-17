@@ -52,10 +52,17 @@
   function send(text, projectId) {
     text = String(text || '').trim();
     if (!text) return null;
-    post({ role: 'user', kind: 'text', text: text, pin: true });   // 보낸 글은 채팅 화면 맨 위로 올라가고 답이 그 아래에 붙는다
+    // 보낸 글 하나가 되돌리기 한 칸 — 말풍선 · 메모 저장 · AI 정리 · 명령 실행이 모두 이 칸에 합쳐진다 (Ctrl+Z 한 번에 통째로)
+    var key = M.uid('send');
+    var um = { id: M.uid('msg'), at: now().toISOString(), role: 'user', kind: 'text', text: text, pin: true };   // 보낸 글은 채팅 화면 맨 위로 올라가고 답이 그 아래에 붙는다
+    S.mutate('보낸 글', function (s) {
+      if (!s.chat) s.chat = [];
+      s.chat.push(um);
+      if (s.chat.length > MAX_MESSAGES) s.chat.splice(0, s.chat.length - MAX_MESSAGES);
+    }, { source: 'chat', key: key });
     // 자주 쓰는 짧은 명령("할 일 추천해줘", "쉬고 싶어", "캘린더 보여줘")은 AI 없이 바로 — 메모로 남기지 않는다
     var local = DN.aiCommands.matchLocal(S.state, text, focusTask());
-    if (local) { runCommand(local); return null; }
+    if (local) { S.withJoin(key, function () { runCommand(local); }); return null; }
     var note = DN.capture.submit(text, projectId, function (r, noteId) {
       if (!r || !r.ok || !r.capture) return;
       var large = (r.capture.largeTasks || []).map(function (id) { return M.byId(S.state.tasks, id); }).filter(Boolean);
@@ -63,7 +70,7 @@
         post({ kind: 'text', text: '‘' + large[0].title + '’' + (large.length > 1 ? ' 외 ' + (large.length - 1) + '개' : '') +
           '는 꽤 큰 일 같아요. 작은 단계로 나눠 둘게요 — 잠깐 여유 있을 때 보여 드릴게요.' });
       }
-    });
+    }, { join: key });
     if (note) post({ kind: 'capture', noteId: note.id });
     return note;
   }
@@ -199,7 +206,7 @@
     }
     if (pending['bd:' + t.id]) return;
     pending['bd:' + t.id] = true;
-    var wait = post({ kind: 'thinking', text: '‘' + t.title + '’를 작은 단계로 나눠 보는 중이에요…' });
+    var wait = post({ kind: 'thinking', job: 'bd:' + t.id, taskId: t.id, text: '‘' + t.title + '’를 작은 단계로 나눠 보는 중이에요…' });
     var proj = t.projectId && M.byId(S.state.projects, t.projectId);
     call(AS.BREAKDOWN.buildInput(t, { today: todayStr(), projectName: proj && proj.name })).then(function (res) {
       delete pending['bd:' + t.id];
@@ -235,7 +242,7 @@
     if (!aiReady()) { post({ kind: 'elaborate', intro: intro || null, picks: [AS.localElaboratePick(cands[0])] }); return; }
     if (pending.el) return;
     pending.el = true;
-    var wait = post({ kind: 'thinking', text: '자세히 적어 두면 좋을 할 일을 찾는 중이에요…' });
+    var wait = post({ kind: 'thinking', job: 'el', text: '자세히 적어 두면 좋을 할 일을 찾는 중이에요…' });
     call(AS.ELABORATE.buildInput(cands, { today: todayStr() })).then(function (res) {
       delete pending.el;
       var v = res.ok ? AS.validateElaborate(res.output, cands.map(function (t) { return t.id; })) : null;
@@ -421,6 +428,21 @@
     else elaborate(n.candidates, intro + ' 할 일 중에 조금 더 자세히 적어 두면 시작하기 쉬운 게 있어요.');
   }
 
+  // 되돌리기·다시 실행·앱 다시 켜기 뒤에 기다리는 요청이 없는 '…하는 중이에요' 말풍선 풀기 (거기서 멈춰 보이지 않게)
+  function settleThinking(why) {
+    var stuck = (S.state.chat || []).filter(function (m) { return m.kind === 'thinking' && !(m.job && pending[m.job]); });
+    if (stuck.length) {
+      S.mutate(null, function (s) {
+        stuck.forEach(function (x) {
+          var m = M.byId(s.chat || [], x.id);
+          if (m) Object.assign(m, { kind: 'text', text: (why === 'load' ? '앱이 닫혀서 끝내지 못했어요.' : '되돌리기로 멈췄어요.') +
+            (x.taskId ? ' 다시 하려면 할 일을 채팅으로 가져와 [작업 작게 나누기]를 눌러 주세요.' : '') });
+        });
+      }, { source: 'chat' });
+    }
+    armFocus();   // 집중 타이머가 되돌아왔으면 다시 맞추고, 이미 지났으면 바로 끝 알림
+  }
+
   var watching = false;
   var quickKey = null;   // 빠른 메모 단축키 (데스크톱 앱에서 등록됐을 때만)
   function watch() {
@@ -428,7 +450,9 @@
     watching = true;
     ['keydown', 'mousedown', 'wheel'].forEach(function (ev) { document.addEventListener(ev, function () { lastActivity = Date.now(); }, true); });
     var lastDone = doneCount(S.state);
+    settleThinking('load');
     S.subscribe(function (info) {
+      if (info.type === 'undo' || info.type === 'redo') settleThinking(info.type);
       var n = doneCount(S.state);
       var more = info.type === 'change' && n > lastDone;
       lastDone = n;

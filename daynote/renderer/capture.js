@@ -25,20 +25,43 @@
   }
 
   // 입력 저장 + 분류 시작. 저장된 메모를 바로 돌려준다 (분류는 뒤에서 진행, 끝나면 onDone(result)).
-  function submit(text, projectId, onDone) {
+  //   opts.join: 채팅의 '보내기' 칸 이름표 — 저장·정리·명령이 그 칸에 합쳐져 Ctrl+Z 한 번에 통째로 되돌아간다
+  var joinKey = {};
+  function submit(text, projectId, onDone, opts) {
     text = String(text || '').trim();
     if (!text) return null;
+    var key = (opts && opts.join) || M.uid('cap');
     var note = S.mutate('입력 저장', function (s) {
       return M.addNote(s, {
         title: '', body: text, projectId: projectId || null,
         captureRole: 'memo', capture: { status: 'pending', at: now().toISOString(), entryType: null, created: [] }
       }, now());
-    }, { source: 'capture' });
+    }, { source: 'capture', key: key, join: key });
+    joinKey[note.id] = key;
     // 채팅(홈 입력·빠른 메모 창)에서 보낸 글만 명령으로 실행한다. Ctrl+N 메모 창은 늘 메모로 지킨다
     if (onDone) S.mutate(null, function (s) { var n = M.byId(s.notes, note.id); if (n) n.capture.viaChat = true; }, { source: 'capture', silent: true });
     classify(note.id).then(function (r) { if (onDone) onDone(r, note.id); });
     return note;
   }
+
+  // 기다리는 사람이 없는 '정리 중' 풀기 — 되돌리기·다시 실행으로 정리 도중 상태가 돌아왔거나 앱이 정리 중에 닫혔을 때.
+  //   다시 정리하지는 않는다 (되돌린 것을 다시 하지 않게) — '메모로 남겨 뒀어요 · [다시 시도]' 로
+  function settleOrphans(why) {
+    var msg = why === 'load' ? '앱이 닫혀 정리가 끝나지 않았어요.' : '되돌리기로 정리를 멈췄어요.';
+    var stuck = S.state.notes.filter(function (n) { return n.capture && n.capture.status === 'pending' && !inflight[n.id]; });
+    var runs = (S.state.aiRuns || []).filter(function (r) {
+      return r.status === 'running' && !(r.kind === 'capture' ? inflight[r.noteId] : DN.aiFlow && DN.aiFlow.isRunning(r.noteId));
+    });
+    if (!stuck.length && !runs.length) return;
+    S.mutate(null, function (s) {
+      stuck.forEach(function (x) {
+        var n = M.byId(s.notes, x.id);
+        if (n) n.capture = Object.assign({}, n.capture, { status: 'failed', error: { type: 'interrupted', message: msg, retryable: true } });
+      });
+      runs.forEach(function (x) { P.finishRun(s, x.id, { status: 'failed', error: { type: 'interrupted', message: msg, retryable: true } }, now()); });
+    }, { source: 'capture' });
+  }
+  S.subscribe(function (info) { if (info.type === 'undo' || info.type === 'redo' || info.type === 'load') settleOrphans(info.type); });
 
   function classify(noteId) {
     var note = M.byId(S.state.notes, noteId);
@@ -68,6 +91,13 @@
     }).then(function (res) {
       delete inflight[noteId];
       var t = now();
+      var key = joinKey[noteId]; delete joinKey[noteId];
+      // 기다리는 사이 Ctrl+Z 로 보낸 글을 되돌렸으면 늦게 온 결과는 버린다 (지운 글에 할 일이 생기지 않게)
+      var live = M.byId(S.state.notes, noteId);
+      if (!live || live.deletedAt || !live.capture || live.capture.status !== 'pending' || !M.byId(S.state.aiRuns || [], run.id)) {
+        notify();
+        return { ok: false, reason: 'undone' };
+      }
       if (!res.ok) {
         S.mutate(null, function (s) {
           P.finishRun(s, run.id, { status: 'failed', error: res.error, rawOutput: res.raw || null }, t);
@@ -96,9 +126,9 @@
         // 채팅 명령 — 근거·대상을 확인한 것만, 채팅에서 보낸 글일 때만 (실행은 아래에서)
         cmds = sent.capture && sent.capture.viaChat ? DN.aiCommands.resolve(s, sent, res.output.commands, focus) : [];
         cap = P.applyCapture(s, { note: sent, run: r, validated: v, output: res.output, commands: cmds }, t);
-      }, { source: 'capture' });
+      }, { source: 'capture', join: key });
       notify();
-      if (cmds.length && DN.assistant && DN.assistant.runCommand) cmds.forEach(function (c) { DN.assistant.runCommand(c); });
+      if (cmds.length && DN.assistant && DN.assistant.runCommand) S.withJoin(key, function () { cmds.forEach(function (c) { DN.assistant.runCommand(c); }); });
       return { ok: true, capture: cap, commands: cmds };
     });
   }

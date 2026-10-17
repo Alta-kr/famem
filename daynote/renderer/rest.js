@@ -10,7 +10,7 @@
 //               (순환 한숨: Balban 외 2023 · 분당 6회 안팎의 느린 호흡: Zaccaro 외 2018 · 아무것도 요구하지 않는 시간: Sonnentag & Fritz 2007)
 //     stretch 몸 풀기   — 스트레칭을 하나씩 크게 (Albulescu 외 2022)
 //     walk    산책하기  — 화면은 두고 나가서 걷기, 끝나면 소리로 알림 (움직이는 휴식 — Albulescu 외 2022, 점심 산책 Sianoja 외 2018)
-//              소리: 빗소리 같은 잔잔한 소리(선택, Alvarsson 외 2010) · 끝날 때 부드러운 종소리 (눈을 감고 쉬어도 되게)
+//              소리: 무음(기본) · 새소리 · 물소리 — 공개 녹음 (Alvarsson 외 2010 · Fan & Baharum 2024) · 끝날 때 부드러운 종소리 (눈을 감고 쉬어도 되게)
 //   돌아올 때: "다시 시작할까요?" — 이어서 할 일 · 적어 둔 첫 행동 · 평가(모드 비교)
 
 (function () {
@@ -39,30 +39,51 @@
   function reduced() { return !!prefs().reduceMotion || (window.matchMedia && window.matchMedia('(prefers-reduced-motion: reduce)').matches); }
   function mmss(ms) { var s = Math.max(0, Math.ceil(ms / 1000)); return Math.floor(s / 60) + ':' + ('0' + (s % 60)).slice(-2); }
 
-  // ---------------------------------------------------------------- 소리 (파일 없이 만든다)
-  //   잔잔한 소리: 갈색 잡음(브라운 노이즈)을 낮은 주파수로 걸러 빗소리처럼 / 종소리: 두 음이 천천히 사라지는 사인파
+  // ---------------------------------------------------------------- 소리
+  //   종소리: 두 음이 천천히 사라지는 사인파 (파일 없이 만든다)
   var audio = null;
   function ctx() {
     if (!audio) { var AC = window.AudioContext || window.webkitAudioContext; if (!AC) return null; audio = new AC(); }
     if (audio.state === 'suspended') audio.resume();
     return audio;
   }
-  function startNoise() {
-    var a = ctx(); if (!a || cur.noise) return;
-    var len = a.sampleRate * 4, buf = a.createBuffer(1, len, a.sampleRate), d = buf.getChannelData(0), last = 0;
-    for (var i = 0; i < len; i++) { var w = Math.random() * 2 - 1; last = (last + 0.02 * w) / 1.02; d[i] = last * 3.2; }
-    var src = a.createBufferSource(); src.buffer = buf; src.loop = true;
-    var lp = a.createBiquadFilter(); lp.type = 'lowpass'; lp.frequency.value = 900;
-    var g = a.createGain(); g.gain.value = 0; g.gain.linearRampToValueAtTime(0.18, a.currentTime + 2);
-    src.connect(lp); lp.connect(g); g.connect(a.destination); src.start();
-    cur.noise = { src: src, gain: g };
+  // 자연 소리 — 공개 녹음 (renderer/sounds/CREDITS.md). 자연 소리가 조용한 환경보다 회복 지표를 조금 더 낮췄다 (Fan & Baharum 2024 메타분석)
+  //   기본은 꺼짐(무음): 짧은 휴식엔 조용함도 좋다. 시끄러운 곳이면 자연 소리로 주변 소음을 덮는다
+  var SOUNDS = [
+    { id: 'off', label: '무음' },
+    { id: 'birds', label: '새소리', src: 'sounds/birds.ogg' },
+    { id: 'water', label: '물소리', src: 'sounds/water.ogg' }
+  ];
+  var SOUND_SRC = {}; SOUNDS.forEach(function (x) { SOUND_SRC[x.id] = x.src; });
+  var SOUND_VOL = 0.45;
+  // 예전 설정(true = 합성 잡음)은 물소리로
+  function soundPref(v) { return v === true ? 'water' : SOUND_SRC[v] ? v : 'off'; }
+  function fadeTo(el, to, ms, done) {
+    var from = el.volume, t0 = Date.now();
+    clearInterval(el._fade);
+    el._fade = setInterval(function () {
+      var k = Math.min(1, (Date.now() - t0) / ms);
+      el.volume = Math.max(0, Math.min(1, from + (to - from) * k));
+      if (k >= 1) { clearInterval(el._fade); if (done) done(); }
+    }, 50);
   }
-  function stopNoise() {
-    if (!cur || !cur.noise || !audio) return;
-    var n = cur.noise; cur.noise = null;
-    n.gain.gain.cancelScheduledValues(audio.currentTime);
-    n.gain.gain.linearRampToValueAtTime(0, audio.currentTime + 1);
-    setTimeout(function () { try { n.src.stop(); } catch (e) {} }, 1100);
+  function startSound() {
+    if (!cur) return;
+    var id = cur.sound, src = SOUND_SRC[id];
+    if (cur.audio && cur.audio.dataset.id === id) return;
+    stopSound();
+    if (!src) return;
+    var el = new Audio(src);
+    el.loop = true; el.volume = 0; el.dataset.id = id;
+    cur.audio = el;
+    var p = el.play();
+    if (p && p.catch) p.catch(function () {});
+    fadeTo(el, SOUND_VOL, 2000);
+  }
+  function stopSound() {
+    if (!cur || !cur.audio) return;
+    var el = cur.audio; cur.audio = null;
+    fadeTo(el, 0, 800, function () { try { el.pause(); el.src = ''; } catch (e) {} });
   }
   function chime() {
     var a = ctx(); if (!a) return;
@@ -87,7 +108,7 @@
     var el = h('div.rest-overlay', { role: 'dialog', 'aria-modal': 'true', 'aria-label': '휴식' });
     document.body.appendChild(el);
     document.documentElement.classList.add('is-resting');
-    cur = { el: el, pausedIds: pausedIds, parked: [], minutes: DN.habits.REST_DEFAULT_MIN, prevFocus: document.activeElement, sound: !!prefs().restSound };
+    cur = { el: el, pausedIds: pausedIds, parked: [], minutes: DN.habits.REST_DEFAULT_MIN, prevFocus: document.activeElement, sound: soundPref(prefs().restSound) };
     el.addEventListener('keydown', function (e) { if (e.key === 'Escape') { e.preventDefault(); if (cur && cur.mode) finish(); else back(false); } });
     var mode = normMode(opts.mode);
     if (mode) start(mode, true); else prepare();
@@ -95,7 +116,7 @@
   function clearTimers() { if (cur) { clearInterval(cur.timer); clearTimeout(cur.step); clearInterval(cur.step); cur.timer = null; cur.step = null; } }
   function close() {
     if (!cur) return;
-    clearTimers(); stopNoise();
+    clearTimers(); stopSound();
     if (cur.mode && DN.assistant && DN.assistant.rested) DN.assistant.rested();   // 쉬었으니 일한 흐름은 새로
     cur.el.remove();
     document.documentElement.classList.remove('is-resting');
@@ -165,15 +186,19 @@
       }));
   }
   function soundRow() {
-    return h('div.rest-durations', { role: 'group', 'aria-label': '소리' }, h('span', '잔잔한 소리'),
-      h('button.rest-dur' + (cur.sound ? '.is-on' : ''), { type: 'button', 'aria-pressed': String(cur.sound), onclick: function (e) {
-        cur.sound = !cur.sound;
-        S.mutate(null, function (s) { s.prefs.restSound = cur.sound; }, { silent: true });
-        e.currentTarget.classList.toggle('is-on', cur.sound);
-        e.currentTarget.setAttribute('aria-pressed', String(cur.sound));
-        e.currentTarget.textContent = cur.sound ? '켜짐' : '꺼짐';
-        if (cur.mode) { if (cur.sound) startNoise(); else stopNoise(); }
-      } }, cur.sound ? '켜짐' : '꺼짐'));
+    var row = h('div.rest-durations', { role: 'group', 'aria-label': '소리' }, h('span', '소리'),
+      SOUNDS.map(function (x) {
+        return h('button.rest-dur' + (cur.sound === x.id ? '.is-on' : ''), { type: 'button', 'aria-pressed': String(cur.sound === x.id),
+          title: x.id === 'off' ? '조용한 곳이면 무음으로 충분해요' : '공개 녹음 — 주변이 시끄러우면 자연 소리로 덮어요', onclick: function () {
+          cur.sound = x.id;
+          S.mutate(null, function (s) { s.prefs.restSound = x.id; }, { silent: true });
+          Array.prototype.forEach.call(row.querySelectorAll('button'), function (b, i) {
+            b.classList.toggle('is-on', SOUNDS[i].id === x.id); b.setAttribute('aria-pressed', String(SOUNDS[i].id === x.id));
+          });
+          if (cur.mode) startSound();
+        } }, x.label);
+      }));
+    return row;
   }
 
   // ---------------------------------------------------------------- 쉬는 중
@@ -202,7 +227,7 @@
     el.appendChild(top); el.appendChild(stage); el.appendChild(bottom);
     RENDER[mode](stage, timeEl);
     ctx();   // 누른 김에 소리 장치를 깨워 둔다 — 끝날 때 종소리가 나도록 (브라우저는 사용자 동작 없이 소리를 막는다)
-    if (cur.sound) startNoise(); else stopNoise();
+    startSound();
     cur.timer = setInterval(function () {
       var left = cur.endAt - Date.now();
       timeEl.textContent = mmss(left);
@@ -295,7 +320,7 @@
   // ---------------------------------------------------------------- 끝 — 다시 시작 · 평가
   function finish(timeUp) {
     if (!cur) return;
-    clearTimers(); stopNoise();
+    clearTimers(); stopSound();
     if (timeUp) chime();
     var mode = cur.mode;
     var spent = cur.startedAt ? Math.round((Date.now() - cur.startedAt) / 60000) : 0;
@@ -356,5 +381,5 @@
     });
   }
 
-  DN.rest = { open: open, close: close, finish: finish, MODES: MODES, normMode: normMode, stats: stats, chime: chime, isOpen: function () { return !!cur; } };
+  DN.rest = { open: open, close: close, finish: finish, MODES: MODES, SOUNDS: SOUNDS, normMode: normMode, stats: stats, chime: chime, isOpen: function () { return !!cur; } };
 })();

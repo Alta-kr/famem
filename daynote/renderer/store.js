@@ -66,6 +66,7 @@
 
   var state = M.emptyState();
   var listeners = [];
+  var activeJoin = null;   // withJoin 이 도는 동안의 이름표
   var undoStack = [];
   var redoStack = [];   // 되돌린 것을 다시 실행 (새 작업을 하면 비운다)
   var saveTimer = null;
@@ -154,12 +155,20 @@
     status: function () { return saveStatus; },
 
     // label 이 있으면 되돌리기 대상이 된다. fn 의 반환값을 그대로 돌려준다.
+    //   opts.key  : 이 되돌리기 칸에 이름표를 붙인다 (예: 채팅으로 보낸 글 하나)
+    //   opts.join : 맨 위 칸의 이름표가 같으면 새 칸을 만들지 않고 그 칸에 합친다 — 보내기 → AI 정리 → 명령 실행을
+    //               Ctrl+Z 한 번에 통째로 되돌리게 (중간 '정리 중' 에서 멈추지 않게). withJoin 안의 변경도 같다
     mutate: function (label, fn, opts) {
       opts = opts || {};
-      var before = label ? clone(state) : null;
+      var jk = opts.join || activeJoin;
+      var top = undoStack[undoStack.length - 1];
+      var merge = !!(label && jk && top && top.key === jk);
+      var before = label && !merge ? clone(state) : null;
       var result = fn(state);
-      if (label) {
-        undoStack.push({ label: label, snapshot: before, at: Date.now() });
+      if (merge) {
+        redoStack = [];   // 칸 이름은 처음 것 그대로 (예: '보낸 글')
+      } else if (label) {
+        undoStack.push({ label: label, snapshot: before, at: Date.now(), key: opts.key || jk || null });
         if (undoStack.length > 30) undoStack.shift();
         redoStack = [];   // 새 작업을 하면 '다시 실행' 할 것이 없어진다
       }
@@ -168,12 +177,17 @@
       return result;
     },
 
+    // fn 안에서 일어나는 되돌리기 대상 변경을 key 칸에 합친다 (그 칸이 맨 위일 때만)
+    withJoin: function (key, fn) {
+      var prev = activeJoin; activeJoin = key || null;
+      try { return fn(); } finally { activeJoin = prev; }
+    },
     canUndo: function () { return undoStack.length > 0; },
     canRedo: function () { return redoStack.length > 0; },
     undo: function () {
       var last = undoStack.pop();
       if (!last) return null;
-      redoStack.push({ label: last.label, snapshot: clone(state), at: Date.now() });
+      redoStack.push({ label: last.label, snapshot: clone(state), at: Date.now(), key: last.key });
       // 화면 설정(prefs: 사이드바·모션 줄이기·홈 분할 비율 등)은 되돌리기 대상이 아니다 — 지금 값을 유지한다
       var prefs = state.prefs;
       state = last.snapshot;
@@ -186,7 +200,7 @@
     redo: function () {
       var next = redoStack.pop();
       if (!next) return null;
-      undoStack.push({ label: next.label, snapshot: clone(state), at: Date.now() });
+      undoStack.push({ label: next.label, snapshot: clone(state), at: Date.now(), key: next.key });
       var prefs = state.prefs;
       state = next.snapshot;
       state.prefs = prefs;

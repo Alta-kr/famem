@@ -274,6 +274,7 @@
       h('label.check-row', { for: 'set-rest-mode' }, '휴식 화면에서 먼저 골라 둘 모드 ', restModeSel),
       h('p.help', '휴식 버튼을 누르면 늘 쉬는 방법을 고르는 화면이 먼저 나와요. 여기서 고른 모드는 ‘기본’ 표시가 붙고, Enter 만 누르면 바로 시작해요.'),
       h('p.help', '모드마다 써 보고 끝날 때 평가를 남기면, 어떤 휴식이 나에게 맞는지 아래에서 비교할 수 있어요.'),
+      h('p.help', '쉬는 동안 소리는 휴식 화면에서 무음 · 새소리 · 물소리 중에 고를 수 있어요. 새소리: “Royal Natal National Park dawn chorus” — David Watts, © The British Library Board, CC BY 4.0 (Wikimedia Commons). 물소리: “Vojníkov, 3. jez” (오타바 강 보에서 흐르는 물) — Juandev, 퍼블릭 도메인 (Wikimedia Commons).'),
       anyRest ? h('table.rest-stats',
         h('tr', h('th', '모드'), h('th', '쓴 횟수'), h('th', '좋았어요 / 보통 / 별로'), h('th', '만족도')),
         stats.map(function (r) {

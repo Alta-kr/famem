@@ -94,6 +94,8 @@
         return { ok: false, reason: 'failed', error: res.error };
       }
       var runNow = M.byId(S.state.aiRuns, run.id);
+      // 기다리는 사이 Ctrl+Z 로 정리 시작 전으로 돌아갔으면 늦게 온 결과는 버린다
+      if (!runNow || runNow.status !== 'running' || !M.byId(S.state.notes, noteId)) { notify(); return { ok: false, reason: 'undone' }; }
       Object.assign(runNow, { model: res.model || runNow.model, provider: res.provider || runNow.provider });
       S.mutate(null, function (s) { P.finishRun(s, run.id, { rawOutput: res.raw || JSON.stringify(res.output), usage: res.usage || null, attempts: res.attempts || 1, status: 'running' }, done); }, { source: 'ai', silent: true });
       var r = applyOutput(M.byId(S.state.aiRuns, run.id), snapshot, res.output, done);
