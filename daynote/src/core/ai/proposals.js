@@ -403,8 +403,9 @@
     // 완료 보고 ("샤워 완료") — 근거 문장이 원문에 있고, 지금 열린 할 일과 맞을 때만 완료로 표시한다
     var completed = completeReported(state, note, out.done_tasks, created, now);
     // 날짜 바꾸기 ("견적서는 내일 보낼게") — 앱이 날짜를 다시 계산해 맞을 때만 기존 할 일을 고친다
-    var updated = updateReported(state, note, out.updated_tasks, created, completed, now);
-    updated = updated.concat(bulkReported(state, note, out.bulk_updates, created, completed.concat(updated), now));
+    var rg = regroup(out);
+    var updated = updateReported(state, note, rg.updated, created, completed, now);
+    updated = updated.concat(bulkReported(state, note, rg.bulk, created, completed.concat(updated), now));
     var reported = completed.length + updated.length;
     if (entryType === 'done' || entryType === 'update') entryType = reported ? (created.length ? 'mixed' : entryType) : 'memo';
     else if (reported && entryType === 'memo') entryType = 'mixed';
@@ -494,6 +495,29 @@
       out.push(rec);
     });
     return out;
+  }
+
+  // 묶음 말을 한 건으로 받은 경우 되돌리기 — "마감 지난 것들은 2시간 뒤로" 를 AI 가 작업 공간의 할 일 하나로 받으면
+  //   그 문장에 할 일 이름이 없을 때만 묶음으로 바꾼다 ("견적서 마감 지난 거 내일로" 는 그대로 한 건)
+  var NAME_STOP = { '마감': 1, '오늘': 1, '내일': 1, '할일': 1 };
+  function regroup(out) {
+    var updated = Array.isArray(out.updated_tasks) ? out.updated_tasks.slice() : [];
+    var bulk = Array.isArray(out.bulk_updates) ? out.bulk_updates.slice() : [];
+    var quoted = {};
+    bulk.forEach(function (b) { if (b && b.evidence && b.evidence.quote) quoted[nospace(b.evidence.quote)] = true; });
+    updated = updated.filter(function (u) {
+      var q = u && u.evidence && u.evidence.quote;
+      var f = q && V.groupFilter(q);
+      if (!f) return true;
+      var named = String(u.title || '').split(/\s+/).some(function (w) { return w.length >= 2 && !NAME_STOP[w] && q.indexOf(w) !== -1; });
+      if (named) return true;
+      if (!quoted[nospace(q)]) {
+        quoted[nospace(q)] = true;
+        bulk.push({ filter: f, project_hint: null, evidence: u.evidence, due: u.due, do_at: u.do_at });
+      }
+      return false;
+    });
+    return { updated: updated, bulk: bulk };
   }
 
   // 묶음 날짜 바꾸기 — "마감 지난 것 전부 두 시간 후로 미뤄줘".

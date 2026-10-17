@@ -15,7 +15,7 @@
   if (node) module.exports = api;
   if (typeof window !== 'undefined') { window.Daynote = window.Daynote || {}; window.Daynote.aiCapture = api; }
 })(function (O, CMD) {
-  var PROMPT_VERSION = 'capture.v7';   // v2: 큰 할 일 감지 + 단계 초안(보관만) · v3: 메모 종류(메모/아이디어/링크) · v4: 시간 정한 할 일(do_at) · v5: 완료 보고(done_tasks) · v6: 날짜 바꾸기(updated_tasks) · v7: 채팅 명령(commands)
+  var PROMPT_VERSION = 'capture.v8';   // v2: 큰 할 일 감지 + 단계 초안(보관만) · v3: 메모 종류(메모/아이디어/링크) · v4: 시간 정한 할 일(do_at) · v5: 완료 보고(done_tasks) · v6: 날짜 바꾸기(updated_tasks) · v7: 채팅 명령(commands) · v8: 작업 공간 할 일이 있어도 묶음 말은 묶음으로
   var ENTRY_TYPES = ['memo', 'task', 'mixed', 'done', 'update', 'command'];
   var NOTE_KINDS = ['memo', 'idea', 'link'];
 
@@ -55,6 +55,7 @@
     '   due·do_at 은 I 와 같은 규칙입니다. 어떤 할 일이 그 묶음인지는 앱이 고르니 updated_tasks 에 하나씩 나열하지 마세요. 묶음 지시가 없으면 빈 배열입니다.',
     'J. 작업 공간의 할 일: <context> 에 "작업 공간에 올려 둔 할 일" 이 있으면, 사용자가 대상을 말하지 않고 "마감 두 시간 후로 미뤄줘", "이거 끝났어", "이거 내일로" 처럼 쓴 글은 그 할 일 이야기입니다.',
     '   이때 done_tasks·updated_tasks 의 title 은 그 할 일 제목을 그대로 씁니다. 다른 할 일 이름이 분명히 적혀 있으면 그쪽입니다. 이런 지시를 새 할 일로 만들지 마세요.',
+    '   단, "마감 지난 것들은 2시간 뒤로", "밀린 거 내일로" 처럼 묶음을 말하면 작업 공간의 할 일이 아니라 K(bulk_updates) 입니다 (전부·모두 가 없어도).',
     CMD.PROMPT
   ].join('\n');
 

@@ -105,6 +105,22 @@
     return null;
   }
   // 기준 시각 + 상대 시각 (5분 단위로 반올림)
+  // 묶음 말 — "마감 지난 것들", "오늘 마감인 거 다", "밀린 일" → 어떤 묶음인지 (아니면 null)
+  //   묶음 이름 뒤에 '것·거·일·항목' 이 오거나, '전부·모두·다' 같은 말이 있어야 묶음이다 ("마감 지난 견적서" 는 한 건)
+  var GROUP_SETS = [[/(마감|기한)\s*(이\s*)?(지난|넘긴|넘은)|밀린/, 'overdue'], [/오늘\s*마감/, 'due_today'], [/마감\s*(이\s*)?없는/, 'no_due'],
+    [/진행\s*중인?/, 'in_progress'], [/일시\s*정지(한|된)?|멈춘/, 'paused'], [/남은\s*(할\s*일|거|것)|할\s*일\s*(전부|다|모두)/, 'all_open']];
+  var GROUP_WORD_RE = /(전부|모두|다\s|다$|싹|몽땅|일괄)/;
+  var GROUP_NOUN_RE = /^\s*(인\s*)?(것|거|일|할\s*일|항목)/;
+  function groupFilter(text) {
+    var s = String(text || '');
+    for (var i = 0; i < GROUP_SETS.length; i++) {
+      var m = s.match(GROUP_SETS[i][0]);
+      if (!m) continue;
+      if (GROUP_WORD_RE.test(s) || GROUP_NOUN_RE.test(s.slice(m.index + m[0].length)) || GROUP_SETS[i][1] === 'all_open') return GROUP_SETS[i][1];
+    }
+    return null;
+  }
+
   function relativeAt(text, ref) {
     var mins = relativeMinutes(text);
     if (mins == null || mins <= 0 || mins > 24 * 60) return null;
@@ -359,7 +375,7 @@
   }
 
   return {
-    verifyWhen: verifyWhen, shiftMinutes: shiftMinutes, relativeAt: relativeAt,
+    verifyWhen: verifyWhen, shiftMinutes: shiftMinutes, relativeAt: relativeAt, groupFilter: groupFilter,
     validateOrganizeNote: validateOrganizeNote, shapeErrors: shapeErrors, timeCandidates: timeCandidates, sanitizeSteps: sanitizeSteps,
     noteLines: noteLines, locate: locate, DATE_RE: DATE_RE, TIME_RE: TIME_RE
   };

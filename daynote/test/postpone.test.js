@@ -190,3 +190,53 @@ test('한 달 달력: 일요일 시작, 요일이 맞고, 앞뒤 달 날짜로 �
   // 4주로 딱 맞는 달: 2026년 2월 (1일 일요일, 28일 토요일)
   assert.strictEqual(D.monthGrid(2026, 1).length, 4);
 });
+
+test('묶음 말: "마감 지난 것들은 2시간 뒤로" 는 작업 공간에 할 일이 있어도 마감 지난 것 전부를 미룬다', () => {
+  const V = require('../src/core/ai/validate');
+  const P = require('../src/core/ai/proposals');
+  const C = require('../src/core/ai/capture');
+  const fake = require('../src/core/ai/fake');
+  // 묶음 말 판별
+  assert.strictEqual(V.groupFilter('마감 지난 것들은 마감을 2시간 뒤로 미뤄줘.'), 'overdue');
+  assert.strictEqual(V.groupFilter('마감 지난 거 내일로'), 'overdue');
+  assert.strictEqual(V.groupFilter('오늘 마감인 거 다 내일로'), 'due_today');
+  assert.strictEqual(V.groupFilter('마감 지난 견적서 내일로'), null);
+  assert.strictEqual(V.groupFilter('마감 두 시간 후로 미뤄줘'), null);
+  const at = new Date(2026, 9, 18, 0, 40);
+  const nul = { text: null, date: null, time: null };
+  function setup() {
+    const st = M.emptyState();
+    const focus = M.addTask(st, { title: '멘토 배정 기준 초안 작성', dueDate: '2026-10-17', dueTime: '18:00' }, at);
+    const old = M.addTask(st, { title: '분기 지표 대시보드 캡처 정리', dueDate: '2026-10-15' }, at);
+    const later = M.addTask(st, { title: '세미나 발표 자료 목차 잡기', dueDate: '2026-10-19' }, at);
+    return { st, focus, old, later };
+  }
+  function send(st, body, out) {
+    const note = M.addNote(st, { title: '', body, capture: { status: 'pending', at: at.toISOString() } }, at);
+    note.updatedAt = at.toISOString();
+    const input = C.buildInput(note, { today: '2026-10-18 (일)', projects: [], openTasks: M.liveTasks(st).filter((t) => t.status !== 'done').map((t) => t.title), focusTask: '멘토 배정 기준 초안 작성' });
+    out = out || fake.organize(input).output;
+    const run = P.startRun(st, { noteId: note.id, kind: 'capture', promptVersion: C.PROMPT_VERSION }, at);
+    P.applyCapture(st, { note, run, validated: V.validateOrganizeNote(out, { note, state: st, now: at }), output: out }, at);
+  }
+  const body = '마감 지난 것들은 마감을 2시간 뒤로 미뤄줘.';
+  // 데모 AI
+  let s = setup();
+  send(s.st, body);
+  assert.deepStrictEqual([s.focus.dueDate, s.focus.dueTime], ['2026-10-18', '02:40']);
+  assert.deepStrictEqual([s.old.dueDate, s.old.dueTime], ['2026-10-18', '02:40']);
+  assert.strictEqual(s.later.dueDate, '2026-10-19');
+  // AI 가 작업 공간의 할 일 하나로만 받아도 묶음으로
+  s = setup();
+  const base = { summary: '', sections: [], tasks: [], events: [], open_questions: [], entry_type: 'update', note_title: 'x', note_project_hint: null, note_kind: 'memo', done_tasks: [], bulk_updates: [] };
+  send(s.st, body, Object.assign({}, base, { updated_tasks: [{ title: '멘토 배정 기준 초안 작성', evidence: { quote: body, line: 1 }, due: { text: '2시간 뒤', date: null, time: null }, do_at: nul }] }));
+  assert.deepStrictEqual([s.old.dueDate, s.old.dueTime], ['2026-10-18', '02:40']);
+  assert.deepStrictEqual([s.focus.dueDate, s.focus.dueTime], ['2026-10-18', '02:40']);
+  assert.strictEqual(s.later.dueDate, '2026-10-19');
+  // 할 일 이름을 말한 한 건은 그대로 한 건
+  s = setup();
+  const one = '분기 지표 마감 지난 거 2시간 뒤로 미뤄줘';
+  send(s.st, one, Object.assign({}, base, { updated_tasks: [{ title: '분기 지표 대시보드 캡처 정리', evidence: { quote: one, line: 1 }, due: { text: '2시간 뒤', date: null, time: null }, do_at: nul }] }));
+  assert.deepStrictEqual([s.old.dueDate, s.old.dueTime], ['2026-10-18', '02:40']);
+  assert.deepStrictEqual([s.focus.dueDate, s.focus.dueTime], ['2026-10-17', '18:00']);
+});

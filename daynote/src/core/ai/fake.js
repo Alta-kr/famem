@@ -131,12 +131,11 @@
     var used = {};
     // 묶음: "마감 지난 것 전부 두 시간 후로 미뤄줘" — 어떤 묶음인지만 고르고 대상은 앱이 고른다
     var bulk = [];
-    var BULK_SETS = [[/(마감|기한)\s*(이\s*)?지난|밀린/, 'overdue'], [/오늘\s*마감/, 'due_today'], [/마감\s*(이\s*)?없는/, 'no_due'],
-      [/진행\s*중/, 'in_progress'], [/일시\s*정지|멈춘/, 'paused'], [/남은\s*(할\s*일|거)|할\s*일\s*(전부|다|모두)/, 'all_open']];
     body.forEach(function (l) {
-      if (!UPDATE_RE.test(l) || !/(전부|모두|다\s|다$|싹|몽땅|일괄)/.test(l)) return;
-      var set = BULK_SETS.filter(function (x) { return x[0].test(l); })[0];
-      if (!set) return;
+      if (!UPDATE_RE.test(l)) return;
+      var filter = V.groupFilter(l);   // "마감 지난 것들", "오늘 마감인 거 다" …
+      if (!filter) return;
+      var set = [null, filter];
       var hint = SG.parseDueHint(l, ref);
       var rel = l.match(/(\d+\s*분|(?:\d+|한|두|세|네)\s*시간(?:\s*반)?)\s*(?:더\s*)?(?:후|뒤|미뤄|미루|늦춰|연장)/);
       if (!hint && !rel) return;
