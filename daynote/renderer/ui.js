@@ -531,8 +531,11 @@
     try { if (Array.prototype.indexOf.call(e.dataTransfer.types || [], NOTE_T) === -1) e.dataTransfer.setData(NOTE_T, id); } catch (err) {}
     setTimeout(function () { showDock(id); }, 0);   // 끌기 시작한 그 순간에 화면을 바꾸면 끌기가 취소된다
   });
-  document.addEventListener('dragend', function () { setTimeout(hideDock, 0); });
-  document.addEventListener('drop', function () { setTimeout(hideDock, 0); });
+  // 끌기가 끝나면 닫는다. 놓은 곳이 다시 그려지면 끌던 요소가 사라져 dragend 가 문서까지 오지 않고,
+  //   놓는 곳이 drop 을 멈추기도 한다 — 그래서 drop 은 캡처 단계에서 먼저 받고, 그래도 남으면 다음 마우스 움직임에 닫는다
+  document.addEventListener('dragend', function () { setTimeout(hideDock, 0); }, true);
+  document.addEventListener('drop', function () { setTimeout(hideDock, 0); }, true);
+  document.addEventListener('mousemove', function () { if (dock) hideDock(); }, true);
 
   // 마감 지난 할 일을 지금 + 24시간으로 (Ctrl+Z 로 되돌릴 수 있다)
   function postponeOverdue(taskId) {
