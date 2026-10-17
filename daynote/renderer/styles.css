@@ -1699,3 +1699,39 @@ html.is-resting .toast, html.is-resting .toasts { display: none !important; }   
 .shelf-title.is-done { text-decoration: line-through; color: var(--text-secondary); }
 .shelf-preview { font-size: 12.5px; color: var(--text-secondary); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 .shelf-meta { display: flex; gap: 6px; align-items: center; font-size: 12px; margin-top: 2px; }
+
+/* 앞을 내다보기 — 보기 탭 · 2주 띠 · 날짜별 묶음 · 다가오는 마감 */
+.home-today-head { flex-wrap: wrap; }
+.hz-tabs { margin-left: auto; display: inline-flex; gap: 2px; padding: 2px; border-radius: 999px; background: var(--surface-subtle); }
+.hz-tab { all: unset; cursor: pointer; padding: 4px 12px; border-radius: 999px; font-size: 12.5px; color: var(--text-secondary); }
+.hz-tab:hover { color: var(--text-primary); }
+.hz-tab.is-on { background: var(--surface); color: var(--text-primary); font-weight: 600; box-shadow: 0 1px 2px rgba(0,0,0,.12); }
+.hz-tab:focus-visible { outline: 2px solid var(--primary); }
+.hz-strip { display: grid; grid-template-columns: repeat(14, minmax(0, 1fr)); gap: 3px; margin: 2px 0 8px; }
+.hz-day { all: unset; cursor: pointer; display: flex; flex-direction: column; align-items: center; gap: 1px; padding: 4px 0 5px; border-radius: 8px; border: 1px solid transparent; min-width: 0; }
+.hz-day:hover { background: var(--surface-subtle); }
+.hz-day:focus-visible { outline: 2px solid var(--primary); }
+.hz-day.is-week { border-left: 1px dashed var(--border-deco); border-radius: 0 8px 8px 0; }
+.hz-day.is-shown { background: var(--primary-soft); }
+.hz-day.is-today .hz-date { background: var(--primary); color: #fff; }
+.hz-day.is-busy .hz-date { box-shadow: inset 0 -2px 0 var(--warning, #D97706); }
+.hz-day.is-drop { background: var(--primary-soft); border-color: var(--primary); transform: translateY(-2px); }
+.hz-wd { font-size: 10.5px; color: var(--text-secondary); }
+.hz-date { font-size: 13px; font-weight: 600; width: 24px; height: 22px; display: grid; place-items: center; border-radius: 999px; font-variant-numeric: tabular-nums; }
+.hz-dots { display: flex; gap: 2px; min-height: 14px; }
+.hz-dot { font-size: 9.5px; line-height: 14px; min-width: 14px; padding: 0 3px; border-radius: 999px; text-align: center; font-variant-numeric: tabular-nums; }
+.hz-dot.is-task { background: var(--surface-subtle); color: var(--text-secondary); }
+.hz-dot.is-task.is-due { background: rgba(217, 119, 6, .16); color: var(--warning, #B45309); }
+.hz-dot.is-event { background: var(--primary-soft); color: var(--primary); }
+.hz-group { margin-bottom: 10px; }
+.hz-group-head { display: flex; align-items: baseline; gap: 8px; padding: 6px 10px; border-radius: 8px; position: sticky; top: 0; background: var(--surface); z-index: 1; border: 1px solid transparent; }
+.hz-group-head.is-drop { border-color: var(--primary); background: var(--primary-soft); }
+.hz-event { display: flex; gap: 8px; align-items: baseline; padding: 3px 12px 3px 26px; font-size: 13px; }
+.hz-event .time { color: var(--text-secondary); font-variant-numeric: tabular-nums; font-size: 12px; }
+.hz-empty { padding: 4px 26px 8px; font-size: 12.5px; }
+.hz-upcoming { display: flex; flex-wrap: wrap; align-items: center; gap: 4px 12px; padding: 6px 12px; margin: 0 0 4px; border-radius: 10px; background: var(--surface-subtle); font-size: 12.5px; }
+.hz-up-label { font-weight: 600; color: var(--text-secondary); }
+.hz-up { display: inline-flex; align-items: center; gap: 2px; }
+.hz-up.is-prep .meta { color: var(--warning, #B45309); font-weight: 600; }
+.hz-up-more { margin-left: auto; font-size: 12px; }
+.chip.chip-plan { background: var(--primary-soft); color: var(--primary); }

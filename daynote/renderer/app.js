@@ -306,6 +306,17 @@
     if (t.status !== 'done') {
       items.push({ label: '지금 시작', onClick: function () { startTask(id); } });
       items.push({ label: '일정에 배치…', onClick: function () { scheduleTask(id); } });
+      items.push({ label: '할 날 정하기…', keepOpen: true, onClick: function (pop) {
+        var box = document.createDocumentFragment();
+        DN.horizon.planChoices(now()).concat(t.planDate ? [['할 날 지우기', null]] : []).forEach(function (c) {
+          box.appendChild(ui.h('button', { type: 'button', role: 'menuitem', onclick: function () {
+            pop.close(true);
+            S.mutate(c[1] ? '할 날 정하기' : '할 날 지우기', function (s) { M.updateTask(s, id, { planDate: c[1] }, now()); });
+            ui.undoToast(c[1] ? '‘' + t.title + '’ ' + D.relDay(c[1], now()) + '에 할게요.' : '‘' + t.title + '’ 할 날을 지웠어요.');
+          } }, ui.h('span.menu-text', c[0]), c[1] ? ui.h('span.sub', D.relDay(c[1], now())) : null));
+        });
+        pop.setContent(box, 'menu');
+      } });
       items.push({ label: '나중에 (미루기)…', onClick: function () { snoozeMenu(id, anchor); } });
     }
     items.push({ label: '삭제', onClick: function () { deleteTask(id); } });
