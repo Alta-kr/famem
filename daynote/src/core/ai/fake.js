@@ -124,7 +124,13 @@
     });
   }
 
+  // 보통 걸리는 시간 (데모용 짐작 표)
+  var TYPICAL = [[/치과|병원|진료/, 60], [/점심|저녁 약속|식사/, 60], [/1:1|원온원/, 30], [/회의|미팅/, 60], [/통화|전화/, 15], [/샤워/, 20], [/운동|헬스|러닝/, 60], [/영화/, 130],
+    [/보고서|기획서|제안서/, 120], [/메일|견적서|보내기/, 20]];
+  function typicalOf(t) { for (var i = 0; i < TYPICAL.length; i++) if (TYPICAL[i][0].test(t)) return TYPICAL[i][1]; return null; }
   function classifyCapture(input, body, tasks, events, ref) {
+    tasks.forEach(function (t) { if (t.typical_minutes === undefined) t.typical_minutes = typicalOf(t.title); });
+    events.forEach(function (e) { if (e.typical_minutes === undefined) e.typical_minutes = e.duration_minutes ? null : typicalOf(e.title); });
     // 날짜 바꾸기: "견적서는 내일 보낼게", "보고서 월요일로 미룸" — 날짜 표현 + 미루기·약속 말 + 열린 할 일과 겹침
     var UPDATE_RE = /(할게|할께|보낼게|낼게|하기로|미룸|미뤘|미루|미뤄|옮김|옮겼|연기|변경)/;
     var updated = [];

@@ -141,6 +141,9 @@
   var DEADLINE_RE = /(까지|마감|기한|전에|이전에|내로|안으로|데드라인|deadline|due|제출|납기|기일)/i;
   function isDeadlineText(text) { return DEADLINE_RE.test(String(text || '')); }
 
+  // AI 가 짐작한 보통 걸리는 시간 — 5~480분 정수만
+  function typicalMinutes(v) { return typeof v === 'number' && Math.floor(v) === v && v >= 5 && v <= 480 ? v : null; }
+
   function relativeAt(text, ref) {
     var mins = relativeMinutes(text);
     if (mins == null || mins <= 0 || mins > 24 * 60) return null;
@@ -324,8 +327,8 @@
       items.push(Object.assign(b, {
         fields: fields,
         duplicateOf: dup ? { kind: 'task', id: dup.id, label: dup.title } : null,
-        // 큰 할 일의 단계 초안 — 바로 적용하지 않고 할 일에 보관했다가 나중에 제안한다
-        extra: steps.length ? { size: 'large', breakdown: steps } : null
+        // 큰 할 일의 단계 초안 — 바로 적용하지 않고 할 일에 보관했다가 나중에 제안한다 · AI 가 짐작한 걸리는 시간
+        extra: steps.length || typicalMinutes(raw.typical_minutes) ? Object.assign(steps.length ? { size: 'large', breakdown: steps } : {}, typicalMinutes(raw.typical_minutes) ? { typicalMinutes: raw.typical_minutes } : {}) : null
       }));
     });
 
@@ -340,7 +343,8 @@
       var dup = findDupEvent(state, b.title, date.value);
       items.push(Object.assign(b, {
         fields: { title: field(b.title, 'ok'), date: date, time: time, durationMinutes: dur, location: loc, projectId: checkProject(null, c) },
-        duplicateOf: dup ? { kind: 'block', id: dup.id, label: dup.title || '기존 일정' } : null
+        duplicateOf: dup ? { kind: 'block', id: dup.id, label: dup.title || '기존 일정' } : null,
+        extra: typicalMinutes(raw.typical_minutes) ? { typicalMinutes: raw.typical_minutes } : null
       }));
     });
 

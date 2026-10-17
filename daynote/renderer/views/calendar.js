@@ -98,15 +98,19 @@
     }
 
     var cols = '56px repeat(' + days.length + ', minmax(0, 1fr))';
-    var dueByDay = {};
-    M.liveTasks(st).forEach(function (t) { if (t.dueDate && t.status !== 'done') (dueByDay[t.dueDate] = dueByDay[t.dueDate] || []).push(t); });
+    var dueByDay = {}, planByDay = {};
+    M.liveTasks(st).forEach(function (t) {
+      if (t.dueDate && t.status !== 'done') (dueByDay[t.dueDate] = dueByDay[t.dueDate] || []).push(t);
+      if (t.planDate && t.status !== 'done' && t.planDate !== t.dueDate) (planByDay[t.planDate] = planByDay[t.planDate] || []).push(t);
+    });
     var daysHead = h('div.cal-days-head', { style: { gridTemplateColumns: cols } }, h('div'),
       days.map(function (d) {
         var key = D.ymd(d);
         var due = dueByDay[key] || [];
         return h('div.cal-day-label' + (key === D.ymd(now) ? '.is-today' : ''),
           D.WEEKDAYS[d.getDay()], h('b', String(d.getDate())),
-          due.length ? h('div.due', { title: due.map(function (t) { return t.title; }).join(', ') }, '마감 ' + due.length + ' · ' + due[0].title) : null);
+          due.length ? h('div.due', { title: due.map(function (t) { return t.title; }).join(', ') }, '마감 ' + due.length + ' · ' + due[0].title) : null,
+          (planByDay[key] || []).length ? h('div.due.is-plan', { title: planByDay[key].map(function (t) { return t.title; }).join(', ') }, '할 날 ' + planByDay[key].length + ' · ' + planByDay[key][0].title) : null);
       }));
 
     // ---------------------------------------------------------- 시간표
@@ -265,6 +269,9 @@
     });
     M.liveTasks(st).forEach(function (t) {
       if (t.dueDate && t.status !== 'done' && t.dueDate >= from && t.dueDate <= to) bucket(t.dueDate).due.push(t);
+      // 할 날 — 그날 하기로 한 일 (그날 작업 시간이 이미 있으면 작업 시간으로 보이니 빼고)
+      if (t.planDate && t.status !== 'done' && t.planDate >= from && t.planDate <= to && t.planDate !== t.dueDate &&
+        !(bucket(t.planDate).blocks.some(function (b) { return b.taskId === t.id; }))) (bucket(t.planDate).plan = bucket(t.planDate).plan || []).push(t);
     });
 
     function item(cls, text, title, onClick, dragInfo) {
@@ -293,6 +300,10 @@
             [h('span.cal-m-time', D.hm(s)), ' ', label], (bl.kind === 'work' ? '작업 · ' : '') + label + ' ' + D.hm(s) + '–' + D.hm(bl.end),
             function () { DN.views.schedule.open({ blockId: bl.id }); },
             { kind: 'block', id: bl.id, minutes: D.minutesBetween(s, new Date(bl.end)), keepTime: true }));
+        });
+        (b.plan || []).forEach(function (t) {
+          items.push(item('plan', [ui.icon('calendar'), ' ', t.title], '할 날 · ' + t.title + ' — 끌어서 시간에 놓으면 작업 시간',
+            function () { A.scheduleTask(t.id); }, { kind: 'task', id: t.id, minutes: t.estimateMinutes ? Math.min(t.estimateMinutes, 240) : 30 }));
         });
         b.due.forEach(function (t) {
           var over = D.dueAt(t.dueDate, t.dueTime) < now;

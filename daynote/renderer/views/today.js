@@ -318,7 +318,7 @@
       t.status === 'in_progress' ? h('span.chip.chip-progress', ui.icon('play'), '진행 중') : null,
       t.status === 'paused' ? h('span.chip.chip-paused', ui.icon('pause'), '일시 정지') : null,
       ui.dueChip(t, now, { add: true }),
-      !done && t.planDate && t.planDate !== D.ymd(now) ? planChip(t, now) : null,
+      !done && t.planDate && (t.planDate !== D.ymd(now) || !t.dueDate) ? planChip(t, now) : null,
       DN.habits && DN.habits.isWeekGoal(t, now) ? h('span.chip.chip-goal', { title: '이번 주 꼭 끝낼 일' }, '★ 이번 주') : null,
       steps.length ? h('span.chip.chip-steps', '단계 ' + stepCnt.done + '/' + stepCnt.total, h('span.mini-bar', h('span', { style: { width: Math.round(stepCnt.done / stepCnt.total * 100) + '%' } }))) : null,
       pendingDraft ? h('button.chip.chip-guess.chip-btn', { type: 'button', title: 'AI가 나눠 둔 단계 보기', onclick: function (e) { e.stopPropagation(); DN.assistant.breakdown(t.id); } }, '나눠 둔 단계 있음') : null,
@@ -380,8 +380,8 @@
   }
   function planChip(t, now) {
     var el = h('span.chip.chip-plan.is-editable', { role: 'button', tabindex: '0', title: '할 날 — 눌러서 바꾸기' }, ui.icon('calendar'), '할 날 ' + D.relDay(t.planDate, now));
-    el.addEventListener('click', function (e) { e.preventDefault(); e.stopPropagation(); planMenu(el, t.id); });
-    el.addEventListener('keydown', function (e) { if (e.key === 'Enter' || e.key === ' ') { e.preventDefault(); e.stopPropagation(); planMenu(el, t.id); } });
+    el.addEventListener('click', function (e) { e.preventDefault(); e.stopPropagation(); ui.dueEditor(el, t.id); });
+    el.addEventListener('keydown', function (e) { if (e.key === 'Enter' || e.key === ' ') { e.preventDefault(); e.stopPropagation(); ui.dueEditor(el, t.id); } });
     return el;
   }
   // 끌어 놓을 수 있는 날 — 할 일을 놓으면 그날을 할 날로

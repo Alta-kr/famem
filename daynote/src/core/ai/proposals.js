@@ -276,11 +276,14 @@
         }
         p.resultRef = { kind: 'task', id: task.id };
         created.push({ kind: 'task', id: task.id, title: task.title });
-        // 시간 정한 할 일: 그 시각에 작업 시간(30분)을 잡아 오늘 일정에도 보이게. 할 일은 체크해야 끝난다.
+        // AI 가 짐작한 걸리는 시간 — 예상 시간이 없을 때만 (추정 표시)
+        var typT = p.payload.extra && p.payload.extra.typicalMinutes;
+        if (typT && task.estimateMinutes == null) { task.estimateMinutes = typT; task.estimateSource = 'ai'; }
+        // 시간 정한 할 일: 그 시각에 작업 시간(AI 짐작, 없으면 30분)을 잡아 오늘 일정에도 보이게. 할 일은 체크해야 끝난다.
         if (p.kind === 'task' && v.atDate && v.atTime && V.DATE_RE.test(v.atDate) && V.TIME_RE.test(v.atTime)) {
           var ws = D.parseYmd(v.atDate, v.atTime);
           M.addBlock(state, {
-            taskId: task.id, title: task.title, start: ws.toISOString(), end: new Date(ws.getTime() + 30 * 60000).toISOString(),
+            taskId: task.id, title: task.title, start: ws.toISOString(), end: new Date(ws.getTime() + (typT || 30) * 60000).toISOString(),
             sources: [src], origin: 'ai_accepted', proposalId: p.id, durationGuessed: true, sample: !!p.sample
           });
         }
@@ -375,7 +378,8 @@
       if (p.kind === 'event') {
         var ev = effective(p);
         if (ev.date && ev.time && !(ev.durationMinutes > 0)) {
-          p.edits = Object.assign({}, p.edits || {}, { durationMinutes: 30 });
+          var typ = p.payload.extra && p.payload.extra.typicalMinutes;
+          p.edits = Object.assign({}, p.edits || {}, { durationMinutes: typ || 30 });
           guessedDur[p.id] = true;
         }
       }

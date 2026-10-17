@@ -15,7 +15,7 @@
   if (node) module.exports = api;
   if (typeof window !== 'undefined') { window.Daynote = window.Daynote || {}; window.Daynote.aiCapture = api; }
 })(function (O, CMD) {
-  var PROMPT_VERSION = 'capture.v10';   // v2: 큰 할 일 감지 + 단계 초안(보관만) · v3: 메모 종류(메모/아이디어/링크) · v4: 시간 정한 할 일(do_at) · v5: 완료 보고(done_tasks) · v6: 날짜 바꾸기(updated_tasks) · v7: 채팅 명령(commands) · v8: 작업 공간 할 일이 있어도 묶음 말은 묶음으로 · v9: 프로젝트 묶음 · 날 단위로 미루기 · v10: 목록은 할 일 하나 + 세부 할 일
+  var PROMPT_VERSION = 'capture.v11';   // v2: 큰 할 일 감지 + 단계 초안(보관만) · v3: 메모 종류(메모/아이디어/링크) · v4: 시간 정한 할 일(do_at) · v5: 완료 보고(done_tasks) · v6: 날짜 바꾸기(updated_tasks) · v7: 채팅 명령(commands) · v8: 작업 공간 할 일이 있어도 묶음 말은 묶음으로 · v9: 프로젝트 묶음 · 날 단위로 미루기 · v10: 목록은 할 일 하나 + 세부 할 일 · v11: 걸리는 시간 짐작(typical_minutes)
   var ENTRY_TYPES = ['memo', 'task', 'mixed', 'done', 'update', 'command'];
   var NOTE_KINDS = ['memo', 'idea', 'link'];
 
@@ -54,6 +54,8 @@
     'K. 묶음으로 바꾸기: "마감 지난 것 전부 두 시간 후로 미뤄줘", "오늘 마감인 거 다 내일로", "온보딩 프로젝트 할 일 전부 다음 주 월요일로", "사내 세미나 관련 할 일은 마감 하루 미뤄줘" 처럼 여러 할 일을 묶어서 말하면 bulk_updates 에 넣습니다.',
     '   filter: overdue(마감 지난 것) · due_today(오늘 마감) · no_due(마감 없는 것) · in_progress(진행 중) · paused(일시 정지) · all_open(남은 할 일 전부). project_hint: 특정 프로젝트로 좁히면 그 이름, 아니면 null.',
     '   due·do_at 은 I 와 같은 규칙입니다. 어떤 할 일이 그 묶음인지는 앱이 고르니 updated_tasks 에 하나씩 나열하지 마세요. 묶음 지시가 없으면 빈 배열입니다.',
+    'M. 걸리는 시간 짐작: 일정(events)이나 할 일(tasks)의 길이·끝 시각이 글에 없으면 duration_minutes 는 null 그대로 두고, typical_minutes 에 그런 일이 보통 걸리는 시간(분, 5~480)을 추정합니다.',
+    '   예) 치과 60 · 병원 진료 60 · 점심 약속 60 · 회의 60 · 1:1 30 · 통화 15 · 샤워 20 · 운동 60 · 영화 130 · 견적서 보내기 20 · 보고서 작성 120. 길이가 글에 있으면 typical_minutes 는 null 입니다.',
     'L. 목록으로 적은 할 일: 한 줄 아래에 들여쓰기나 번호·기호(1. 2. / - / •)로 적은 항목들은 위 줄의 세부 할 일입니다.',
     '   예) "인공조류 보드 디버깅\n 1. 전원 디버깅\n 2. 클럭 확인" → tasks 에는 "인공조류 보드 디버깅" 하나만 넣습니다. 아래 항목을 따로 tasks 로 만들지 마세요 (앱이 세부 할 일로 넣습니다).',
     'J. 작업 공간의 할 일: <context> 에 "작업 공간에 올려 둔 할 일" 이 있으면, 사용자가 대상을 말하지 않고 "마감 두 시간 후로 미뤄줘", "이거 끝났어", "이거 내일로" 처럼 쓴 글은 그 할 일 이야기입니다.',
@@ -70,6 +72,10 @@
   SCHEMA.properties.tasks.items.properties.breakdown = { type: 'array', items: stepSchema };
   // 할 시각 (마감 due 와 다름) — 없으면 text·date·time 모두 null
   SCHEMA.properties.tasks.items.properties.do_at = clone(SCHEMA.properties.tasks.items.properties.due);
+  // 길이를 말하지 않았을 때 그런 일이 보통 걸리는 시간 (AI 추정, 분) — 앱은 '추정' 으로 표시한다
+  SCHEMA.properties.tasks.items.properties.typical_minutes = { anyOf: [{ type: 'integer' }, { type: 'null' }] };
+  SCHEMA.properties.events.items.properties.typical_minutes = { anyOf: [{ type: 'integer' }, { type: 'null' }] };
+  SCHEMA.properties.events.items.required = Object.keys(SCHEMA.properties.events.items.properties);
   SCHEMA.properties.tasks.items.required = Object.keys(SCHEMA.properties.tasks.items.properties);
   SCHEMA.properties.entry_type = { type: 'string', enum: ENTRY_TYPES };
   SCHEMA.properties.note_title = { type: 'string' };

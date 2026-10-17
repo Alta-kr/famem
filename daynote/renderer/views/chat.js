@@ -413,7 +413,7 @@
     }
     var s = new Date(x.start);
     // 길이를 짐작해 넣은 일정은 길이도 보여 준다 (캘린더에서 끌어 고치면 된다)
-    var len = x.durationGuessed ? ' · ' + Math.round((new Date(x.end) - s) / 60000) + '분' : '';
+    var len = x.durationGuessed ? ' · 약 ' + Math.round((new Date(x.end) - s) / 60000) + '분' : '';
     return { label: dayLabel(D.ymd(s), now) + (x.timeUncertain ? '' : ' ' + D.hm(s)) + len, cls: D.ymd(s) === D.ymd(now) ? 'chip-today' : '' };
   }
 

@@ -73,7 +73,7 @@ test('그냥 메모는 메모로만 남는다 (할 일을 만들어내지 않음
   assert.strictEqual(st.tasks.length, 0);
 });
 
-test('시각은 있지만 소요 시간이 없는 일정은 30분으로 캘린더에 넣고, 길이는 짐작이라고 표시한다', () => {
+test('시각은 있지만 소요 시간이 없는 일정은 AI 가 짐작한 길이(회의 60분)로 캘린더에 넣고, 길이는 짐작이라고 표시한다', () => {
   const st = setup();
   submit(st, '수요일 오후 3시 디자인 리뷰 회의');
   assert.strictEqual(st.tasks.length, 0);
@@ -81,7 +81,7 @@ test('시각은 있지만 소요 시간이 없는 일정은 30분으로 캘린�
   const b = st.blocks[0];
   const s = new Date(b.start);
   assert.deepStrictEqual([s.getDate(), s.getHours()], [7, 15]);
-  assert.strictEqual(new Date(b.end) - s, 30 * 60000);
+  assert.strictEqual(new Date(b.end) - s, 60 * 60000);
   assert.strictEqual(b.durationGuessed, true);
 });
 

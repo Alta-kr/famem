@@ -343,7 +343,7 @@
       el.addEventListener('dragstart', function (e) { e.preventDefault(); e.stopPropagation(); });
       return el;
     }
-    if (!task.dueDate) return opts && opts.add && open ? editable(h('span.chip.chip-add', icon('flag'), '+ 마감')) : null;
+    if (!task.dueDate) return opts && opts.add && open && !task.planDate ? editable(h('span.chip.chip-add', icon('flag'), '+ 날짜')) : null;
     var due = D.dueAt(task.dueDate, task.dueTime);
     var diff = D.dayDiff(now, D.parseYmd(task.dueDate));
     var when = D.relDay(task.dueDate, now) + (task.dueTime ? ' ' + task.dueTime : '');
@@ -362,27 +362,59 @@
     var t = M.byId(S.state.tasks, taskId);
     if (!t) return null;
     var now = A.now(), wd = now.getDay();
-    var dIn = h('input.input', { type: 'date', value: t.dueDate || '', 'aria-label': '마감 날짜' });
+    // 마감(언제까지) · 할 날(이날 하기) 중 무엇을 정할지 — 할 날만 있는 일은 할 날부터
+    var mode = !t.dueDate && t.planDate ? 'plan' : 'due';
+    var dIn = h('input.input', { type: 'date', value: (mode === 'plan' ? t.planDate : t.dueDate) || '', 'aria-label': '날짜' });
     var tIn = h('input.input', { type: 'time', value: t.dueTime || '', 'aria-label': '마감 시각 (비우면 그날 안)' });
     var pop;
     function save(date, time, label) {
+      if (mode === 'plan') {
+        S.mutate(label || (date ? '할 날 정하기' : '할 날 지우기'), function (s) { M.updateTask(s, taskId, { planDate: date || null }, now); });
+        if (pop) pop.close(true);
+        undoToast(date ? '‘' + t.title + '’ ' + D.relDay(date, now) + '에 할게요.' : '‘' + t.title + '’ 할 날을 지웠어요.');
+        return;
+      }
       S.mutate(label || '마감 바꾸기', function (s) { M.updateTask(s, taskId, { dueDate: date || null, dueTime: date && time ? time : null }, now); });
       if (pop) pop.close(true);
       undoToast(date ? '‘' + t.title + '’ 마감을 ' + D.relDay(date, now) + (time ? ' ' + time : '') + '(으)로 정했어요.' : '‘' + t.title + '’ 마감을 없앴어요.');
     }
+    // 마감 ↔ 할 날 옮기기 — "이건 마감이 아니라 그날 하려던 거야" (또는 반대)
+    function swap() {
+      var to = mode === 'plan' ? 'due' : 'plan';
+      var day = to === 'plan' ? t.dueDate : t.planDate;
+      S.mutate(to === 'plan' ? '마감을 할 날로' : '할 날을 마감으로', function (s) {
+        M.updateTask(s, taskId, to === 'plan' ? { planDate: day, dueDate: null, dueTime: null } : { dueDate: day, planDate: null }, now);
+      });
+      if (pop) pop.close(true);
+      undoToast('‘' + t.title + '’ ' + D.relDay(day, now) + (to === 'plan' ? ' — 마감이 아니라 그날 할 일로 바꿨어요.' : ' — 할 날을 마감으로 바꿨어요.'));
+    }
     var quick = [['오늘', D.ymd(now)], ['내일', D.ymd(D.addDays(now, 1))],
       ['이번 주 금요일', D.ymd(D.addDays(now, (5 - wd + 7) % 7))], ['다음 주 월요일', D.ymd(D.addDays(now, ((8 - wd) % 7) || 7))]];
-    if (t.dueDate) quick.push(['하루 미루기', D.ymd(D.addDays(D.parseYmd(t.dueDate), 1))]);
-    var form = h('form.due-editor', { onsubmit: function (e) { e.preventDefault(); if (dIn.value) save(dIn.value, tIn.value); else dIn.focus(); } },
-      h('div.menu-label', t.dueDate ? '마감 고치기' : '마감 정하기'),
-      h('div.due-quick', quick.map(function (q) {
-        return h('button.btn.btn-xs', { type: 'button', onclick: function () { save(q[1], tIn.value || t.dueTime || '', q[0] === '하루 미루기' ? '마감 미루기' : null); } }, q[0]);
-      })),
-      h('div.due-fields', dIn, tIn),
-      h('div.due-actions',
-        t.dueDate ? h('button.btn.btn-xs.btn-ghost', { type: 'button', onclick: function () { save(null, null, '마감 없애기'); } }, '마감 없애기') : null,
-        h('button.btn.btn-xs.btn-primary', { type: 'submit' }, '저장')));
-    pop = popover(anchor, form, { label: '마감', className: 'menu-due' });
+    var cur = function () { return mode === 'plan' ? t.planDate : t.dueDate; };
+    var form = h('form.due-editor', { onsubmit: function (e) { e.preventDefault(); if (dIn.value) save(dIn.value, mode === 'plan' ? null : tIn.value); else dIn.focus(); } });
+    function draw() {
+      form.textContent = '';
+      var list = quick.slice();
+      if (cur()) list.push(['하루 미루기', D.ymd(D.addDays(D.parseYmd(cur()), 1))]);
+      dIn.value = cur() || '';
+      append(form, [
+        h('div.due-mode', { role: 'tablist', 'aria-label': '무엇을 정할까요' },
+          [['due', '마감 (언제까지)'], ['plan', '할 날 (이날 하기)']].map(function (m) {
+            return h('button.due-mode-btn' + (mode === m[0] ? '.is-on' : ''), { type: 'button', role: 'tab', 'aria-selected': String(mode === m[0]),
+              onclick: function () { mode = m[0]; draw(); } }, m[1]);
+          })),
+        h('div.due-quick', list.map(function (q) {
+          return h('button.btn.btn-xs', { type: 'button', onclick: function () { save(q[1], mode === 'plan' ? null : (tIn.value || t.dueTime || ''), q[0] === '하루 미루기' ? (mode === 'plan' ? '할 날 미루기' : '마감 미루기') : null); } }, q[0]);
+        })),
+        h('div.due-fields' + (mode === 'plan' ? '.is-plan' : ''), dIn, mode === 'plan' ? null : tIn),
+        (mode === 'plan' ? t.dueDate && !t.planDate : t.planDate && !t.dueDate) ? h('button.link-btn.due-swap', { type: 'button', onclick: swap },
+          mode === 'plan' ? '지금 마감(' + D.relDay(t.dueDate, now) + ')을 할 날로 바꾸기' : '지금 할 날(' + D.relDay(t.planDate, now) + ')을 마감으로 바꾸기') : null,
+        h('div.due-actions',
+          cur() ? h('button.btn.btn-xs.btn-ghost', { type: 'button', onclick: function () { save(null, null, mode === 'plan' ? '할 날 지우기' : '마감 없애기'); } }, mode === 'plan' ? '할 날 지우기' : '마감 없애기') : null,
+          h('button.btn.btn-xs.btn-primary', { type: 'submit' }, '저장'))]);
+    }
+    draw();
+    pop = popover(anchor, form, { label: '날짜', className: 'menu-due' });
     return pop;
   }
 
