@@ -58,7 +58,7 @@
     st.blocks.forEach(function (b) { if (b.taskId && D.ymd(b.start) === today) blockToday[b.taskId] = true; });
     var open = [], done = [];
     M.liveTasks(st).forEach(function (t) {
-      if (t.status === 'done') { if (t.completedAt && D.ymd(t.completedAt) === today) done.push(t); return; }
+      if (t.status === 'done') { if (t.completedAt && D.ymd(t.completedAt) === today && !t.homeClearedAt) done.push(t); return; }
       if (t.status === 'in_progress' || t.status === 'paused' || blockToday[t.id] || (t.dueDate && t.dueDate <= today) || D.ymd(t.createdAt) === today) open.push(t);
     });
     function rank(t) {
@@ -81,8 +81,8 @@
   function todayMemoList(st, now) {
     var today = D.ymd(now);
     return M.liveNotes(st).filter(function (n) {
-      if (n.captureRole === 'task_source') return false;
-      return D.ymd((n.capture && n.capture.at) || n.createdAt) === today;
+      if (n.captureRole === 'task_source' || n.homeHiddenAt) return false;
+      return !!n.homePinnedAt || D.ymd((n.capture && n.capture.at) || n.createdAt) === today;
     }).sort(function (a, b) {
       var sa = typeof a.sortOrder === 'number', sb = typeof b.sortOrder === 'number';
       if (sa && sb) return a.sortOrder - b.sortOrder;
@@ -113,17 +113,23 @@
       S.mutate('메모 순서 바꾸기', function (s) { ids.forEach(function (id, i) { var n = M.byId(s.notes, id); if (n) n.sortOrder = (i + 1) * 10; }); });
     });
 
+    // 체크한 메모 — 화면에만 (다시 그려도 남는다). 지금 홈에 없는 메모는 빼 둔다
+    Object.keys(memoSel).forEach(function (id) { if (!memos.some(function (n) { return n.id === id; })) delete memoSel[id]; });
+    var selCount = Object.keys(memoSel).length;
     var openCount = tl.open.length;
     var secTasks = h('div.home-sec.home-sec-tasks',
       h('div.home-sec-head', h('h2', '할 일'), h('span.meta', openCount ? '남은 ' + openCount + '개' : ''),
         openCount > 3 ? h('button.btn.btn-ghost.btn-xs' + (st.prefs.todayTop3 ? '.is-on' : ''), { type: 'button', 'aria-pressed': String(!!st.prefs.todayTop3), title: '위 3개만 보여 줘요 — 고를 게 적을수록 시작이 쉬워요',
           onclick: function () { S.mutate(null, function (s) { s.prefs.todayTop3 = !s.prefs.todayTop3; }); } }, '3개만') : null,
+        tl.done.length ? h('button.btn.btn-ghost.btn-xs', { type: 'button', title: '오늘 끝낸 일을 목록에서 치워요 (보관함에서 다시 볼 수 있어요)', onclick: function () { clearDone(tl.done); } }, '완료 비우기 (' + tl.done.length + ')') : null,
         h('button.btn.btn-ghost.btn-xs', { type: 'button', onclick: function () { A.go('tasks'); } }, '전체 보기')),
       h('div.home-scroll', { 'data-keep-scroll': 'home-tasks' },
         tl.open.length || tl.done.length ? taskUl : h('div.empty.home-empty', '오늘 할 일이 없어요. 왼쪽에 적으면 할 일은 여기로 들어와요.')));
     var secMemos = h('div.home-sec.home-sec-memos',
       h('div.home-sec-head', h('h2', '메모'), h('span.meta', memos.length ? memos.length + '개' : ''),
-        h('button.btn.btn-ghost.btn-xs', { type: 'button', onclick: function () { A.go('archive'); } }, '보관함')),
+        selCount ? h('button.btn.btn-ghost.btn-xs.is-on', { type: 'button', onclick: function () { shelve(Object.keys(memoSel)); } }, '체크한 메모 비우기 (' + selCount + ')') : null,
+        memos.length ? h('button.btn.btn-ghost.btn-xs', { type: 'button', title: '홈의 메모를 모두 보관함으로 (지우지 않아요)', onclick: function () { shelve(memos.map(function (n) { return n.id; })); } }, '전체 비우기') : null,
+        h('button.btn.btn-ghost.btn-xs', { type: 'button', onclick: function (e) { shelfPopup(e.currentTarget); } }, '보관함')),
       h('div.home-scroll', { 'data-keep-scroll': 'home-memos' },
         memos.length ? memoUl : h('div.empty.home-empty', '오늘 적은 메모가 여기에 모여요.')));
     secTasks.id = 'home-sec-tasks';
@@ -332,6 +338,90 @@
     return host ? { url: url, host: host } : null;
   }
 
+  // ------------------------------------------------------------------ 비우기 · 보관함 팝업
+  var memoSel = {};
+  function clearDone(list) {
+    var ids = list.map(function (t) { return t.id; });
+    S.mutate('완료한 할 일 비우기', function (s) { ids.forEach(function (id) { var t = M.byId(s.tasks, id); if (t) t.homeClearedAt = DN.app.now().toISOString(); }); });
+    ui.undoToast('끝낸 할 일 ' + ids.length + '개를 목록에서 치웠어요. 보관함에서 다시 볼 수 있어요.');
+  }
+  function shelve(ids) {
+    if (!ids.length) return;
+    S.mutate('메모 비우기', function (s) {
+      ids.forEach(function (id) { var n = M.byId(s.notes, id); if (n) { n.homeHiddenAt = DN.app.now().toISOString(); n.homePinnedAt = null; } });
+    });
+    ids.forEach(function (id) { delete memoSel[id]; });
+    ui.undoToast('메모 ' + ids.length + '개를 보관함에 넣었어요. 홈에서는 안 보여요.');
+  }
+  // 보관함 팝업 — 홈에 없는 메모(비운 메모 · 지난 메모)와 비운 완료 할 일. [홈으로] 로 다시 불러온다
+  function shelfPopup(anchor) {
+    var st = S.state, now = DN.app.now();
+    var onHome = {};
+    todayMemoList(st, now).forEach(function (n) { onHome[n.id] = true; });
+    var q = '';
+    var tab = 'memo';
+    var listBox = h('div.shelf-list');
+    var search = h('input.input.shelf-search', { type: 'search', placeholder: '찾기', 'aria-label': '보관함에서 찾기',
+      oninput: function () { q = search.value.trim().toLowerCase(); draw(); } });
+    var tabs = h('div.shelf-tabs', { role: 'tablist' });
+    function memos() {
+      return M.liveNotes(S.state).filter(function (n) { return n.captureRole !== 'task_source' && !onHome[n.id]; })
+        .filter(function (n) { return !q || ((n.title || '') + ' ' + (n.body || '')).toLowerCase().indexOf(q) !== -1; })
+        .sort(function (a, b) { var x = a.homeHiddenAt || a.createdAt, y = b.homeHiddenAt || b.createdAt; return x < y ? 1 : -1; }).slice(0, 80);
+    }
+    function cleared() {
+      return M.liveTasks(S.state).filter(function (t) { return t.status === 'done' && t.homeClearedAt; })
+        .filter(function (t) { return !q || t.title.toLowerCase().indexOf(q) !== -1; })
+        .sort(function (a, b) { return a.homeClearedAt < b.homeClearedAt ? 1 : -1; }).slice(0, 80);
+    }
+    function draw() {
+      tabs.textContent = '';
+      [['memo', '메모'], ['done', '비운 완료 할 일']].forEach(function (t) {
+        tabs.appendChild(h('button.shelf-tab' + (tab === t[0] ? '.is-on' : ''), { type: 'button', role: 'tab', 'aria-selected': String(tab === t[0]),
+          onclick: function () { tab = t[0]; draw(); } }, t[1]));
+      });
+      listBox.textContent = '';
+      if (tab === 'memo') {
+        var list = memos();
+        if (!list.length) { listBox.appendChild(h('div.empty', q ? '찾는 메모가 없어요.' : '보관함이 비어 있어요.')); return; }
+        list.forEach(function (n) {
+          var body = (n.body || '').replace(/s+/g, ' ').trim();
+          var proj = n.projectId && M.byId(S.state.projects, n.projectId);
+          listBox.appendChild(h('div.shelf-row',
+            h('div.shelf-main',
+              h('div.shelf-title', M.noteTitle(n)),
+              body && body !== M.noteTitle(n) ? h('div.shelf-preview', body.slice(0, 100)) : null,
+              h('div.shelf-meta.meta', n.homeHiddenAt ? '비운 날 ' + D.relDay(D.ymd(n.homeHiddenAt), now) : '적은 날 ' + D.relDay(D.ymd(n.createdAt), now),
+                proj ? h('span.chip.chip-project', { style: { '--pc': proj.color } }, proj.name) : null)),
+            h('button.btn.btn-xs', { type: 'button', onclick: function () {
+              S.mutate('메모 홈으로', function (s) { var x = M.byId(s.notes, n.id); if (x) { x.homeHiddenAt = null; x.homePinnedAt = DN.app.now().toISOString(); } });
+              onHome[n.id] = true;
+              ui.toast('‘' + M.noteTitle(n) + '’를 홈으로 불러왔어요.');
+              draw();
+            } }, '홈으로'),
+            h('button.icon-btn', { type: 'button', title: '메모 열기', 'aria-label': '‘' + M.noteTitle(n) + '’ 열기', onclick: function () { m.close(); DN.app.go('notes', { noteId: n.id }); } }, ui.icon('chevronRight'))));
+        });
+      } else {
+        var done = cleared();
+        if (!done.length) { listBox.appendChild(h('div.empty', '비운 완료 할 일이 없어요.')); return; }
+        done.forEach(function (t) {
+          listBox.appendChild(h('div.shelf-row',
+            h('div.shelf-main', h('div.shelf-title.is-done', t.title), h('div.shelf-meta.meta', '끝낸 날 ' + D.relDay(D.ymd(t.completedAt), now))),
+            h('button.btn.btn-xs', { type: 'button', title: '오늘 끝낸 일이면 오늘 목록에 다시 보여요', onclick: function () {
+              S.mutate('완료 할 일 다시 보이기', function (s) { var x = M.byId(s.tasks, t.id); if (x) x.homeClearedAt = null; });
+              ui.toast('‘' + t.title + '’를 다시 보이게 했어요.');
+              draw();
+            } }, '홈으로')));
+        });
+      }
+    }
+    draw();
+    var m = ui.modal({ title: '보관함', wide: true,
+      body: h('div.shelf', h('div.shelf-top', tabs, search), listBox),
+      footLeft: h('button.btn.btn-ghost.btn-sm', { type: 'button', onclick: function () { m.close(); DN.app.go('archive'); } }, '보관함 화면에서 보기'),
+      actions: [{ label: '닫기', primary: true }] });
+  }
+
   function memoRow(st, n, now) {
     var A = DN.app;
     var proj = n.projectId && M.byId(st.projects, n.projectId);
@@ -348,6 +438,9 @@
       onkeydown: function (e) { if (e.target === e.currentTarget && e.key === 'Enter') { e.preventDefault(); A.go('notes', { noteId: n.id }); } }
     },
       h('span.drag-handle', { 'aria-hidden': 'true', title: '끌어서 순서 바꾸기' }, '⋮⋮'),
+      h('input.check', { type: 'checkbox', checked: !!memoSel[n.id], 'aria-label': '‘' + M.noteTitle(n) + '’ 비울 메모로 고르기', title: '체크한 메모는 [체크한 메모 비우기] 로 보관함에 넣어요',
+        onclick: function (e) { e.stopPropagation(); },
+        onchange: function (e) { if (e.currentTarget.checked) memoSel[n.id] = true; else delete memoSel[n.id]; DN.app.refresh(); } }),
       h('div.home-main',
         h('div.home-row-title', M.noteTitle(n)),
         preview ? h('div.home-preview', preview.slice(0, 120)) : null,

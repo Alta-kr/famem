@@ -1678,3 +1678,24 @@ html.is-resting .toast, html.is-resting .toasts { display: none !important; }   
 
 .menu.menu-due .due-quick button { display: inline-flex; width: auto; padding: 4px 10px; border: 1px solid var(--border); background: var(--surface); }
 .menu.menu-due .due-actions button { display: inline-flex; width: auto; }
+
+/* 휴지통은 처음부터 빨갛게 */
+.dock-tile.is-trash .dock-trash { color: #DC2626; border: 1.5px solid #DC2626; background: rgba(220, 38, 38, .1); }
+.dock-tile.is-trash .dock-name { color: #DC2626; font-weight: 600; }
+.dock-tile.is-trash.is-over .dock-trash { background: #DC2626; color: #fff; }
+/* 메모 체크 · 보관함 팝업 */
+.home-memo .check { margin-top: 3px; }
+.shelf { display: flex; flex-direction: column; gap: 10px; min-height: 320px; }
+.shelf-top { display: flex; gap: 10px; align-items: center; justify-content: space-between; flex-wrap: wrap; }
+.shelf-tabs { display: flex; gap: 4px; }
+.shelf-tab { all: unset; cursor: pointer; padding: 5px 12px; border-radius: 999px; font-size: 13px; color: var(--text-secondary); }
+.shelf-tab.is-on { background: var(--primary-soft); color: var(--primary); font-weight: 600; }
+.shelf-search { max-width: 220px; height: 30px; }
+.shelf-list { display: flex; flex-direction: column; gap: 2px; max-height: 56vh; overflow: auto; }
+.shelf-row { display: flex; align-items: center; gap: 8px; padding: 8px 10px; border-radius: var(--r-control); }
+.shelf-row:hover { background: var(--surface-subtle); }
+.shelf-main { flex: 1; min-width: 0; }
+.shelf-title { font-size: 14px; font-weight: 600; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.shelf-title.is-done { text-decoration: line-through; color: var(--text-secondary); }
+.shelf-preview { font-size: 12.5px; color: var(--text-secondary); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.shelf-meta { display: flex; gap: 6px; align-items: center; font-size: 12px; margin-top: 2px; }
