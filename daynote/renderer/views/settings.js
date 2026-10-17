@@ -260,6 +260,28 @@
       ['Ctrl + Shift + T', '메모에서 문장을 선택한 뒤 할 일로 만들기'],
       ['Esc', '메뉴·상세 패널·대화상자 닫기']
     ];
+    // ---------------------------------------------------------------- 휴식 — 기본 모드, 모드별 평가 비교
+    var restModeSel = h('select.select#set-rest-mode', { 'aria-label': '휴식 기본 모드',
+      onchange: function () { var v = restModeSel.value; S.mutate(null, function (s2) { s2.prefs.restMode = v || null; }, { silent: true }); } },
+      [h('option', { value: '', selected: !st.prefs.restMode }, '매번 고르기')].concat((DN.rest ? DN.rest.MODES : []).map(function (m) {
+        return h('option', { value: m.id, selected: st.prefs.restMode === m.id }, m.label);
+      })));
+    var stats = DN.rest ? DN.rest.stats(st) : [];
+    var anyRest = stats.some(function (r) { return r.count; });
+    var best = stats.filter(function (r) { return r.score != null; }).sort(function (a, b) { return b.score - a.score || b.count - a.count; })[0];
+    var restCard = h('section.card.settings-card', { 'aria-labelledby': 'set-rest' },
+      h('h3#set-rest', '휴식'),
+      h('label.check-row', { for: 'set-rest-mode' }, '휴식 버튼을 누르면 ', restModeSel),
+      h('p.help', '모드마다 써 보고 끝날 때 평가를 남기면, 어떤 휴식이 나에게 맞는지 아래에서 비교할 수 있어요.'),
+      anyRest ? h('table.rest-stats',
+        h('tr', h('th', '모드'), h('th', '쓴 횟수'), h('th', '좋았어요 / 보통 / 별로'), h('th', '만족도')),
+        stats.map(function (r) {
+          return h('tr', h('td', r.label + (best && best.mode === r.mode ? ' ★' : '')), h('td.num', String(r.count)),
+            h('td.num', r.good + ' / ' + r.ok + ' / ' + r.bad),
+            h('td', r.score == null ? h('span.meta', '평가 없음') : [h('span.rest-score-bar', h('span', { style: { width: r.score + '%' } })), r.score + '점']));
+        })) : h('p.meta', '아직 쉰 기록이 없어요. 채팅의 [휴식]을 눌러 모드를 하나씩 써 보세요.'),
+      h('div.sug-actions', h('button.btn.btn-sm', { type: 'button', onclick: function () { if (DN.rest) DN.rest.open({}); } }, ui.icon('clock'), '지금 쉬어 보기')));
+
     var view = h('section.card.settings-card', { 'aria-labelledby': 'set-view' },
       h('h3#set-view', '화면'),
       h('div.settings-row', h('div.grow', h('div.lbl', '테마'), h('div.help', '‘시스템’은 Windows의 밝게/어둡게 설정을 따라가요.')), themeSeg),
@@ -272,7 +294,7 @@
 
     root.appendChild(h('div.view-pad',
       h('div.page-head', h('div', h('div.page-title', '연결과 설정'), h('div.page-sub', '외부 연결 상태와 데이터, 화면 설정을 관리합니다.'))),
-      mail, cal, ai, data, view));
+      mail, cal, ai, restCard, data, view));
     return {};
   }
 

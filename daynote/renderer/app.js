@@ -198,7 +198,9 @@
     } else {
       S.mutate('완료', function (s) { M.completeTask(s, id, now()); });
       var ve = DN.habits && DN.habits.actualVsEstimate(M.byId(S.state.tasks, id), now());
-      ui.undoToast('‘' + t.title + '’ 완료 · 프로젝트 히스토리에 기록했어요.' + (ve ? ' (예상 ' + ve.estimate + '분 · 실제 ' + ve.actual + '분)' : ''));
+      var nToday = M.liveTasks(S.state).filter(function (x) { return x.status === 'done' && x.completedAt && D.ymd(x.completedAt) === D.ymd(now()); }).length;
+      var el = ui.undoToast('‘' + t.title + '’ 완료 — 오늘 ' + nToday + '번째예요!' + (ve ? ' (예상 ' + ve.estimate + '분 · 실제 ' + ve.actual + '분)' : ''));
+      if (el && el.el) el.el.classList.add('is-celebrate');
     }
   }
 

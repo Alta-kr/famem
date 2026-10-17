@@ -97,10 +97,14 @@
     var memos = todayMemoList(st, now);
     var sel = A.detailTaskId();
 
+    // 3개만 보기 — 할 일이 많으면 위 3개만 (나머지는 접어 둔다. 고를 게 적을수록 시작이 쉽다)
+    var focusOnly = !!st.prefs.todayTop3 && tl.open.length > 3;
+    var shownOpen = focusOnly ? tl.open.slice(0, 3) : tl.open;
     var taskUl = h('ul.home-list', { 'aria-label': '오늘의 할 일 (끌어서 순서 바꾸기, Alt+위/아래)' },
-      tl.open.map(function (t) { return taskRow(st, t, now, t.id === sel); }),
-      tl.done.map(function (t) { return taskRow(st, t, now, t.id === sel); }));
-    sortable(taskUl, tl.open.map(function (t) { return t.id; }), function (ids) {
+      shownOpen.map(function (t) { return taskRow(st, t, now, t.id === sel); }),
+      focusOnly ? h('li.home-more', h('button.link-btn', { type: 'button', onclick: function () { S.mutate(null, function (s) { s.prefs.todayTop3 = false; }); } }, '나머지 ' + (tl.open.length - 3) + '개 보기')) : null,
+      focusOnly ? null : tl.done.map(function (t) { return taskRow(st, t, now, t.id === sel); }));
+    sortable(taskUl, shownOpen.map(function (t) { return t.id; }), function (ids) {
       S.mutate('할 일 순서 바꾸기', function (s) { ids.forEach(function (id, i) { var t = M.byId(s.tasks, id); if (t) t.sortOrder = (i + 1) * 10; }); });
     });
 
@@ -112,6 +116,8 @@
     var openCount = tl.open.length;
     var secTasks = h('div.home-sec.home-sec-tasks',
       h('div.home-sec-head', h('h2', '할 일'), h('span.meta', openCount ? '남은 ' + openCount + '개' : ''),
+        openCount > 3 ? h('button.btn.btn-ghost.btn-xs' + (st.prefs.todayTop3 ? '.is-on' : ''), { type: 'button', 'aria-pressed': String(!!st.prefs.todayTop3), title: '위 3개만 보여 줘요 — 고를 게 적을수록 시작이 쉬워요',
+          onclick: function () { S.mutate(null, function (s) { s.prefs.todayTop3 = !s.prefs.todayTop3; }); } }, '3개만') : null,
         h('button.btn.btn-ghost.btn-xs', { type: 'button', onclick: function () { A.go('tasks'); } }, '전체 보기')),
       h('div.home-scroll', { 'data-keep-scroll': 'home-tasks' },
         tl.open.length || tl.done.length ? taskUl : h('div.empty.home-empty', '오늘 할 일이 없어요. 왼쪽에 적으면 할 일은 여기로 들어와요.')));

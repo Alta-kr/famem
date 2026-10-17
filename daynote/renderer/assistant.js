@@ -295,6 +295,8 @@
   }
   // 오래 집중했으면 쉬어 가기 권하기 (50분, 미세 휴식) — 쓰는 중·일정 중에는 묻지 않는다
   function checkLongFocus() {
+    if (DN.rest && DN.rest.isOpen()) return;
+    if (S.state.meta.focus) return;   // 집중 타이머가 끝나면 그쪽에서 쉬기를 권한다
     var t = DN.habits.longFocus(S.state, now());
     if (!t) return;
     var last = S.state.meta.lastRestNudgeAt;
@@ -303,12 +305,50 @@
     if (input && document.activeElement === input && input.value.trim()) return;
     if (!DN.app || DN.app.current().view !== 'today') return;
     S.mutate(null, function (s) { s.meta.lastRestNudgeAt = now().toISOString(); }, { source: 'chat', silent: true });
-    post({ kind: 'text', text: '‘' + t.title + '’에 ' + DN.habits.LONG_FOCUS_MIN + '분 넘게 집중했어요. 5분만 쉬어 가면 다음 집중이 더 잘 돼요.' });
-    rest();
+    post({ kind: 'text', text: '‘' + t.title + '’에 ' + DN.habits.LONG_FOCUS_MIN + '분 넘게 집중했어요. 5분만 쉬어 가면 다음 집중이 더 잘 돼요.', actions: ['rest'] });
   }
 
-  function rest() {
-    post({ kind: 'rest', stretches: AS.pickStretches(3, Date.now()), timerEnd: null });
+  // 집중 타이머 — 25분 집중 → 종소리 → 쉬러 가기 권하기 (정해 둔 휴식이 피로를 줄인다, Biwer 외 2023)
+  //   네 번째마다 조금 길게(15분) 쉬기를 권한다. 상태는 meta.focus (앱을 다시 켜도 이어진다)
+  var FOCUS_MIN = 25;
+  var focusTimer = null;
+  function startFocus(taskId, minutes) {
+    var t = M.byId(S.state.tasks, taskId);
+    if (!t) return;
+    if (t.status !== 'in_progress') DN.app.startTask(taskId);
+    var end = new Date(Date.now() + (minutes || FOCUS_MIN) * 60000).toISOString();
+    S.mutate(null, function (s) { s.meta.focus = { taskId: taskId, end: end, minutes: minutes || FOCUS_MIN }; }, { source: 'chat' });
+    armFocus();
+  }
+  function stopFocus() { clearTimeout(focusTimer); S.mutate(null, function (s) { s.meta.focus = null; }, { source: 'chat' }); }
+  function armFocus() {
+    clearTimeout(focusTimer);
+    var f = S.state.meta.focus;
+    if (!f) return;
+    focusTimer = setTimeout(endFocus, Math.max(0, new Date(f.end) - Date.now()) + 200);
+  }
+  function endFocus() {
+    var f = S.state.meta.focus;
+    if (!f || new Date(f.end) > new Date(Date.now() + 1000)) return;
+    var t = M.byId(S.state.tasks, f.taskId);
+    var today = DN.dates.ymd(now());
+    var cnt = 0;
+    S.mutate(null, function (s) {
+      s.meta.focus = null;
+      var c = s.meta.focusCount && s.meta.focusCount.day === today ? s.meta.focusCount.n : 0;
+      cnt = c + 1;
+      s.meta.focusCount = { day: today, n: cnt };
+    }, { source: 'chat' });
+    if (DN.rest && DN.rest.chime) DN.rest.chime();
+    var longBreak = cnt % 4 === 0;
+    post({ kind: 'text', text: (t ? '‘' + t.title + '’에 ' : '') + f.minutes + '분 집중했어요 (오늘 ' + cnt + '번째). ' +
+      (longBreak ? '네 번 했으니 15분쯤 길게 쉬어 가요.' : '5분 쉬어 가면 다음 집중이 더 잘 돼요.'), actions: ['rest'] });
+  }
+
+  // 휴식 — 앱 전체를 가리는 휴식 화면 (renderer/rest.js). 모드는 설정의 기본값, 없으면 고르기
+  function rest(mode) {
+    if (DN.rest) DN.rest.open({ mode: mode });
+    else post({ kind: 'rest', stretches: AS.pickStretches(3, Date.now()), timerEnd: null });
   }
   function startTimer(msgId, minutes) {
     var end = new Date(Date.now() + minutes * 60000).toISOString();
@@ -326,6 +366,7 @@
   // ------------------------------------------------------------------ 자동 제안 ("잠깐 여유 있을 때")
   function tryNudge(reason) {
     if (!DN.app || DN.app.current().view !== 'today') return;
+    if (DN.rest && DN.rest.isOpen()) return;   // 쉬는 동안에는 아무것도 묻지 않는다
     var input = document.querySelector('.chat-input textarea');
     if (input && document.activeElement === input && input.value.trim()) return;   // 쓰는 중에는 끼어들지 않는다
     var cal = R.calendarContext(S.state, now());
@@ -369,6 +410,7 @@
     }, 30000);
     setTimeout(function () { tryNudge('open'); }, 8000);
     setInterval(function () { if (document.visibilityState === 'visible') checkLongFocus(); }, 60000);
+    armFocus();   // 앱을 다시 켰을 때 집중 타이머 이어서 (이미 지났으면 바로 끝 알림)
     // 빠른 메모 창(Ctrl+Shift+Space)에서 보낸 글 — 홈 입력과 똑같이 흐름에 올리고 분류한다
     var host = S.host;
     if (host.onQuickCapture) host.onQuickCapture(function (text) { if (text.trim()) send(text); });
@@ -386,7 +428,7 @@
     send: send, next: next, breakdown: breakdown, applyBreakdown: applyBreakdown, deferBreakdown: deferBreakdown,
     elaborate: elaborate, saveElaboration: saveElaboration, skipElaboration: skipElaboration,
     rest: rest, startTimer: startTimer, tryNudge: tryNudge, update: update, post: post, work: work, returnWork: returnWork, focusTask: focusTask, runCommand: runCommand,
-    dayClose: dayClose, overdueOffer: overdueOffer, replan: replan, weekStart: weekStart, planAt: planAt, checkLongFocus: checkLongFocus,
+    startFocus: startFocus, stopFocus: stopFocus, dayClose: dayClose, overdueOffer: overdueOffer, replan: replan, weekStart: weekStart, planAt: planAt, checkLongFocus: checkLongFocus,
     quickKey: function () { return quickKey; }
   };
 })();

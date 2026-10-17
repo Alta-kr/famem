@@ -172,7 +172,7 @@
       return bubble('assistant', h('div', h('div.msg-text', m.text),
         (m.actions || []).length ? h('div.msg-actions', m.actions.map(function (a) {
           return a === 'next' ? h('button.btn.btn-xs', { type: 'button', onclick: function () { AS.next(); } }, '다음 할 일 추천받기')
-            : a === 'rest' ? h('button.btn.btn-xs', { type: 'button', onclick: function () { AS.rest(); } }, '휴식하기') : null;
+            : a === 'rest' ? h('button.btn.btn-xs.btn-primary', { type: 'button', onclick: function () { AS.rest(); } }, '쉬러 가기') : null;
         })) : null));
     }
     if (m.kind === 'thinking') return bubble('assistant', h('div.msg-text', h('span.spinner', { 'aria-hidden': 'true' }), ' ', m.text));
@@ -681,6 +681,7 @@
         : h('div.msg-actions',
             stateBtn,
             h('button.btn.btn-sm', { type: 'button', onclick: function () { A.toggleDone(t.id); } }, ui.icon('check'), '완료'),
+            focusBtn(st, t),
             h('span.work-sep', { 'aria-hidden': 'true' }),
             h('button.btn.btn-xs', { type: 'button', onclick: function () { AS.breakdown(t.id, null, { force: true }); } }, ui.icon('task'), '작업 작게 나누기'),
             h('button.btn.btn-xs.btn-ghost', { type: 'button', onclick: function () { AS.next([t.id]); } }, '다른 추천')));
@@ -694,12 +695,31 @@
     return h('div.pbar', { role: 'progressbar', 'aria-valuemin': '0', 'aria-valuemax': '100', 'aria-valuenow': String(pct), 'aria-label': '진행 ' + pct + '%' },
       h('div.pbar-fill', { style: { width: pct + '%' } }));
   }
+  // 집중 타이머 버튼 / 남은 시간 (25분 집중 → 쉬기)
+  function focusBtn(st, t) {
+    var f = st.meta.focus;
+    if (f && f.taskId === t.id) {
+      return h('span.focus-run', ui.icon('clock'), '집중 ', h('b', { 'data-timer-end': f.end }, ''), ' 남음',
+        h('button.btn.btn-xs.btn-ghost', { type: 'button', onclick: function () { DN.assistant.stopFocus(); } }, '그만'));
+    }
+    return h('button.btn.btn-sm', { type: 'button', title: '25분 집중하고 5분 쉬어요 (끝나면 종소리)', onclick: function () { DN.assistant.startFocus(t.id, 25); } }, ui.icon('clock'), '25분 집중');
+  }
+  // 단계 합계 — 나눠 보면 예상이 더 정확해진다 (단계 합이 예상보다 길면 알려 주고 바꿀 수 있게)
+  function stepsSumLine(t) {
+    var steps = t.steps || [];
+    if (!steps.length || !steps.every(function (x) { return x.estimateMinutes > 0; })) return null;
+    var sum = steps.reduce(function (a, x) { return a + x.estimateMinutes; }, 0);
+    if (t.estimateMinutes && sum <= t.estimateMinutes * 1.15) return null;
+    return h('div.work-est.meta', ui.icon('info'), '단계를 더하면 ' + D.duration(sum) + (t.estimateMinutes ? ' — 예상(' + D.duration(t.estimateMinutes) + ')보다 길어요' : ''),
+      h('button.link-btn', { type: 'button', onclick: function () { S.mutate('예상 시간 바꾸기', function (s) { M.updateTask(s, t.id, { estimateMinutes: sum }, DN.app.now()); }); } }, '예상을 ' + ui.josa(D.duration(sum), '로/으로')));
+  }
   // 예상 시간과 현실적인 시간 (계획 오류 보정) — "예상 40분 · 평소엔 1.5배쯤 걸려요 → 약 60분"
   function timeLine(st, t) {
-    if (!(t.estimateMinutes > 0)) return null;
+    var sumLine = stepsSumLine(t);
+    if (!(t.estimateMinutes > 0)) return sumLine;
     var r = DN.habits.realistic(st, t);
-    return h('div.work-est.meta', ui.icon('clock'), '예상 ' + D.duration(t.estimateMinutes),
-      r ? h('span', ' · 지금까지 끝낸 일을 보면 평소 ' + r.ratio + '배쯤 걸려요 → ', h('b', '약 ' + D.duration(r.minutes))) : null);
+    return h('div', h('div.work-est.meta', ui.icon('clock'), '예상 ' + D.duration(t.estimateMinutes),
+      r ? h('span', ' · 지금까지 끝낸 일을 보면 평소 ' + r.ratio + '배쯤 걸려요 → ', h('b', '약 ' + D.duration(r.minutes))) : null), sumLine);
   }
   // 멈출 때 '이어서 할 첫 행동' 한 줄 — 다시 시작이 쉬워지고 머릿속 잔상이 줄어든다 (ready-to-resume plan)
   function resumeBox(t) {

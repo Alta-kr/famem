@@ -101,6 +101,7 @@
     while (toastWrap.children.length >= 2) toastWrap.firstChild.remove();
     toastWrap.appendChild(el);
     timer = setTimeout(close, opts.duration || (opts.action ? 7000 : 3500));
+    close.el = el;   // 부르는 쪽이 모양을 더할 수 있게 (예: 완료 축하)
     return close;
   }
 
