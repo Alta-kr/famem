@@ -98,9 +98,15 @@
       AS.send(v, null);
       setTimeout(function () { var x = document.querySelector('.chat-input textarea'); if (x) x.focus(); }, 0);
     }
-    // AI 연결 상태는 화면이 뜬 뒤에 알게 되므로 바뀌면 표시만 바꾼다
+    // AI 연결 상태는 화면이 뜬 뒤에 알게 되므로 바뀌면 표시를 바꾸고, 연결 여부가 바뀌었으면 카드도 다시 그린다
+    // ('AI를 연결하면 자동으로 나눠 드려요' 카드가 [AI로 나누기] 로 바뀌게)
     var badge = h('span.chat-badge', aiBadge());
-    var offAi = DN.aiFlow.onChange(function () { badge.textContent = ''; badge.appendChild(aiBadge()); });
+    var aiOn = !!DN.aiFlow.status().configured;
+    var offAi = DN.aiFlow.onChange(function () {
+      badge.textContent = ''; badge.appendChild(aiBadge());
+      var on = !!DN.aiFlow.status().configured;
+      if (on !== aiOn) { aiOn = on; paintList(); }
+    });
     var inputBox = h('div.chat-input', ta, h('div.chat-input-foot', badge,
       h('span.chat-input-hint', 'Enter 보내기 · Shift+Enter 줄바꿈 · / 명령어'),
       h('button.btn.btn-primary.btn-sm', { type: 'button', onclick: sendNow, 'aria-label': '보내기' }, '보내기')));
@@ -305,6 +311,10 @@
       } else if (noAiLearned) {
         head = h('div.cap-head', h('span', summary(items, now)), h('span.cap-head-sub', ' · AI 없이 배운 대로'));
         ft = h('div.cap-foot', settingsBtn, whyBtn(n));
+      } else if (c.status === 'no_ai' && !c.changedByUser && DN.aiFlow.status().configured) {
+        // AI 를 연결하기 전에 적은 글 — 이제 연결됐으니 나눌 수 있게 한다 (배운 대로 고친 글은 위에서 따로)
+        head = h('div.cap-head', h('span', '메모로 저장했어요'), h('span.cap-head-sub', ' · 이제 AI로 나눌 수 있어요'));
+        ft = h('div.cap-foot', h('button.btn.btn-xs', { type: 'button', onclick: function () { CP.classify(n.id); } }, ui.icon('refresh'), 'AI로 나누기'));
       } else if (c.status === 'no_ai') {
         head = h('div.cap-head', h('span', '메모로 저장했어요'), h('span.cap-head-sub', ' · AI를 연결하면 자동으로 나눠 드려요'));
         ft = h('div.cap-foot', settingsBtn);
@@ -632,6 +642,7 @@
     var AS = DN.assistant;
     var t = M.byId(st.tasks, m.taskId);
     if (!t) return null;
+    if ((t.deletedAt && m.resolved !== 'applied') || m.resolved === 'deleted') return bubble('assistant', h('div.msg-text', '할 일이 지워져서 나누지 않았어요.'));
     if (m.resolved) {
       var txt = m.resolved === 'applied' ? '‘' + t.title + '’' + josaTail(t.title, '를/을') + ' ' + (m.resolvedCount || '') + '단계로 나눴어요.'
         : m.resolved === 'later' ? '좋아요, 나중에 다시 보여 드릴게요.' : '알겠어요. 이 할 일은 나누지 않을게요.';

@@ -208,7 +208,7 @@
   // ------------------------------------------------------------------ 반영 (사용자가 고른 것만)
   function applyBreakdown(state, taskId, steps, now) {
     var t = M.byId(state.tasks, taskId);
-    if (!t) return null;
+    if (!t || t.deletedAt) return null;
     // 사용자가 고친 단계 — 빈 줄은 빼고, 1개 이상이면 적용 (AI 초안 검증보다 느슨하게)
     var clean = (steps || []).map(function (s) {
       var title = String(s && s.title || '').trim().replace(/\s+/g, ' ').slice(0, 80);
@@ -240,7 +240,7 @@
   // 버튼이나 AI 로 새로 만든 단계 초안을 보관 (아직 적용 아님)
   function storeBreakdown(state, taskId, result, source, now) {
     var t = M.byId(state.tasks, taskId);
-    if (!t) return null;
+    if (!t || t.deletedAt) return null;
     t.breakdown = { status: 'pending', steps: result.steps, reason: result.reason || '', source: source, createdAt: M.iso(now), shownAt: null };
     return t;
   }

@@ -191,7 +191,7 @@
 
   function breakdown(taskId, intro) {
     var t = taskId ? M.byId(S.state.tasks, taskId) : pickTaskToBreak();
-    if (!t) { post({ kind: 'text', text: '나눌 만한 할 일이 없어요.' }); return; }
+    if (!t || t.deletedAt) { post({ kind: 'text', text: '나눌 만한 할 일이 없어요.' }); return; }
     if (t.breakdown && (t.breakdown.status === 'pending' || t.breakdown.status === 'later') && t.breakdown.steps && t.breakdown.steps.length) {
       S.mutate(null, function (s) { AS.markShown(s, t.id, now()); }, { source: 'chat', silent: true });
       post({ kind: 'breakdown', taskId: t.id, intro: intro || null, draft: t.breakdown.steps.map(function (x) { return { title: x.title, minutes: x.minutes }; }) });
@@ -207,6 +207,8 @@
     var proj = t.projectId && M.byId(S.state.projects, t.projectId);
     call(AS.BREAKDOWN.buildInput(t, { today: todayStr(), projectName: proj && proj.name })).then(function (res) {
       delete pending['bd:' + t.id];
+      var cur = M.byId(S.state.tasks, t.id);
+      if (!cur || cur.deletedAt) { update(wait.id, { kind: 'text', text: '할 일이 지워져서 나누지 않았어요.' }); return; }
       var v = res.ok ? AS.validateBreakdown(res.output) : null;
       if (!v || !v.ok) {
         update(wait.id, { kind: 'text', text: '단계를 나누지 못했어요. ' + (res.error ? res.error.message : '응답 형식이 맞지 않았어요.') + ' 직접 나눠 볼 수 있게 칸을 준비했어요.' });
@@ -220,6 +222,8 @@
   }
 
   function applyBreakdown(msgId, taskId, steps) {
+    var cur = M.byId(S.state.tasks, taskId);
+    if (!cur || cur.deletedAt) { update(msgId, { resolved: 'deleted' }); return false; }
     var t = S.mutate('단계 나누기', function (s) { return AS.applyBreakdown(s, taskId, steps, now()); }, { source: 'chat' });
     if (!t) { DN.ui.toast('적을 단계가 없어요. 한 줄 이상 적어 주세요.'); return false; }
     update(msgId, { resolved: 'applied', resolvedCount: steps.filter(function (x) { return x.title && x.title.trim(); }).length });

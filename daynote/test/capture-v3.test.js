@@ -328,9 +328,16 @@ test('키 가림: 오류 메시지 속 키는 가리고, 공백·줄바꿈이 �
 test('Gemini 400 + API_KEY_INVALID 는 키 오류로 안내한다', async () => {
   await withEnv({ GEMINI_API_KEY: 'g' }, async () => {
     const ai = freshAi();
-    ai._setClients({ retryDelayMs: 0, gemini: { interactions: { create: async () => { throw Object.assign(new Error('API key not valid. Please pass a valid API key. [API_KEY_INVALID]'), { status: 400 }); } } } });
+    // @google/genai 2.27 이 실제로 던지는 모양: message 에는 원문이 없고, 배열 본문은 e.body(문자열)에만 있다
+    const sdkErr = () => Object.assign(new Error('400 API error occurred: {"httpMeta":{"response":{},"request":{}}}'), {
+      status: 400, error: { httpMeta: { response: {}, request: {} } },
+      body: '[{"error":{"code":400,"message":"API key not valid. Please pass a valid API key.","status":"INVALID_ARGUMENT","details":[{"@type":"type.googleapis.com/google.rpc.ErrorInfo","reason":"API_KEY_INVALID","domain":"googleapis.com"}]}}]'
+    });
+    ai._setClients({ retryDelayMs: 0, gemini: { interactions: { create: async () => { throw sdkErr(); } } } });
     const r = await ai.organize(capInput('k400'));
     assert.strictEqual(r.error.type, 'auth');
+    assert.match(r.error.detail, /API key not valid/);
+    assert.doesNotMatch(r.error.detail, /httpMeta/);
   });
 });
 

@@ -61,7 +61,42 @@
       var drop = mine.slice(0, mine.length - 5).map(function (r) { return r.id; });
       state.aiRuns = state.aiRuns.filter(function (r) { return drop.indexOf(r.id) === -1; });
     }
+    compactRuns(state);
     return run;
+  }
+
+  // 실행 기록 전체 크기 제한 — 던진 글마다 새 메모라 메모별 5개 제한만으로는 끝없이 쌓인다
+  // (되돌리기 스냅숏·저장마다 통째로 복사된다).
+  //   · 최근 RUNS_KEEP_RAW 개 밖의 끝난 기록은 원문 응답(rawOutput)·사용량·버린 항목을 비운다
+  //   · 전체가 RUNS_MAX 개를 넘으면 오래된 끝난 기록부터 지운다
+  //   · 돌고 있는 기록과, 메모마다 마지막 'AI 정리' 기록·마지막 성공한 'AI 정리' 기록(지난 결과 재사용)은 그대로 둔다
+  var RUNS_MAX = 1000, RUNS_KEEP_RAW = 200;
+  function compactRuns(state) {
+    ensure(state);
+    var runs = state.aiRuns;
+    if (runs.length <= RUNS_KEEP_RAW) return;
+    var keep = {}, lastOrg = {}, lastOk = {};
+    for (var i = runs.length - 1; i >= 0; i--) {
+      var r = runs[i];
+      if (r.status === 'running') { keep[r.id] = true; continue; }
+      if (r.kind !== 'organize_note') continue;
+      if (!lastOrg[r.noteId]) { lastOrg[r.noteId] = true; keep[r.id] = true; }
+      if (r.status === 'succeeded' && !lastOk[r.noteId]) { lastOk[r.noteId] = true; keep[r.id] = true; }
+    }
+    var over = runs.length - RUNS_MAX;
+    if (over > 0) {
+      state.aiRuns = runs = runs.filter(function (r) {
+        if (over > 0 && !keep[r.id]) { over--; return false; }
+        return true;
+      });
+    }
+    for (var j = 0; j < runs.length - RUNS_KEEP_RAW; j++) {
+      var x = runs[j];
+      if (keep[x.id]) continue;
+      if (x.rawOutput != null) x.rawOutput = null;
+      if (x.usage != null) x.usage = null;
+      if (x.dropped && x.dropped.length) x.dropped = [];
+    }
   }
 
   function finishRun(state, runId, patch, now) {
@@ -403,6 +438,10 @@
       return note.capture;
     }
     mergeOrganizeRun(state, { note: args.note, run: args.run, validated: args.validated }, now);
+    // AI 가 읽는 사이 사용자가 메모를 고쳤으면(AI 는 고치기 전 글만 봤다) 초안을 지금 글에 맞추고,
+    // 아래에서 원문을 숨기거나(task_source) 옛 글로 지은 제목을 붙이지 않는다
+    var changed = noteHash(note) !== noteHash(args.note);
+    if (changed) refreshStale(state, note);
 
     // 프로젝트: 사용자가 입력할 때 고른 프로젝트가 있으면 그것이 우선(할 일마다의 AI 판단도 덮는다).
     // 없을 때만 AI 판단을 쓴다.
@@ -465,8 +504,8 @@
     var keepLink = note.kindByUser ? note.kind === 'link' : out.note_kind === 'link';
     // 할 일만 적은 글·완료 보고만 한 글은 원문을 숨긴다 (결과 카드와 할 일·히스토리에서 원문을 볼 수 있다)
     var sourceOnly = entryType === 'task' || entryType === 'done' || entryType === 'update';
-    note.captureRole = sourceOnly && !skipped.length && !keepLink ? 'task_source' : 'memo';
-    if (!note.title && note.captureRole === 'memo' && out.note_title) note.title = String(out.note_title).trim().slice(0, 80);
+    note.captureRole = sourceOnly && !skipped.length && !keepLink && !changed ? 'task_source' : 'memo';
+    if (!changed && !note.title && note.captureRole === 'memo' && out.note_title) note.title = String(out.note_title).trim().slice(0, 80);
     // 메모 종류(메모/아이디어/링크) — 사용자가 직접 바꾼 적이 있으면 그대로 둔다
     if (!note.kindByUser) note.kind = NOTE_KIND[out.note_kind] ? out.note_kind : (note.kind || 'memo');
     note.capture = Object.assign({}, note.capture, {
@@ -495,6 +534,13 @@
   // AI 가 "끝냈다" 고 한 할 일을 실제 열린 할 일에서 찾아 완료한다.
   //   제목이 목록 그대로면 그것, 아니면 띄어쓰기를 무시하고 한쪽이 다른 쪽을 품는 것 하나만 (여럿이면 고르지 않는다)
   function nospace(s) { return String(s || '').replace(/\s+/g, '').toLowerCase(); }
+  // 인용이 원문에 있으면 그 인용을 돌려준다. 앱이 붙인 줄 번호("2| ")를 옮겨 왔으면 떼고 다시 본다
+  function quoteInBody(body, q) {
+    if (!q) return null;
+    if (body.indexOf(nospace(q)) !== -1) return q;
+    var sp = V.splitLinePrefix(q);
+    return sp.line != null && sp.text && body.indexOf(nospace(sp.text)) !== -1 ? sp.text : null;
+  }
   function findOpenTask(state, title, exclude) {
     var open = M.liveTasks(state).filter(function (t) { return t.status !== 'done' && !exclude[t.id]; });
     var exact = open.filter(function (t) { return t.title === title; });
@@ -512,8 +558,8 @@
     var out = [];
     (Array.isArray(list) ? list : []).forEach(function (d) {
       if (!d || !d.title) return;
-      var q = d.evidence && d.evidence.quote;
-      if (!q || body.indexOf(nospace(q)) === -1) return;
+      var q = quoteInBody(body, d.evidence && d.evidence.quote);
+      if (!q) return;
       var t = findOpenTask(state, String(d.title), exclude);
       if (!t) return;
       var due = V.verifyWhen(d.due, q, note, now);
@@ -543,8 +589,8 @@
     var out = [];
     (Array.isArray(list) ? list : []).forEach(function (d) {
       if (!d || !d.title) return;
-      var q = d.evidence && d.evidence.quote;
-      if (!q || body.indexOf(nospace(q)) === -1) return;
+      var q = quoteInBody(body, d.evidence && d.evidence.quote);
+      if (!q) return;
       var t = findOpenTask(state, String(d.title), exclude);
       if (!t) return;
       var r = M.completeTask(state, t.id, now);
@@ -1015,7 +1061,7 @@
   }
 
   return {
-    noteHash: noteHash, itemKey: itemKey, startRun: startRun, finishRun: finishRun, latestRun: latestRun,
+    noteHash: noteHash, itemKey: itemKey, startRun: startRun, finishRun: finishRun, compactRuns: compactRuns, latestRun: latestRun,
     reusableRun: reusableRun, recoverInterrupted: recoverInterrupted, mergeOrganizeRun: mergeOrganizeRun,
     refreshStale: refreshStale, staleForDeletedNote: staleForDeletedNote, effective: effective, setEdit: setEdit,
     takeAiUpdate: takeAiUpdate, dismiss: dismiss, restore: restore, checkSelection: checkSelection,

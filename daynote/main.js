@@ -388,6 +388,7 @@ app.whenReady().then(() => {
   if (!CHECK_RUN) ai.setSavedKey(keystore.read());
   if (!CHECK_RUN) {
     const fetchFn = (u, init) => net.fetch(u, init);
+    ai.setFetch(fetchFn);   // AI 요청도 시스템 프록시·OS 인증서 저장소를 따르게 (창을 띄우기 전에)
     googleAuth = googleAuthMod.create({ userDataDir: app.getPath('userData'), safeStorage, fetch: fetchFn,
       openExternal: (u) => shell.openExternal(u), env: envGoogleClient,
       onStatus: (st) => { if (mainWindow && !mainWindow.isDestroyed() && !mainWindow.webContents.isDestroyed()) mainWindow.webContents.send('google:changed', st); },

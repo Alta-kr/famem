@@ -81,7 +81,7 @@
 
   function classify(noteId, opts) {
     var note = M.byId(S.state.notes, noteId);
-    if (!note || (inflight[noteId] && !(opts && opts.starting))) return Promise.resolve(null);
+    if (!note || note.deletedAt || (inflight[noteId] && !(opts && opts.starting))) return Promise.resolve(null);
     var st = DN.aiFlow.status();
     // 앱을 막 켜서 AI 상태가 아직 '확인 중…' 이면 'AI 없음' 으로 정하지 않고 상태를 받은 뒤 다시 정한다
     if (!st.configured && DN.aiFlow.isLoading && DN.aiFlow.isLoading()) {
@@ -125,7 +125,8 @@
       if (n) n.capture = Object.assign({}, n.capture, { status: 'pending', error: null });
       var r = P.startRun(s, {
         kind: 'capture', noteId: noteId, noteHash: P.noteHash(sent), promptVersion: C.PROMPT_VERSION,
-        provider: st.provider, model: st.model, hints: hintIds
+        // 분류는 빠른 모델(fastModel)을 먼저 부른다 — 실패해 모델 이름이 오지 않아도 실제로 부른 쪽이 남게
+        provider: st.provider, model: st.fastModel || st.model, hints: hintIds
       }, now());
       if (hints.length && AD && AD.count) AD.count(s, 'hinted');
       return r;
@@ -138,10 +139,19 @@
       delete inflight[noteId];
       var t = now();
       // 기다리는 사이 '입력 저장'을 되돌려 메모·실행 기록이 사라졌으면 아무것도 쓰지 않는다
-      if (!M.byId(S.state.notes, noteId) || !M.byId(S.state.aiRuns || [], run.id)) { notify(); return { ok: false, reason: 'gone' }; }
+      var cur = M.byId(S.state.notes, noteId);
+      if (!cur || !M.byId(S.state.aiRuns || [], run.id)) { notify(); return { ok: false, reason: 'gone' }; }
+      // 기다리는 사이 보관함에서 메모를 지웠으면 결과로 할 일·일정을 만들지 않는다 (실행 기록만 닫는다)
+      if (cur.deletedAt) {
+        S.mutate(null, function (s) {
+          P.finishRun(s, run.id, { status: 'failed', error: { type: 'canceled', message: '메모를 지워서 정리 결과를 쓰지 않았어요.', retryable: false }, rawOutput: (res && res.raw) || null }, t);
+        }, { source: 'capture' });
+        notify();
+        return { ok: false, reason: 'gone' };
+      }
       if (!res.ok) {
         S.mutate(null, function (s) {
-          P.finishRun(s, run.id, { status: 'failed', error: res.error, rawOutput: res.raw || null }, t);
+          P.finishRun(s, run.id, { status: 'failed', error: res.error, rawOutput: res.raw || null, provider: res.provider || run.provider, model: res.model || run.model }, t);
           var n = M.byId(s.notes, noteId);
           if (n) n.capture = Object.assign({}, n.capture, { status: 'failed', error: res.error });
         }, { source: 'capture' });
@@ -152,7 +162,7 @@
       if (!v.ok) {
         S.mutate(null, function (s) {
           var err = { type: 'invalid_output', message: 'AI 응답 형식이 맞지 않아 쓰지 않았어요.', retryable: true };
-          P.finishRun(s, run.id, { status: 'invalid', error: err, rawOutput: res.raw || null }, t);
+          P.finishRun(s, run.id, { status: 'invalid', error: err, rawOutput: res.raw || null, provider: res.provider || run.provider, model: res.model || run.model }, t);
           var n = M.byId(s.notes, noteId);
           if (n) n.capture = Object.assign({}, n.capture, { status: 'failed', error: err });
         }, { source: 'capture' });

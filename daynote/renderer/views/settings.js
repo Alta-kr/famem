@@ -19,6 +19,7 @@
   var advOpen = false;          // AI 카드 '고급' 열림 여부 — 다시 그려도 유지
   var lastCheck = null;         // 마지막 연결 확인 결과 { ok, ms, model, message }
   var checking = false;         // 연결 확인 중 — 두 번 눌러도 요청은 한 번 (카드를 다시 그려도 유지)
+  var checkSeq = 0;             // 키를 바꾸거나 지울 때마다 하나씩 — 그 전에 시작한 연결 확인 결과는 버린다
   var rendered = [];            // 지금 그려진 등록 카드 (destroy 용)
   var liveRoot = null;          // 설정 화면이 그려져 있는 root — 다른 화면으로 가면 null (늦게 온 다시 그리기를 막는다)
   var offAi = null;             // DN.aiFlow.onChange 구독 해제 함수 (AI 상태가 늦게 오면 AI 카드만 다시 그린다)
@@ -190,7 +191,10 @@
         if (!r || !r.ok) { failed(r && r.error); return; }
         input.value = '';
         lastCheck = null;
-        ui.toast('AI 키를 저장했어요. 이제 적은 글을 자동으로 나눠 드려요.');
+        checkSeq++;
+        // 저장은 됐지만 개발용 설정(DAYNOTE_AI_PROVIDER 등) 때문에 이 키를 쓰지 않는 경우 — 까닭은 고급에서 보여 준다
+        if (r.status && r.status.configured === false) ui.toast('AI 키를 저장했어요. 하지만 지금은 이 키를 쓰지 않고 있어요 — 까닭은 고급에서 볼 수 있어요.');
+        else ui.toast('AI 키를 저장했어요. 이제 적은 글을 자동으로 나눠 드려요.');
         rerender();
       }).catch(function () { failed('키를 저장하지 못했어요.'); });
     }
@@ -200,11 +204,18 @@
       checking = true;
       setCheckBtn(true);
       result.textContent = '연결을 확인하는 중… (몇 초 걸려요)';
+      var seq = checkSeq;
       S.host.ai.check().catch(function (e) {
         return { ok: false, error: { message: e && e.message ? e.message : String(e) } };
       }).then(function (r) {
         checking = false;
         setCheckBtn(false);
+        // 확인하는 사이 키를 바꾸거나 지웠으면 이 결과는 옛 키의 것 — 보이지 않고 '확인하는 중…' 만 걷어 낸다
+        if (seq !== checkSeq) {
+          var el = document.getElementById('set-ai-result');
+          if (el && el.textContent.indexOf('연결을 확인하는 중') === 0) el.textContent = lastCheck ? checkResultText(lastCheck) : '';
+          return;
+        }
         // 고급에는 제공자 원문(detail)을, 없으면 짧은 문구를 보인다
         lastCheck = r && r.ok
           ? { ok: true, ms: r.ms, model: r.model }
@@ -220,6 +231,7 @@
       ui.confirm('저장한 키 지우기', '이 앱에 저장한 AI 키를 지워요. 지운 뒤에는 적은 글이 메모로만 저장돼요.', '지우기').then(function (ok) {
         if (ok) {
           lastCheck = null;
+          checkSeq++;
           S.host.ai.clearKey().then(rerender).catch(function () {
             var out = document.getElementById('set-ai-result') || result;
             out.textContent = '키를 지우지 못했어요.';

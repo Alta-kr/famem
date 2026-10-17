@@ -57,13 +57,29 @@
   function noteLines(note) { return [note.title || ''].concat((note.body || '').split('\n')); }
 
   // 인용 문장이 있는 줄을 찾는다. AI 가 준 줄 번호를 먼저 보고, 틀렸으면 전체에서 찾는다.
-  function locate(lines, quote, hintLine) {
+  function locateRaw(lines, quote, hintLine) {
     var q = norm(quote);
     if (q.length < 2) return -1;
     if (hintLine != null && lines[hintLine] != null && norm(lines[hintLine]).indexOf(q) !== -1) return hintLine;
     for (var i = 0; i < lines.length; i++) if (norm(lines[i]).indexOf(q) !== -1) return i;
     return -1;
   }
+  // 앱이 프롬프트에 붙인 줄 번호("2| ")를 AI 가 인용에 그대로 옮겨 오는 경우가 있다 → { text, line }
+  function splitLinePrefix(quote) {
+    var s = String(quote == null ? '' : quote);
+    var m = s.match(/^\s*(\d+)\s*\|\s?/);
+    return m ? { text: s.slice(m[0].length).trim(), line: +m[1] } : { text: s, line: null };
+  }
+  // 인용을 원문에서 찾는다 → { quote, line }. 그대로 먼저 찾고, 없으면 줄 번호 접두어를 떼고 다시 찾는다
+  function findQuote(lines, quote, hintLine) {
+    var line = locateRaw(lines, quote, hintLine);
+    if (line >= 0) return { quote: quote, line: line };
+    var sp = splitLinePrefix(quote);
+    if (sp.line == null) return { quote: quote, line: -1 };
+    line = locateRaw(lines, sp.text, hintLine != null ? hintLine : sp.line);
+    return line >= 0 ? { quote: sp.text, line: line } : { quote: quote, line: -1 };
+  }
+  function locate(lines, quote, hintLine) { return findQuote(lines, quote, hintLine).line; }
 
   function inText(fullNorm, phrase) {
     var p = norm(phrase);
@@ -314,8 +330,8 @@
     if (note && note.capture && note.capture.statusLine) return null;
     if (PRESENCE_ROLES.indexOf(raw.role) === -1 || raw.role === 'none') return null;
     if (typeof raw.quote !== 'string') return null;
-    var quote = raw.quote.trim();
-    var line = locate(lines, quote, null);
+    var fq = findQuote(lines, raw.quote.trim(), null);
+    var quote = fq.quote, line = fq.line;
     if (line < 0) return null;
     return { role: raw.role, quote: quote, line: line };
   }
@@ -339,8 +355,8 @@
     var seenQuote = {};
 
     function base(kind, raw) {
-      var quote = String(raw.evidence.quote || '').trim();
-      var line = locate(lines, quote, raw.evidence.line);
+      var fq = findQuote(lines, String(raw.evidence.quote || '').trim(), raw.evidence.line);
+      var quote = fq.quote, line = fq.line;
       if (line < 0) { dropped.push({ kind: kind, title: raw.title, quote: quote, reason: '근거 문장이 원문에 없습니다' }); return null; }
       var title = String(raw.title || '').trim().replace(/\s+/g, ' ');
       if (!title) { dropped.push({ kind: kind, title: '', quote: quote, reason: '제목이 비어 있습니다' }); return null; }
@@ -441,6 +457,6 @@
     relativeAt: relativeAt, relativeMinutes: relativeMinutes, timeMatch: timeMatch, durationSpan: durationSpan, durationMentions: durationMentions,
     DO_IN: DO_IN, PRESENCE_ROLES: PRESENCE_ROLES,
     validateOrganizeNote: validateOrganizeNote, shapeErrors: shapeErrors, timeCandidates: timeCandidates, sanitizeSteps: sanitizeSteps,
-    noteLines: noteLines, locate: locate, DATE_RE: DATE_RE, TIME_RE: TIME_RE
+    noteLines: noteLines, locate: locate, splitLinePrefix: splitLinePrefix, DATE_RE: DATE_RE, TIME_RE: TIME_RE
   };
 });

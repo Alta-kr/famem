@@ -170,7 +170,8 @@ test('응답 읽기: 코드 울타리나 앞 문장으로 감싼 JSON 도 한 �
       assert.strictEqual(r.attempts, 1);
       assert.strictEqual(calls, 1);
       assert.deepStrictEqual(r.output, OUTPUT);
-      assert.strictEqual(r.raw, text);
+      // raw 는 벗긴 결과의 JSON — 지난 결과 재사용(aiflow 의 JSON.parse)이 읽을 수 있어야 한다
+      assert.deepStrictEqual(JSON.parse(r.raw), OUTPUT);
     }
     for (const text of ['그냥 글이에요', '[1, 2]', '{"summary": "요약", "sections": [']) {
       let calls = 0;

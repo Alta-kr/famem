@@ -224,7 +224,7 @@ Fields that conversions add to tasks/blocks: `convertedFrom` (saved original val
 - **States** (157-186):
   - `n.deletedAt` → "이 글은 메모에서 지웠어요."
   - `CP.isRunning(id) || c.status==='pending'` → skeleton "정리하는 중…"
-  - `'no_ai'` → "메모로 저장했어요 · AI를 연결하면…" + [설정 열기]. There is no retry button.
+  - `'no_ai'` → "메모로 저장했어요 · AI를 연결하면…" + [설정 열기]. Once `aiFlow.status().configured` is true (and not `changedByUser`), it shows "· 이제 AI로 나눌 수 있어요" + [AI로 나누기] (`CP.classify`). The chat view repaints the list when `configured` flips.
   - `'failed'` → "메모로 남겨 뒀어요 · {error.message}" + [다시 시도] → `CP.classify(n.id)`. Retry has no `onDone`, so no large-task notice.
   - otherwise the header is `summary(items, now)` + " · 비슷한 할 일이 이미 있어서 N개는 만들지 않았어요". **That count includes `blocked` skips too.**
   - Footer: `c.changedByUser ? '직접 고침' : 'AI가 정리함'` · "Ctrl+Z로 되돌리기".
@@ -398,7 +398,7 @@ The existing pattern to copy is done_tasks and updated_tasks:
 3. Ctrl+N (`saveQuick`) captures produce **no chat card**. The only chat-visible paths go through `DN.assistant.send`.
 4. **`'AI 분류'` undo, or a quit mid-call, leaves `capture.status='pending'` forever** (spinner, no retry). No recovery code exists for note status.
 5. Ctrl+Z is ignored in text fields, and the chat textarea holds focus. Kind, project and date changes show no undo toast. `undoToast` pops whatever is on top of the stack.
-6. `no_ai` captures are never re-classified when a key is added later, and the card has no retry button. `aiFlow.status()` starts as `{configured:false, reason:'확인 중…'}` until the `ai:status` IPC resolves; `classify()` waits for `aiFlow.ready()` while `aiFlow.isLoading()` instead of marking such a capture `no_ai` (a rejected status call settles to '상태를 확인하지 못했어요').
+6. `no_ai` captures are never re-classified automatically when a key is added later; the card offers [AI로 나누기] once AI is connected (not on the `noAiLearned` card). `aiFlow.status()` starts as `{configured:false, reason:'확인 중…'}` until the `ai:status` IPC resolves; `classify()` waits for `aiFlow.ready()` while `aiFlow.isLoading()` instead of marking such a capture `no_ai` (a rejected status call settles to '상태를 확인하지 못했어요').
 7. Date chip on a task with a work block: `setDate` changes only `dueDate`. The work block (which the chip displays first) does not move. Choosing "날짜 없음" also clears `dueTime`. Date edits set no capture flags.
 8. `captureSetProject` does not touch completed or moved tasks and does not set `changedByUser`. Project and date edits are therefore invisible to the `changedByUser` override (they are direct field edits anyway).
 9. A single-row card uses `setKind` (the whole note, converting every created item). A multi-row card uses `setItemKind`. The row count includes the note row.
