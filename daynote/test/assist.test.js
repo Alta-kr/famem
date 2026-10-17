@@ -136,3 +136,17 @@ test('자세히 적기: "샤워하기" 같은 분명한 행동·시간 정한 �
   assert.strictEqual(A.nextNudge(st, { now: NOW, reason: 'idle', lastCaptureAt: new Date(NOW - 30 * 60000).toISOString() }).type, 'elaborate');
   assert.ok(A.nextNudge(st, { now: NOW, reason: 'button', lastCaptureAt: new Date(NOW - 60000).toISOString() }));
 });
+
+test('휴식 운동: 구간 초를 더한 값이 운동 시간 · 쉬는 시간에 맞춰 고른다 · 부위별', () => {
+  const E = require('../src/core/exercises');
+  E.LIST.forEach((x) => {
+    assert.ok(x.phases.length && x.phases.every((p) => p.say && p.sec > 0), x.id);
+    assert.strictEqual(x.seconds, x.phases.reduce((a, p) => a + p.sec, 0));
+  });
+  ['all', 'wrist', 'neck', 'back'].forEach((f) => {
+    const r = E.routine(f, 180, 7);
+    const total = r.reduce((a, x) => a + x.seconds, 0);
+    assert.ok(total >= 150 && total <= 210, f + ' ' + total);
+  });
+  assert.ok(E.routine('wrist', 180, 3).filter((x) => x.area === 'wrist').length >= 3);
+});

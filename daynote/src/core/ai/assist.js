@@ -265,7 +265,8 @@
     { title: '물 한 잔 마시고 오기', how: '자리에서 일어나 물을 마시고 몇 걸음 걸어 오기.', seconds: 120 }
   ];
   function pickStretches(n, seed) {
-    var list = STRETCHES.slice();
+    var EX = (typeof module !== 'undefined' && module.exports) ? require('../exercises') : (window.Daynote && window.Daynote.exercises);
+    var list = EX ? EX.LIST.map(function (x) { return { title: x.title, how: x.why + ' — ' + x.phases.filter(function (p) { return !p.rest; }).slice(0, 2).map(function (p) { return p.say.replace(/ \(\d+\/\d+\)$/, '') + ' ' + p.sec + '초'; }).join(', ') + (x.phases.length > 2 ? ' …' : ''), seconds: x.seconds }; }) : STRETCHES.slice();
     var s = seed || Date.now();
     for (var i = list.length - 1; i > 0; i--) { s = (s * 9301 + 49297) % 233280; var j = Math.floor(s / 233280 * (i + 1)); var tmp = list[i]; list[i] = list[j]; list[j] = tmp; }
     return list.slice(0, n || 3);

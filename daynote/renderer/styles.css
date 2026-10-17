@@ -1627,3 +1627,13 @@ html.is-resting .toast, html.is-resting .toasts { display: none !important; }   
 .work-steps .step-tree { margin-top: 4px; }
 /* 메모를 할 일 목록에 끌어 놓기 */
 .home-sec.is-note-drop { outline: 2px dashed var(--primary); outline-offset: -4px; border-radius: 12px; }
+
+/* 몸 풀기 — 구간별 말·남은 초 */
+.stretch-focus { justify-content: center; }
+.stretch-why { margin: -4px 0 0; color: #8892A8; font-size: 14px; }
+.stretch-how { min-height: 3.2em; display: flex; align-items: center; justify-content: center; }
+.stretch-how.is-rest { color: #8892A8; }
+.stretch-phase-bar { width: 100%; max-width: 360px; height: 4px; border-radius: 999px; background: rgba(255,255,255,.08); overflow: hidden; }
+.stretch-phase-bar > span { display: block; height: 100%; background: #7C8CF8; transition: width 300ms; }
+.stretch-next { color: #8892A8; font-size: 13px; min-height: 1.2em; }
+.stretch-actions { display: flex; gap: 8px; }

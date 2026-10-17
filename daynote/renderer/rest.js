@@ -290,22 +290,58 @@
       }
       cur.step = setTimeout(phase, 600);
     },
+    // 몸 풀기 — 운동마다 구간(오른쪽 15초 → 왼쪽 15초 …)을 하나씩: 지금 할 말과 남은 초가 늘 맞는다 (src/core/exercises.js)
+    //   부위(골고루 · 손목·팔 · 목·어깨 · 허리·다리)를 고를 수 있고, 쉬는 시간에 맞춰 운동 수를 정한다
     stretch: function (stage, timeEl) {
       cur.onTick = null;
-      var list = DN.aiAssist ? DN.aiAssist.pickStretches(5, Date.now()) : [];
-      var i = 0, left = 0;
-      var title = h('h2.stretch-title'), how = h('p.stretch-how'), count = h('div.stretch-count'), pos = h('div.stretch-pos');
-      stage.appendChild(h('div.stretch-card', pos, title, how, count, h('button.btn', { type: 'button', onclick: function () { show(i + 1); } }, '다음 동작')));
+      var EX = DN.exercises;
+      var focus = prefs().restStretchFocus || 'all';
+      var list = EX.routine(focus, Math.max(60, Math.round((cur.endAt - Date.now()) / 1000)), Date.now() % 100000);
+      var i = 0, p = 0, left = 0;
+      var pos = h('div.stretch-pos'), title = h('h2.stretch-title'), why = h('p.stretch-why');
+      var say = h('p.stretch-how', { 'aria-live': 'polite' }), count = h('div.stretch-count'), nextEl = h('div.stretch-next');
+      var bar = h('div.stretch-phase-bar', h('span'));
+      var focusRow = h('div.rest-durations.stretch-focus', { role: 'group', 'aria-label': '풀 부위' }, h('span', '부위'),
+        EX.FOCUS.map(function (f) {
+          return h('button.rest-dur' + (f.id === focus ? '.is-on' : ''), { type: 'button', 'aria-pressed': String(f.id === focus), onclick: function () {
+            S.mutate(null, function (s) { s.prefs.restStretchFocus = f.id; }, { silent: true });
+            start('stretch');   // 남은 쉬는 시간은 그대로, 운동만 새로
+          } }, f.label);
+        }));
+      stage.appendChild(focusRow);
+      stage.appendChild(h('div.stretch-card', pos, title, why, say, bar, count, nextEl,
+        h('div.stretch-actions',
+          h('button.btn.btn-ghost', { type: 'button', onclick: function () { showPhase(p + 1); } }, '이 구간 넘기기'),
+          h('button.btn', { type: 'button', onclick: function () { show(i + 1); } }, '다음 동작'))));
+      stage.appendChild(h('p.rest-hint', '아프거나 저리면 바로 멈추세요. 반동 없이 천천히.'));
       stage.appendChild(h('div.rest-small-time', timeEl));
       function show(k) {
         i = k % list.length;
-        var s = list[i];
-        title.textContent = s.title; how.textContent = s.how;
-        pos.textContent = (i + 1) + ' / ' + list.length;
-        left = s.seconds || 30; count.textContent = left + '초';
+        var ex = list[i];
+        title.textContent = ex.title; why.textContent = ex.why;
+        pos.textContent = (i + 1) + ' / ' + list.length + ' · 약 ' + ex.seconds + '초';
+        var nx = list[(i + 1) % list.length];
+        nextEl.textContent = list.length > 1 ? '다음: ' + nx.title : '';
+        showPhase(0);
+      }
+      function showPhase(k) {
+        var ex = list[i];
+        if (k >= ex.phases.length) { show(i + 1); return; }
+        p = k;
+        var ph = ex.phases[p];
+        say.textContent = ph.say;
+        say.classList.toggle('is-rest', !!ph.rest);
+        left = ph.sec;
+        count.textContent = left + '초';
+        bar.firstChild.style.width = Math.round(p / ex.phases.length * 100) + '%';
       }
       show(0);
-      cur.step = setInterval(function () { if (!cur) return; left -= 1; count.textContent = Math.max(0, left) + '초'; if (left <= 0) show(i + 1); }, 1000);
+      cur.step = setInterval(function () {
+        if (!cur) return;
+        left -= 1;
+        if (left <= 0) { showPhase(p + 1); return; }
+        count.textContent = left + '초';
+      }, 1000);
     },
     // 산책하기 — 화면을 보지 않아도 되게 아주 단순하게, 끝은 소리로
     walk: function (stage, timeEl) {
