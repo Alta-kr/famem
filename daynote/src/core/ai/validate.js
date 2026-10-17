@@ -137,6 +137,10 @@
     return { filter: filter || 'all_open', project: project };
   }
 
+  // 마감을 말한 글인가 — "내일까지 견적서" · "금요일 마감" · "월요일 제출" 은 마감, "내일 견적서 보내기" 는 그날 하겠다는 말(할 날)
+  var DEADLINE_RE = /(까지|마감|기한|전에|이전에|내로|안으로|데드라인|deadline|due|제출|납기|기일)/i;
+  function isDeadlineText(text) { return DEADLINE_RE.test(String(text || '')); }
+
   function relativeAt(text, ref) {
     var mins = relativeMinutes(text);
     if (mins == null || mins <= 0 || mins > 24 * 60) return null;
@@ -398,7 +402,7 @@
   }
 
   return {
-    verifyWhen: verifyWhen, shiftMinutes: shiftMinutes, relativeAt: relativeAt, groupFilter: groupFilter, groupScope: groupScope,
+    verifyWhen: verifyWhen, shiftMinutes: shiftMinutes, relativeAt: relativeAt, isDeadlineText: isDeadlineText, groupFilter: groupFilter, groupScope: groupScope,
     validateOrganizeNote: validateOrganizeNote, shapeErrors: shapeErrors, timeCandidates: timeCandidates, sanitizeSteps: sanitizeSteps,
     noteLines: noteLines, locate: locate, DATE_RE: DATE_RE, TIME_RE: TIME_RE
   };

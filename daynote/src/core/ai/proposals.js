@@ -270,6 +270,10 @@
           projectId: v.projectId || null,
           sources: [src], origin: 'ai_accepted', proposalId: p.id, sample: !!p.sample
         }, now);
+        // "내일 견적서 보내기" — 마감 말(까지·마감·제출…)이 없으면 그날 하겠다는 '할 날' 로 (마감 아님 — 안 하면 다음 날로 넘어온다)
+        if (p.kind === 'task' && task.dueDate && !task.dueTime && !V.isDeadlineText(p.source.quote)) {
+          task.planDate = task.dueDate; task.dueDate = null;
+        }
         p.resultRef = { kind: 'task', id: task.id };
         created.push({ kind: 'task', id: task.id, title: task.title });
         // 시간 정한 할 일: 그 시각에 작업 시간(30분)을 잡아 오늘 일정에도 보이게. 할 일은 체크해야 끝난다.
@@ -473,15 +477,18 @@
     // "내일로 미뤄" 처럼 날만 바꾸면 원래 마감 시각은 그대로 둔다 (17:00 마감 → 내일 17:00)
     if (due && !due.time && t.dueTime && !shift) due = { date: due.date, time: t.dueTime };
     var work = M.blocksForTask(state, t.id).filter(function (b) { return b.kind === 'work' && new Date(b.end) > new Date(now); })[0] || null;
-    var rec = { kind: 'task', id: t.id, prev: { dueDate: t.dueDate, dueTime: t.dueTime }, prevWork: work ? { id: work.id, start: work.start, end: work.end } : null, newWorkId: null };
-    if (due) M.updateTask(state, t.id, { dueDate: due.date, dueTime: due.time || null }, now);
+    var rec = { kind: 'task', id: t.id, prev: { dueDate: t.dueDate, dueTime: t.dueTime, planDate: t.planDate || null }, prevWork: work ? { id: work.id, start: work.start, end: work.end } : null, newWorkId: null };
+    // "견적서는 내일 보낼게" — 마감이 없던 일이고 마감 말도 없으면 '할 날' 을 바꾼다 (마감을 새로 만들지 않는다)
+    var asPlan = due && !due.time && !t.dueDate && !shift && !V.isDeadlineText(q);
+    if (asPlan) { M.updateTask(state, t.id, { planDate: due.date }, now); rec.to = { planDate: due.date, dueDate: null, dueTime: null, at: null }; }
+    else if (due) M.updateTask(state, t.id, { dueDate: due.date, dueTime: due.time || null }, now);
     if (at) {
       var s = D.parseYmd(at.date, at.time);
       var len = work ? new Date(work.end) - new Date(work.start) : 30 * 60000;
       if (work) M.updateBlock(state, work.id, { start: s.toISOString(), end: new Date(s.getTime() + len).toISOString() });
       else rec.newWorkId = M.addBlock(state, { taskId: t.id, title: t.title, start: s.toISOString(), end: new Date(s.getTime() + len).toISOString(), origin: 'user', durationGuessed: true }).id;
     }
-    rec.to = { dueDate: due ? due.date : null, dueTime: due ? due.time || null : null, at: at ? at.date + ' ' + at.time : null };
+    if (!asPlan) rec.to = { dueDate: due ? due.date : null, dueTime: due ? due.time || null : null, at: at ? at.date + ' ' + at.time : null };
     return rec;
   }
 
@@ -639,7 +646,7 @@
     });
     (note.capture.updated || []).forEach(function (u) {
       var tk = M.byId(state.tasks, u.id);
-      if (tk && u.prev) M.updateTask(state, tk.id, { dueDate: u.prev.dueDate, dueTime: u.prev.dueTime }, now);
+      if (tk && u.prev) M.updateTask(state, tk.id, Object.assign({ dueDate: u.prev.dueDate, dueTime: u.prev.dueTime }, 'planDate' in u.prev ? { planDate: u.prev.planDate } : {}), now);
       if (u.prevWork) M.updateBlock(state, u.prevWork.id, { start: u.prevWork.start, end: u.prevWork.end });
       if (u.newWorkId) M.deleteBlock(state, u.newWorkId);
     });
@@ -883,7 +890,7 @@
       var u = (note.capture.updated || []).filter(function (c) { return c.id === ref.id; })[0];
       var tk = u && M.byId(state.tasks, u.id);
       if (tk) {
-        M.updateTask(state, tk.id, { dueDate: u.prev.dueDate, dueTime: u.prev.dueTime }, now);
+        M.updateTask(state, tk.id, Object.assign({ dueDate: u.prev.dueDate, dueTime: u.prev.dueTime }, 'planDate' in u.prev ? { planDate: u.prev.planDate } : {}), now);
         if (u.prevWork) M.updateBlock(state, u.prevWork.id, { start: u.prevWork.start, end: u.prevWork.end });
         if (u.newWorkId) M.deleteBlock(state, u.newWorkId);
       }

@@ -234,6 +234,7 @@
   function movedText(ch, now) {
     var to = ch.to || {};
     if (to.at) { var p = to.at.split(' '); return dayLabel(p[0], now) + ' ' + p[1] + '에 하기'; }
+    if (to.planDate) return dayLabel(to.planDate, now) + '에 하기';
     return '마감 ' + dayLabel(to.dueDate, now) + (to.dueTime ? ' ' + to.dueTime : '');
   }
   function summary(items, now) {
@@ -325,13 +326,13 @@
       var d = dateInfo(it, now);
       dateBtn = h('button.chip.cap-date' + (d.cls ? '.' + d.cls : ''), {
         type: 'button', 'aria-haspopup': 'menu', 'data-focus-key': fk + ':date',
-        'aria-label': (it.kind === 'task' ? '마감: ' : '날짜: ') + d.label + ' — 바꾸기',
+        'aria-label': (it.kind === 'task' ? (d.plan ? '할 날: ' : '마감: ') : '날짜: ') + d.label + ' — 바꾸기',
         title: d.overdue ? '날짜 바꾸기 · Alt+클릭: 지금부터 ' + M.POSTPONE_HOURS + '시간 뒤로 미루기' : '날짜 바꾸기',
         onclick: function (e) {
           if (d.overdue && e.altKey) { e.preventDefault(); ui.postponeOverdue(item.id); return; }
           dateMenu(e.currentTarget, it, now);
         }
-      }, ui.icon(it.kind === 'task' ? 'flag' : 'clock'), d.label);
+      }, ui.icon(it.kind === 'task' ? (d.plan ? 'calendar' : 'flag') : 'clock'), d.label);
       if (it.kind === 'event' && item.timeUncertain) {
         uncertain = h('button.chip.chip-guess.cap-uncertain', {
           type: 'button', 'data-focus-key': fk + ':time', title: 'AI가 시각을 확실히 알 수 없었어요. 눌러서 정해 주세요.',
@@ -358,7 +359,7 @@
       }
     }, ui.icon('x'));
 
-    var row = h('div.cap-row', { role: 'listitem', 'data-kind': it.kind }, kindBtn, titleBtn, dateBtn, uncertain, projBtn, removeBtn);
+    var row = h('div.cap-row', { role: 'listitem', 'data-kind': it.kind }, kindBtn, titleBtn, dateBtn, uncertain, whereBtn(it, now), projBtn, removeBtn);
     // 방금(30분 안) 만든 할 일인데 마감도 작업 시간도 없으면 — "언제 할까요?" 를 바로 고르게
     var fresh = n.capture && n.capture.at && now - new Date(n.capture.at) < 30 * 60000;
     if (it.kind === 'task' && fresh && item.status !== 'done' && !item.dueDate &&
@@ -376,6 +377,18 @@
     if (d.getFullYear() !== now.getFullYear()) return d.getFullYear() + '년 ' + rel;
     return rel;
   }
+  // 이 줄이 홈의 어느 날 칸에 들어갔는지 — 오늘이 아니면 [→ 그날 보기] (오늘 목록에 안 보여도 어디 있는지 바로 알게)
+  function whereBtn(it, now) {
+    if (!(it.kind === 'task' || it.kind === 'event') || !it.item) return null;
+    var day = it.kind === 'task' ? DN.horizon.anchorDay(S.state, it.item, now) : D.ymd(it.item.start);
+    var today = D.ymd(now);
+    if (!day || day <= today || it.item.status === 'done') return null;
+    return h('button.chip.chip-btn.cap-where', { type: 'button', title: '홈에서 그날 칸 보기',
+      onclick: function () {
+        S.mutate(null, function (s) { s.prefs.homeView = 'day:' + day; });
+        if (DN.app.current().view !== 'today') DN.app.go('today');
+      } }, '→ ' + DN.horizon.leftText(day, now) + ' 칸');
+  }
   function dateInfo(it, now) {
     var x = it.item;
     if (it.kind === 'task') {
@@ -388,6 +401,8 @@
           cls: D.ymd(ws) === D.ymd(now) ? 'chip-today' : ''
         };
       }
+      // 할 날(그날 하기)만 있는 일 — 마감과 구분해서
+      if (!x.dueDate && x.planDate) return { label: dayLabel(x.planDate, now) + '에 하기', cls: x.planDate <= D.ymd(now) ? 'chip-today' : '', plan: true };
       if (!x.dueDate) return { label: '날짜 없음', cls: 'is-none' };
       var due = D.dueAt(x.dueDate, x.dueTime);
       var when = dayLabel(x.dueDate, now) + (x.dueTime ? ' ' + x.dueTime : '');
@@ -428,8 +443,9 @@
     opts.push(['다음 주 월요일', D.addDays(mon, 7)]);
     // 시간 정한 할 일은 작업 시간의 날짜가 지금 날짜
     var curWork = it.kind === 'task' ? M.blocksForTask(S.state, it.item.id).filter(function (b) { return b.kind === 'work' && new Date(b.end) > now; })[0] : null;
-    var curYmd = it.kind === 'task' ? (curWork ? D.ymd(curWork.start) : it.item.dueDate) : D.ymd(it.item.start);
-    var items = [{ label: it.kind === 'task' ? '언제까지 할까요?' : '언제로 옮길까요?' }].concat(opts.map(function (o) {
+    var planOnly = it.kind === 'task' && !curWork && !it.item.dueDate && !!it.item.planDate;
+    var curYmd = it.kind === 'task' ? (curWork ? D.ymd(curWork.start) : it.item.dueDate || it.item.planDate) : D.ymd(it.item.start);
+    var items = [{ label: it.kind === 'task' ? (planOnly ? '언제 할까요? (할 날)' : '언제까지 할까요?') : '언제로 옮길까요?' }].concat(opts.map(function (o) {
       var ymd = D.ymd(o[1]);
       return { label: o[0], sub: D.shortDay(o[1]), checked: curYmd === ymd, onClick: function () { setDate(it, ymd, null); } };
     }));
@@ -483,6 +499,9 @@
           }
           return;
         }
+        var cur = M.byId(s.tasks, it.item.id);
+        // 할 날만 있던 일은 할 날을 옮긴다 (마감을 새로 만들지 않는다)
+        if (cur && !cur.dueDate && cur.planDate) { M.updateTask(s, it.item.id, { planDate: ymd || null }, now); return; }
         M.updateTask(s, it.item.id, ymd ? { dueDate: ymd } : { dueDate: null, dueTime: null }, now);
       }, { source: 'capture' });
       return;

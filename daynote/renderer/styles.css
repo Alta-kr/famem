@@ -1735,3 +1735,11 @@ html.is-resting .toast, html.is-resting .toasts { display: none !important; }   
 .hz-up.is-prep .meta { color: var(--warning, #B45309); font-weight: 600; }
 .hz-up-more { margin-left: auto; font-size: 12px; }
 .chip.chip-plan { background: var(--primary-soft); color: var(--primary); }
+
+/* 결과 카드: 어디로 갔는지 · 날짜 안 정한 할 일 */
+.chip.cap-where { background: transparent; border: 1px solid var(--border); color: var(--text-secondary); font-size: 11.5px; }
+.chip.cap-where:hover { color: var(--primary); border-color: var(--primary); }
+.hz-undated { margin: 0 0 4px; padding: 6px 12px; border-radius: 10px; border: 1px dashed var(--border); font-size: 12.5px; }
+.hz-undated-head { display: flex; align-items: center; gap: 10px; }
+.hz-undated-head .link-btn { margin-left: auto; }
+.hz-undated .home-list { margin-top: 4px; }

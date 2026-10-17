@@ -130,6 +130,7 @@
         tl.done.length ? h('button.btn.btn-ghost.btn-xs', { type: 'button', title: '오늘 끝낸 일을 목록에서 치워요 (보관함에서 다시 볼 수 있어요)', onclick: function () { clearDone(tl.done); } }, '완료 비우기 (' + tl.done.length + ')') : null,
         h('button.btn.btn-ghost.btn-xs', { type: 'button', onclick: function () { A.go('tasks'); } }, '전체 보기')),
       upcomingLine(st, now, tl.open),
+      undatedLine(st, now, tl.open),
       h('div.home-scroll', { 'data-keep-scroll': 'home-tasks' },
         tl.open.length || tl.done.length ? taskUl : h('div.empty.home-empty', '오늘 할 일이 없어요. 왼쪽에 적으면 할 일은 여기로 들어와요.')));
     var secMemos = h('div.home-sec.home-sec-memos',
@@ -440,6 +441,24 @@
         h('button.btn.btn-ghost.btn-xs', { type: 'button', onclick: function () { A.go('calendar'); } }, '캘린더')),
       h('div.home-scroll', { 'data-keep-scroll': 'home-range' }, body));
   }
+  // 날짜 안 정한 할 일 — 마감·할 날·작업 시간이 없고 오늘 목록에도 없는 일. 그냥 두면 홈 어디에도 안 보여 잊힌다
+  //   [보기] 를 누르면 펼쳐지고, 위의 2주 띠 날짜로 끌어 놓으면 그날 할 일이 된다
+  var showUndated = false;
+  function undatedLine(st, now, openToday) {
+    var on = {};
+    openToday.forEach(function (t) { on[t.id] = true; });
+    var list = M.liveTasks(st).filter(function (t) {
+      return t.status !== 'done' && t.status !== 'waiting' && !on[t.id] && !DN.horizon.anchorDay(st, t, now);
+    }).sort(function (a, b) { return a.createdAt < b.createdAt ? 1 : -1; });
+    if (!list.length) return null;
+    return h('div.hz-undated',
+      h('div.hz-undated-head',
+        h('span.hz-up-label', '날짜 안 정한 할 일 ' + list.length + '개'),
+        h('span.meta', '위 날짜로 끌어 놓으면 그날 할 일로'),
+        h('button.link-btn', { type: 'button', 'aria-expanded': String(showUndated), onclick: function () { showUndated = !showUndated; DN.app.refresh(); } }, showUndated ? '접기' : '보기')),
+      showUndated ? h('ul.home-list', list.slice(0, 12).map(function (t) { return taskRow(st, t, now, false); })) : null);
+  }
+
   // 다가오는 마감 — 오늘 목록에 없는 7일 안의 마감을 '며칠 후' 로. 늦어도 시작할 날이 온 일은 먼저 + [오늘 하기]
   function upcomingLine(st, now, openToday) {
     var hz = DN.horizon;
