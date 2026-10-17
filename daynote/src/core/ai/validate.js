@@ -163,12 +163,15 @@
   // 길이: 메모에 "2시~4시", "30분", "1시간" 이 있을 때만 검증된 값이다
   function checkDuration(ai, w, quote, startTime) {
     var src = [w.text || '', quote || ''].join(' ');
-    var range = src.match(/(\d{1,2})\s*(?:시|:\d{2})?\s*[~\-–]\s*(\d{1,2})\s*시/);
+    // "2시~4시", "14:00~15:30", "2시~3시 반", "2시 10분~3시 40분" — 끝 시각의 분까지 읽는다
+    var range = src.match(/(\d{1,2})\s*(?:시(?:\s*(\d{1,2})\s*분|\s*(반))?|:(\d{2}))?\s*[~\-–]\s*(\d{1,2})\s*(?:시(?:\s*(\d{1,2})\s*분|\s*(반))?|:(\d{2}))/);
     var span = null;
     if (range && startTime) {
-      var sh = +startTime.slice(0, 2), eh = +range[2];
+      var sh = +startTime.slice(0, 2), sm = +startTime.slice(3);
+      var eh = +range[5];
+      var em = range[6] != null ? +range[6] : range[7] ? 30 : range[8] != null ? +range[8] : 0;
       if (eh <= 12 && sh >= 12) eh += 12;
-      if (eh > sh) span = (eh - sh) * 60 - +startTime.slice(3);
+      if (eh * 60 + em > sh * 60 + sm) span = (eh * 60 + em) - (sh * 60 + sm);
     }
     var len = src.match(/(\d+)\s*시간(?:\s*(\d+)\s*분)?|(\d+)\s*분\s*(?:간|동안)/);
     if (!span && len) span = len[1] ? (+len[1]) * 60 + (+(len[2] || 0)) : +len[3];

@@ -54,7 +54,10 @@
       var ref = (h.refs || []).filter(function (x) { return x.kind === 'task'; })[0] || { kind: 'task', id: null, label: h.title };
       var res = M.resolveRef(state, ref);
       var task = res.item;
-      var pid = (task && !task.deletedAt ? task.projectId : h.projectId) || null;
+      var rawPid = (task && !task.deletedAt ? task.projectId : h.projectId) || null;
+      // 지워진 프로젝트는 '프로젝트 없음' 한 묶음으로 (같은 이름의 섹션이 두 번 생기지 않게)
+      var projObj = rawPid ? M.byId(state.projects, rawPid) : null;
+      var pid = projObj && !projObj.deletedAt ? rawPid : null;
       var gk = pid || '';
       if (!groups[gk]) { groups[gk] = { projectId: pid, projectName: projectName(state, pid), items: [] }; order.push(gk); }
       groups[gk].items.push({

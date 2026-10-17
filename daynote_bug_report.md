@@ -219,10 +219,41 @@ ipcMain.handle('ai:check', async () => {
 
 ## 3. 수정 적용 체크리스트
 
-- [ ] `daynote/renderer/views/chat.js`: `setDate()`에서 할 일의 `work` 블록 날짜 동기화 및 삭제 처리
-- [ ] `daynote/src/core/ai/proposals.js`: `captureToMemo()`에서 `completed` 및 `updated` 항목 원상 복구 처리
-- [ ] `daynote/src/core/model.js` & `weekly.js`: `clearSample()` 실행 시 고아 `projectId` 정리 및 `summarize()` 프로젝트 유효성 검사
-- [ ] `daynote/renderer/store.js`, `notes.js`, `chat.js`: `onStatus` 구독 해제 함수 반환 및 `timerTick` 인터벌 해제
-- [ ] `daynote/src/core/ai/validate.js`: `checkDuration()`의 종료 시각 분 단위 파싱 보완
-- [ ] `daynote/main.js`: `ai:check` 핸들러에서 `dates.ymd(now)` 사용
-- [ ] `daynote/package.json`: `test` 스크립트에서 따옴표 제거 후 `npm test` 통과 확인
+- [x] `daynote/renderer/views/chat.js`: `setDate()`에서 할 일의 `work` 블록 날짜 동기화 및 삭제 처리
+- [x] `daynote/src/core/ai/proposals.js`: `captureToMemo()`에서 `completed` 및 `updated` 항목 원상 복구 처리
+- [x] `daynote/src/core/model.js` & `weekly.js`: `clearSample()` 실행 시 고아 `projectId` 정리 및 `summarize()` 프로젝트 유효성 검사
+- [x] `daynote/renderer/store.js`, `notes.js`, `chat.js`: `onStatus` 구독 해제 함수 반환 및 `timerTick` 인터벌 해제
+- [x] `daynote/src/core/ai/validate.js`: `checkDuration()`의 종료 시각 분 단위 파싱 보완
+- [x] `daynote/main.js`: `ai:check` 핸들러에서 `dates.ymd(now)` 사용
+- [x] `daynote/package.json`: `test` 스크립트 수정 후 `npm test` 통과 확인 (아래 4장의 BUG-07 참고 — 권장안과 다르게 고침)
+
+## 4. 수정 결과 및 검토 의견 (2026-10-17, Claude)
+
+### 4.1 확인 결과
+
+7개 모두 실제 코드에서 재현 또는 원인을 확인했습니다. BUG-07은 환경에 따라 다릅니다. Node 21 이상은 따옴표로 감싼 글로브를 Node가 직접 풀어서 동작하고, 그보다 낮은 버전에서만 실패합니다.
+
+| ID | 고친 내용 | 검증 |
+| :--- | :--- | :--- |
+| BUG-01 | 날짜 칩을 바꾸면 미래의 `work` 블록도 같은 날로 옮기고, "날짜 없음"이면 지운다 | 브라우저 미리보기: "30분 후 샤워하기" → 내일로 바꾸니 칩이 "내일(일) 14:15", 오늘 일정은 비어 있음 |
+| BUG-02 | `captureToMemo()`에서 완료 보고를 취소하고(`undoOf`로 완료 기록 삭제), 날짜 변경도 원래 마감·작업 시간으로 되돌림. `completed`·`updated`도 비움 | `test/bugfix-1017.test.js` 2건 |
+| BUG-03 | 리포트 권장안 두 가지(`clearSample` 고아 참조 정리, `summarize` 유효성 검사)를 모두 적용 | 테스트 1건. 예전 데이터처럼 고아 참조가 남아 있어도 "프로젝트 없음" 섹션은 하나만 생김 |
+| BUG-04 | `onStatus`가 구독 해제 함수를 반환하고, `notes.js`의 `destroy`에서 호출함. `chat.js`의 `destroy`에서 `timerTick`을 해제함 | 코드 수정만 함 (자동 테스트 없음) |
+| BUG-05 | 끝 시각의 `:mm`, `N분`, `반`까지 읽고 시작 시각의 분도 반영 | 테스트 1건: `14:00~15:30`, `2시~3시 반`, `2시~4시` |
+| BUG-06 | `ai:check`에서 `dates.ymd(now)`로 현지 날짜를 사용 | 코드 수정만 함 |
+| BUG-07 | `"test": "node --test"` (아래 4.2 참고) | `npm test` 127/127 통과 |
+
+- 전체 테스트 127/127 통과. 새 회귀 테스트는 4건(`test/bugfix-1017.test.js`)입니다.
+- `npm run smoke`(숨김 창): `rendered:true`, `consoleErrors:[]`
+
+### 4.2 권장안과 다르게 고친 부분 — BUG-07
+
+권장안(`node --test test/*.test.js`, 따옴표 제거)은 Windows에서 오히려 깨질 수 있습니다. npm은 Windows에서 스크립트를 `cmd.exe`로 실행하는데, `cmd.exe`는 `*`를 풀어 주지 않습니다. 그래서 이 방식은 셸이 글로브를 풀어 주는 macOS·Linux에서만 확실히 동작합니다.
+
+대신 인자 없이 `node --test`를 쓰도록 바꿨습니다. Node의 기본 탐색 규칙이 `test/` 폴더의 파일과 `*.test.js`를 찾고 `node_modules`는 제외합니다. 이 방식은 셸 종류나 Node 버전(18 이상)과 상관없이 같은 결과를 냅니다.
+
+### 4.3 남은 의견
+
+- BUG-04는 화면 동작이라 자동 테스트가 없습니다. 메모 화면을 여러 번 오간 뒤 `statusListeners` 길이가 늘지 않는지 확인하는 브라우저 점검을 추가할 만합니다.
+- BUG-06은 `main.js`에 있어 테스트에서 직접 부를 수 없습니다. 날짜 계산을 `src/core`의 함수로 빼면 테스트할 수 있습니다.
+- 수정 사항은 아직 커밋하지 않았습니다.

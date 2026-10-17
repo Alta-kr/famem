@@ -496,11 +496,21 @@
     (note.capture.created || []).forEach(function (c) {
       if (c.kind === 'task') M.deleteTask(state, c.id, now); else M.deleteBlock(state, c.id);
     });
+    // 완료 보고·날짜 바꾸기로 손댄 기존 할 일도 원래대로 (메모일 뿐이었다)
+    (note.capture.completed || []).forEach(function (d) {
+      M.reopenTask(state, d.id, now, { undoOf: d.historyId, prevStatus: d.prevStatus });
+    });
+    (note.capture.updated || []).forEach(function (u) {
+      var tk = M.byId(state.tasks, u.id);
+      if (tk && u.prev) M.updateTask(state, tk.id, { dueDate: u.prev.dueDate, dueTime: u.prev.dueTime }, now);
+      if (u.prevWork) M.updateBlock(state, u.prevWork.id, { start: u.prevWork.start, end: u.prevWork.end });
+      if (u.newWorkId) M.deleteBlock(state, u.newWorkId);
+    });
     state.proposals.forEach(function (p) {
       if (p.source && p.source.id === noteId && (p.status === 'accepted' || p.status === 'pending')) { p.status = 'dismissed'; p.reviewedAt = iso(now); }
     });
     note.captureRole = 'memo';
-    note.capture = Object.assign({}, note.capture, { entryType: 'memo', created: [], skipped: [], changedByUser: true });
+    note.capture = Object.assign({}, note.capture, { entryType: 'memo', created: [], skipped: [], completed: [], updated: [], changedByUser: true });
     return note;
   }
 

@@ -104,7 +104,7 @@ ipcMain.handle('ai:check', async () => {
   const capture = require('./src/core/ai/capture');
   const now = new Date();
   const input = capture.buildInput({ id: 'check-' + now.getTime(), title: '', body: '내일까지 견적서 보내기', updatedAt: now.toISOString() },
-    { today: now.toISOString().slice(0, 10), timezone: 'Asia/Seoul', projects: [], openTasks: [] });
+    { today: require('./src/core/dates').ymd(now), timezone: 'Asia/Seoul', projects: [], openTasks: [] });   // 현지 날짜 (UTC 로 자르면 오전 9시 전엔 전날)
   const t0 = Date.now();
   const r = await ai.organize(input);
   return r.ok ? { ok: true, ms: Date.now() - t0, model: r.model } : { ok: false, ms: Date.now() - t0, error: r.error };

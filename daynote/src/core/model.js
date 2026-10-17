@@ -444,6 +444,12 @@
     state.notes.forEach(function (n) { alive[n.id] = true; });
     state.aiRuns = state.aiRuns.filter(function (r) { return alive[r.noteId]; });
     state.noteDigests = state.noteDigests.filter(function (d) { return alive[d.noteId]; });
+    // 지워진 샘플 프로젝트를 가리키던 사용자 항목은 '프로젝트 없음' 으로 (고아 참조를 남기지 않는다)
+    var aliveProj = {};
+    state.projects.forEach(function (p) { if (!p.deletedAt) aliveProj[p.id] = true; });
+    ['notes', 'tasks', 'blocks', 'history', 'suggestions'].forEach(function (k) {
+      state[k].forEach(function (item) { if (item.projectId && !aliveProj[item.projectId]) item.projectId = null; });
+    });
     if (state.emailConnection.provider === 'sample') {
       state.emailConnection = { status: 'disconnected', provider: null, lastSyncAt: null, error: null };
     }

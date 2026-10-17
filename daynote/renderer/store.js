@@ -138,7 +138,11 @@
     whenReady: function (fn) { if (loaded) setTimeout(fn, 0); else readyQueue.push(fn); },
 
     subscribe: function (fn) { listeners.push(fn); return function () { listeners = listeners.filter(function (f) { return f !== fn; }); }; },
-    onStatus: function (fn) { statusListeners.push(fn); fn(saveStatus); },
+    // 구독 해제 함수를 돌려준다 (화면을 다시 열 때마다 쌓이지 않게)
+    onStatus: function (fn) {
+      statusListeners.push(fn); fn(saveStatus);
+      return function () { statusListeners = statusListeners.filter(function (f) { return f !== fn; }); };
+    },
     status: function () { return saveStatus; },
 
     // label 이 있으면 되돌리기 대상이 된다. fn 의 반환값을 그대로 돌려준다.

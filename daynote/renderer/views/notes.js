@@ -328,10 +328,10 @@
     renderEditor();
     renderReview();
 
-    S.onStatus(function () { if (ed && unsubStatus === false) setStatus(); });
+    var offStatus = S.onStatus(function () { if (ed && unsubStatus === false) setStatus(); });
 
     return {
-      destroy: function () { flushPending(); unsubStatus = true; offAi(); root.style.overflow = ''; },
+      destroy: function () { flushPending(); unsubStatus = true; offStatus(); offAi(); root.style.overflow = ''; },
       // 편집기는 다시 만들지 않는다 (커서·실행 취소 기록을 지킨다)
       onChange: function (info) {
         if (info.type === 'load' || info.type === 'undo') { ed = null; return false; }

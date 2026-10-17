@@ -101,7 +101,7 @@
       var a = document.activeElement;
       if (!a || a === document.body || a.id === 'view') ta.focus();
     }, 0);
-    return { refresh: paintList, focus: function () { ta.focus(); }, destroy: function () { offAi(); } };
+    return { refresh: paintList, focus: function () { ta.focus(); }, destroy: function () { clearInterval(timerTick); timerTick = null; offAi(); } };
   }
 
   // 휴식 타이머 표시
@@ -408,6 +408,17 @@
     var now = DN.app.now();
     if (it.kind === 'task') {
       S.mutate(ymd ? '마감일 바꾸기' : '마감일 지우기', function (s) {
+        // 시간 정한 할 일이면 작업 시간도 같은 날로 옮긴다 (날짜 없음이면 작업 시간을 지운다)
+        var work = M.blocksForTask(s, it.item.id).filter(function (b) { return b.kind === 'work' && new Date(b.end) > now; })[0];
+        if (work) {
+          if (!ymd) M.deleteBlock(s, work.id);
+          else {
+            var ws = new Date(work.start);
+            var wlen = Math.max(15, Math.round((new Date(work.end) - ws) / 60000)) || 30;
+            var wn = D.parseYmd(ymd, time || D.hm(ws));
+            M.updateBlock(s, work.id, { start: wn.toISOString(), end: D.addMinutes(wn, wlen).toISOString() });
+          }
+        }
         M.updateTask(s, it.item.id, ymd ? { dueDate: ymd } : { dueDate: null, dueTime: null }, now);
       }, { source: 'capture' });
       return;
