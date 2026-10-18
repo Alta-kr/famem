@@ -378,8 +378,13 @@
       if (p.kind === 'event') {
         var ev = effective(p);
         if (ev.date && ev.time && !(ev.durationMinutes > 0)) {
+          // 길이: AI 가 글에서 읽은 값(앱이 글로 확인 못 한 것) → AI 가 짐작한 보통 길이 → 30분
+          var dField = p.payload.fields && p.payload.fields.durationMinutes;
+          //   글에서 읽은 길이(메모 기준)가 AI 값과 다르면 글을 믿는다
+          var memoDur = dField && (dField.options || []).filter(function (o) { return o.label === '메모 기준' && o.value > 0; })[0];
+          var aiDur = dField && (dField.options || []).filter(function (o) { return o.label === 'AI 제안' && o.value > 0; })[0];
           var typ = p.payload.extra && p.payload.extra.typicalMinutes;
-          p.edits = Object.assign({}, p.edits || {}, { durationMinutes: typ || 30 });
+          p.edits = Object.assign({}, p.edits || {}, { durationMinutes: (memoDur && memoDur.value) || (aiDur && aiDur.value) || typ || 30 });
           guessedDur[p.id] = true;
         }
       }

@@ -87,3 +87,26 @@ test('AI 정리와 날짜: 마감 말이 있으면 마감, 날짜만 있으면 �
   P.captureRemoveItem(st, note.id, { kind: 'moved', id: plan.id }, at);
   assert.strictEqual(plan.planDate, '2026-10-23');
 });
+
+test('일정 길이: "10시부터 12시까지" 는 글에서 120분, 길이가 없으면 AI 가 짐작한 보통 길이', () => {
+  const V = require('../src/core/ai/validate');
+  const P = require('../src/core/ai/proposals');
+  const C = require('../src/core/ai/capture');
+  const at = new Date(2026, 9, 21, 10, 0);
+  const st = M.emptyState();
+  const nul = { text: null, date: null, time: null };
+  const base = { summary: '', sections: [], tasks: [], open_questions: [], entry_type: 'task', note_title: 'x', note_project_hint: null, note_kind: 'memo', done_tasks: [], updated_tasks: [], bulk_updates: [], commands: [] };
+  function send(body, ev) {
+    const note = M.addNote(st, { title: '', body, capture: { status: 'pending', at: at.toISOString() } }, at);
+    note.updatedAt = at.toISOString();
+    const out = Object.assign({}, base, { events: [Object.assign({ title: 'x', evidence: { quote: body, line: 1 }, location: null, basis: 'explicit' }, ev)] });
+    const run = P.startRun(st, { noteId: note.id, kind: 'capture', promptVersion: C.PROMPT_VERSION }, at);
+    P.applyCapture(st, { note, run, validated: V.validateOrganizeNote(out, { note, state: st, now: at }), output: out }, at);
+    const b = st.blocks[st.blocks.length - 1];
+    return Math.round((new Date(b.end) - new Date(b.start)) / 60000);
+  }
+  assert.strictEqual(send('다음 주 화요일 10시부터 12시까지 워크숍', { title: '워크숍', start: { text: '다음 주 화요일 10시', date: '2026-10-27', time: '10:00' }, duration_minutes: 120, typical_minutes: null }), 120);
+  assert.strictEqual(send('내일 3시 치과', { title: '치과', start: { text: '내일 3시', date: '2026-10-22', time: '15:00' }, duration_minutes: null, typical_minutes: 60 }), 60);
+  assert.strictEqual(send('금요일 4시 통화', { title: '통화', start: { text: '금요일 4시', date: '2026-10-23', time: '16:00' }, duration_minutes: null, typical_minutes: null }), 30);
+  void nul;
+});

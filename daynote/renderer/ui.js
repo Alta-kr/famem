@@ -380,7 +380,8 @@
     }
     // 마감 ↔ 할 날 옮기기 — "이건 마감이 아니라 그날 하려던 거야" (또는 반대)
     function swap() {
-      var to = mode === 'plan' ? 'due' : 'plan';
+      // 할 날 탭에서는 지금 마감을 할 날로, 마감 탭에서는 지금 할 날을 마감으로 — 보고 있는 탭 쪽으로 옮긴다
+      var to = mode;
       var day = to === 'plan' ? t.dueDate : t.planDate;
       S.mutate(to === 'plan' ? '마감을 할 날로' : '할 날을 마감으로', function (s) {
         M.updateTask(s, taskId, to === 'plan' ? { planDate: day, dueDate: null, dueTime: null } : { dueDate: day, planDate: null }, now);
