@@ -162,7 +162,29 @@
       section('alert', '이슈·장애물', histList(summary.blockers)),
       section('star', '성과', histList(summary.achievements)),
       summary.updates.length ? section('edit', '업데이트', histList(summary.updates)) : null,
-      section('calendar', '다음 주 계획', nextBody));
+      section('calendar', '다음 주 계획', nextBody),
+      section('clock', '쓴 시간', timeBody()));
+
+    // 쓴 시간 — 프로젝트별, 많이 쓴 할 일 3개씩 (UX 점검 WK-01)
+    function timeBody() {
+      var rows = DN.timesheet.weekByProject(S.state, week, A().now());
+      if (!rows.length) return h('div.help', '이번 주에 [지금 시작]으로 기록한 작업 시간이 없어요.');
+      var total = rows.reduce(function (a, r) { return a + r.minutes; }, 0);
+      return h('div',
+        h('div.help', { style: { marginTop: 0 } }, '합계 ' + D.duration(total) + ' — 할 일을 [지금 시작]한 때부터 일시 정지·완료까지'),
+        h('ul', rows.map(function (r) {
+          return h('li', h('b', r.name), ' · ' + D.duration(r.minutes),
+            h('div.help', r.tasks.slice(0, 3).map(function (t) { return t.title + ' ' + D.duration(t.minutes); }).join(' · ') + (r.tasks.length > 3 ? ' · 외 ' + (r.tasks.length - 3) + '개' : '')));
+        })),
+        h('button.btn.btn-sm', { type: 'button', onclick: function () {
+          var to = D.ymd(D.addDays(D.parseYmd(week), 6));
+          S.host.exportFile('작업시간-' + week + '.csv', DN.timesheet.csv(S.state, week, to, A().now())).then(function (res) {
+            if (res && res.canceled) return;
+            if (res && res.ok === false) ui.toast('내보내지 못했어요' + (res.error ? ': ' + res.error : '.'), { error: true });
+            else ui.toast('이번 주 작업 시간을 CSV 로 내보냈어요.');
+          });
+        } }, ui.icon('download'), '이번 주 작업 시간 CSV'));
+    }
 
     // ---------------------------------------------------------------- 보고서
     function newDraft() {

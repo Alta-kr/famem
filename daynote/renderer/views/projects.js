@@ -109,14 +109,35 @@
       desc);
   }
 
+  // 개요 — 할 일 수에 더해 쓴 시간·남은 예상·예상 대비 실제 (프리랜서의 청구·견적 — UX 점검 P-01)
   function renderOverview(st, sel) {
     var tasks = M.liveTasks(st).filter(function (t) { return inProject(t, sel); });
     var wk = D.startOfWeek(now()).toISOString();
-    var stat = function (k, v) { return h('div.card.stat', h('div.k', k), h('div.v', String(v))); };
-    return h('div.proj-overview',
-      stat('진행 중', tasks.filter(function (t) { return t.status === 'in_progress' || t.status === 'paused'; }).length),
+    var TS = DN.timesheet;
+    var sum = TS.projectSummary(st, sel === NONE ? null : sel, now());
+    var stat = function (k, v, help) { return h('div.card.stat', { title: help || '' }, h('div.k', k), h('div.v', String(v))); };
+    var dur = function (m) { return m ? D.duration(m) : '0분'; };
+    return h('div', h('div.proj-overview',
       stat('남은 할 일', tasks.filter(function (t) { return t.status !== 'done'; }).length),
-      stat('이번 주 완료', tasks.filter(function (t) { return t.status === 'done' && t.completedAt && t.completedAt >= wk; }).length));
+      stat('이번 주 완료', tasks.filter(function (t) { return t.status === 'done' && t.completedAt && t.completedAt >= wk; }).length),
+      stat('이번 주 쓴 시간', dur(sum.weekMin), '할 일을 [지금 시작]한 때부터 일시 정지·완료까지'),
+      stat('지금까지 쓴 시간', dur(sum.totalMin)),
+      stat('남은 예상', sum.remainingMin ? '약 ' + D.duration(sum.remainingMin) : '—', '남은 할 일의 예상 시간 - 이미 쓴 시간'),
+      stat('예상 대비 실제', sum.ratio ? '×' + sum.ratio : '—', '예상 시간이 있는 끝낸 일 기준. 1보다 크면 예상보다 오래 걸렸어요 — 견적에 곱해 보세요')),
+      h('div.proj-time-actions',
+        h('button.btn.btn-sm', { type: 'button', title: '이번 달 이 프로젝트의 작업 시간을 날짜별로 (청구·보고용)', onclick: function () { exportTime(st, sel); } }, ui.icon('download'), '이번 달 작업 시간 내보내기 (CSV)')));
+  }
+  function exportTime(st, sel) {
+    var n = now(), first = new Date(n.getFullYear(), n.getMonth(), 1), last = new Date(n.getFullYear(), n.getMonth() + 1, 0);
+    var only = sel === NONE ? null : sel;
+    var sub = Object.assign({}, st, { tasks: st.tasks.filter(function (t) { return (t.projectId || null) === only; }) });
+    var p = only && M.byId(st.projects, only);
+    var name = '작업시간-' + (p ? p.name : '프로젝트없음') + '-' + D.ymd(first).slice(0, 7) + '.csv';
+    S.host.exportFile(name, DN.timesheet.csv(sub, D.ymd(first), D.ymd(last), n)).then(function (res) {
+      if (res && res.canceled) return;
+      if (res && res.ok === false) ui.toast('내보내지 못했어요' + (res.error ? ': ' + res.error : '.'), { error: true });
+      else ui.toast('작업 시간을 CSV 로 내보냈어요.');
+    });
   }
 
   function renderTasks(st, sel) {

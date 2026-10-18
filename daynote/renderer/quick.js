@@ -30,14 +30,21 @@
     Q.submit(text).then(function (r) {
       sending = false;
       if (!r || !r.ok) { document.getElementById('sent-text').textContent = '보내지 못했어요. Daynote 창에서 다시 시도해 주세요.'; }
-      else { document.getElementById('sent-text').textContent = '보냈어요. 정리 결과는 Daynote 오늘 화면에 있어요.'; ta.value = ''; }
+      else { document.getElementById('sent-text').textContent = '보냈어요 — 정리하는 중…'; ta.value = ''; }
       document.body.classList.add('is-sent');
       Q.resize(Math.ceil(panel.getBoundingClientRect().height) + 44);
       clearTimeout(hideTimer);
-      hideTimer = setTimeout(function () { Q.hide(); }, r && r.ok ? 700 : 2000);
+      // 결과 한 줄이 오면 잠깐 보여 주고 닫는다 (안 오면 4초 뒤에 닫는다)
+      hideTimer = setTimeout(function () { Q.hide(); }, r && r.ok ? 4000 : 2000);
     });
   }
 
+  if (Q.onResult) Q.onResult(function (text) {
+    if (!document.body.classList.contains('is-sent')) return;
+    document.getElementById('sent-text').textContent = text + ' · 고치려면 Daynote 오늘 화면에서';
+    clearTimeout(hideTimer);
+    hideTimer = setTimeout(function () { Q.hide(); }, 2200);
+  });
   ta.addEventListener('input', fit);
   ta.addEventListener('keydown', function (e) {
     if (e.isComposing || e.keyCode === 229) return;   // 한글 조합 중 Enter 는 글자 확정

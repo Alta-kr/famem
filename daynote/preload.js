@@ -25,5 +25,9 @@ contextBridge.exposeInMainWorld('daynoteHost', {
   ready: () => ipcRenderer.invoke('app:ready'),
   onFlush: (fn) => ipcRenderer.on('app:flush', () => fn()),
   setCloseToTray: (on) => ipcRenderer.invoke('app:setCloseToTray', !!on),
-  flushed: () => ipcRenderer.invoke('app:flushed')
+  flushed: () => ipcRenderer.invoke('app:flushed'),
+  notify: (title, body, sound) => ipcRenderer.invoke('app:notify', String(title || ''), String(body || ''), !!sound),
+  setStatus: (text) => ipcRenderer.invoke('app:status', String(text || '')),
+  quickResult: (text) => ipcRenderer.send('quick:result', String(text || '')),
+  fetchCalendar: (url) => ipcRenderer.invoke('cal:fetch', String(url || ''))
 });

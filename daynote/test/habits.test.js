@@ -99,3 +99,15 @@ test('일한 흐름: 50분쯤 이어서 일한 뒤 일을 끝내면 쉬기 권�
   assert.strictEqual(HB.workRunMinutes(late, new Date(2026, 9, 20, 0, 10)), 5);
   assert.strictEqual(HB.REST_DEFAULT_MIN, 3);
 });
+
+test('하루 마무리: 오늘 하려던 일만 묻고, 앞날로 이미 정한 일은 빼기', () => {
+  const st = M.emptyState();
+  const today = D.ymd(NOW), tom = D.ymd(D.addDays(NOW, 1));
+  const a = M.addTask(st, { title: '오늘 마감', dueDate: today }, NOW);
+  const b = M.addTask(st, { title: '금요일에 하기', planDate: D.ymd(D.addDays(NOW, 3)) }, NOW);
+  const c = M.addTask(st, { title: '다음 주 마감', dueDate: D.ymd(D.addDays(NOW, 7)) }, NOW);
+  const d = M.addTask(st, { title: '날짜 없음' }, NOW);
+  const e = M.addTask(st, { title: '할 날 오늘', planDate: today, dueDate: tom }, NOW);
+  const r = HB.dayClose(st, NOW, [a, b, c, d, e]);
+  assert.deepStrictEqual(r.left.map((t) => t.title), ['오늘 마감', '날짜 없음', '할 날 오늘']);
+});

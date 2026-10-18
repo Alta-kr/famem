@@ -10,7 +10,7 @@
   if (typeof module !== 'undefined' && module.exports) module.exports = api;
   if (typeof window !== 'undefined') { window.Daynote = window.Daynote || {}; window.Daynote.split = api; }
 })(function () {
-  var DEFAULT = [0.45, 0.33, 0.22];
+  var DEFAULT = [0.58, 0.24, 0.18];   // 할 일이 화면의 주인공 — 일하는 사람이 가장 자주 보는 곳 (UX 점검 H-01)
   var MIN_PX = 72;           // 머리줄과 한두 줄이 보이는 정도
   var KEY_STEP = 0.05;
   var EPS = 1e-3;

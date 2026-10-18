@@ -268,6 +268,11 @@
     if (t.runningSince) {
       var ms = new Date(iso(now)) - new Date(t.runningSince);
       t.workedMs = (t.workedMs || 0) + Math.max(0, ms);
+      // 언제 일했는지 — 주간·프로젝트별 쓴 시간과 청구용 내보내기에 쓴다 (timesheet.js)
+      if (ms >= 30000) {
+        t.sessions = (t.sessions || []).concat({ s: t.runningSince, e: iso(now) });
+        if (t.sessions.length > 300) t.sessions = t.sessions.slice(-300);
+      }
       t.runningSince = null;
     }
   }

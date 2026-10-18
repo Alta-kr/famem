@@ -29,6 +29,12 @@
     },
     dataPath: function () { return Promise.resolve('브라우저 localStorage'); },
     revealData: function () { return Promise.resolve(); },
+    notify: function (title, body) {
+      try { if (window.Notification && Notification.permission === 'granted') new Notification(title, { body: body }); } catch (e) {}
+      return Promise.resolve(true);
+    },
+    setStatus: function () { return Promise.resolve(true); },
+    fetchCalendar: function () { return Promise.resolve({ ok: false, error: '브라우저 미리보기에서는 주소로 가져올 수 없어요 — ICS 파일로 가져오세요' }); },
     copyText: function (text) {
       if (navigator.clipboard && navigator.clipboard.writeText) return navigator.clipboard.writeText(text).then(function () { return true; });
       var ta = document.createElement('textarea'); ta.value = text; document.body.appendChild(ta); ta.select();
@@ -188,10 +194,8 @@
       var last = undoStack.pop();
       if (!last) return null;
       redoStack.push({ label: last.label, snapshot: clone(state), at: Date.now(), key: last.key });
-      // 화면 설정(prefs: 사이드바·모션 줄이기·홈 분할 비율 등)은 되돌리기 대상이 아니다 — 지금 값을 유지한다
-      var prefs = state.prefs;
-      state = last.snapshot;
-      state.prefs = prefs;
+      // 화면 설정(prefs: 사이드바·모션 줄이기·홈 분할 비율 등)과 외부 캘린더에서 가져온 일정은 되돌리기 대상이 아니다 — 지금 값을 유지한다
+      state = keepLive(state, last.snapshot);
       scheduleSave();
       emit({ type: 'undo', label: last.label });
       return last.label;
@@ -201,9 +205,7 @@
       var next = redoStack.pop();
       if (!next) return null;
       undoStack.push({ label: next.label, snapshot: clone(state), at: Date.now(), key: next.key });
-      var prefs = state.prefs;
-      state = next.snapshot;
-      state.prefs = prefs;
+      state = keepLive(state, next.snapshot);
       scheduleSave();
       emit({ type: 'redo', label: next.label });
       return next.label;
@@ -213,6 +215,13 @@
     retrySave: function () { dirty = true; return flush(); },
     replaceAll: function (next) { state = M.normalize(next); undoStack = []; redoStack = []; scheduleSave(); emit({ type: 'load' }); }
   };
+
+  function keepLive(cur, snap) {
+    snap.prefs = cur.prefs;
+    snap.blocks = snap.blocks.filter(function (b) { return b.origin !== 'ics'; }).concat(cur.blocks.filter(function (b) { return b.origin === 'ics'; }));
+    if (snap.meta && cur.meta) snap.meta.extDays = cur.meta.extDays;
+    return snap;
+  }
 
   // 창을 닫기 전에 남은 저장을 끝낸다
   host.onBeforeClose(function () { flush().then(function () { host.flushed(); }); });

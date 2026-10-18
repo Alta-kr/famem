@@ -39,11 +39,20 @@
     els.undoBtn = h('button.icon-btn.hist-btn', { type: 'button', title: '되돌리기 (Ctrl+Z)', 'aria-label': '되돌리기', onclick: function () { undo(); } }, ui.icon('undo'));
     els.redoBtn = h('button.icon-btn.hist-btn', { type: 'button', title: '다시 실행 (Ctrl+Y)', 'aria-label': '다시 실행', onclick: function () { redo(); } }, ui.icon('redo'));
     els.hist = h('div.hist-btns', els.undoBtn, els.redoBtn);
+    // 집중 타이머 — 어느 화면에서나 보이게 (UX 점검 W-03)
+    els.focusTime = h('b', '');
+    els.focus = h('div.focus-pill', { hidden: true },
+      h('button.focus-pill-main', { type: 'button', title: '집중 중인 일 열기', onclick: function () {
+        var f = S.state.meta.focus; if (!f) return;
+        if (cur.view !== 'today') go('today');
+        if (DN.assistant) DN.assistant.work(f.taskId);
+      } }, ui.icon('clock'), h('span.focus-pill-label', '집중 '), els.focusTime),
+      h('button.focus-pill-stop', { type: 'button', title: '집중 그만', 'aria-label': '집중 그만', onclick: function () { if (DN.assistant) DN.assistant.stopFocus(); } }, ui.icon('x')));
     els.sidebar = h('aside.sidebar',
       h('div.brand', h('div.brand-mark', { 'aria-hidden': 'true' }, 'D'), h('div.brand-name', 'Daynote'),
         h('button.icon-btn.brand-collapse', { type: 'button', 'aria-label': '사이드바 접기/펴기', title: '사이드바 접기/펴기 (Ctrl+\\)', onclick: toggleSidebar }, ui.icon('sidebar'))),
       els.nav,
-      h('div.sidebar-foot', els.navSub, h('div.sidebar-foot-row', els.save, els.hist))
+      h('div.sidebar-foot', els.focus, els.navSub, h('div.sidebar-foot-row', els.save, els.hist))
     );
     els.banner = h('div');
     els.view = h('div.view', { id: 'view', tabindex: '-1' });
@@ -58,6 +67,27 @@
     S.subscribe(renderHist);
     renderHist();
   }
+
+  // 집중 남은 시간 — 사이드바 알약 · 창 제목(작업 표시줄) · 트레이 툴팁. 1초마다
+  var baseTitle = 'Daynote', lastStatus = null;
+  function focusTick() {
+    var f = S.state.meta.focus;
+    var title = baseTitle, status = '';
+    if (f && els.focus) {
+      var left = Math.max(0, new Date(f.end) - Date.now());
+      var txt = Math.floor(left / 60000) + ':' + ('0' + (Math.floor(left / 1000) % 60)).slice(-2);
+      var t = M.byId(S.state.tasks, f.taskId);
+      els.focus.hidden = false;
+      els.focusTime.textContent = txt + ' 남음';
+      els.focus.title = t ? '집중: ' + t.title : '';
+      title = '⏱ ' + txt + ' · ' + baseTitle;
+      status = '집중 ' + Math.ceil(left / 60000) + '분 남음' + (t ? ' · ' + t.title : '');
+    } else if (els.focus) els.focus.hidden = true;
+    if (document.title !== title) document.title = title;
+    if (status !== lastStatus) { lastStatus = status; if (S.host && S.host.setStatus) try { S.host.setStatus(status); } catch (e) {} }
+  }
+  setInterval(focusTick, 1000);
+  S.subscribe(function () { focusTick(); });   // 시작·그만은 바로 보이게
 
   function renderNav() {
     var st = S.state;
@@ -127,7 +157,8 @@
     renderView();
     renderNav();
     var v = DN.views[view];
-    document.title = (v.title || '') + ' · Daynote';
+    baseTitle = (v.title || '') + ' · Daynote';
+    focusTick();
   }
 
   function renderView() {
@@ -143,6 +174,8 @@
   function onStoreChange(info) {
     renderNav();
     applyPrefs();
+    // 외부 캘린더 가져오기는 일정이 보이는 화면만 다시 그린다 (메모·보고서를 쓰는 중에 화면이 바뀌지 않게)
+    if (info.source === 'calendar' && ['today', 'calendar', 'settings'].indexOf(cur.view) === -1) return;
     if (detailTaskId) {
       var t = M.byId(S.state.tasks, detailTaskId);
       if (!t || t.deletedAt) closeDetail();
@@ -362,7 +395,7 @@
   // 빠른 기록 대화상자 (Ctrl+N) — 닫아도 초안은 남는다
   function quickCapture() {
     var st = S.state;
-    var ta = h('textarea.textarea', { rows: 6, placeholder: '떠오른 생각을 적어 두세요. 분류는 나중에 해도 됩니다.', 'aria-label': '빠른 메모' });
+    var ta = h('textarea.textarea', { rows: 6, placeholder: '떠오른 걸 적어 두세요 — 할 일·일정·메모는 AI가 바로 나눠요 (결과는 오늘 화면 채팅에)', 'aria-label': '빠른 메모' });
     ta.value = st.quickDraft.text || '';
     var proj = h('select.select', { 'aria-label': '프로젝트 (선택)' }, ui.projectOptions(st, st.quickDraft.projectId, '프로젝트 선택 안 함'));
     var t;
@@ -384,9 +417,10 @@
   function saveQuick(text, projectId, opts) {
     if (!text.trim()) { ui.toast('내용을 입력해 주세요.'); return false; }
     S.mutate(null, function (s) { s.quickDraft = { text: '', projectId: null }; }, { source: 'today', silent: true });
-    var note = DN.capture.submit(text, projectId);
+    // 어디서 적든 같은 길 — 홈 채팅과 똑같이 정리하고 결과 카드로 보여 준다 (UX 점검 C-03)
+    var note = DN.assistant ? DN.assistant.send(text, projectId) : DN.capture.submit(text, projectId);
     if (!(opts && opts.silent)) {
-      ui.toast('저장했어요. AI가 메모인지 할 일인지 나누는 중이에요.', { action: { label: '오늘에서 보기', fn: function () { go('today'); } } });
+      ui.toast('저장했어요. AI가 나눈 결과는 오늘 화면 채팅에 있어요 — 거기서 바로 고칠 수 있어요.', { action: { label: '결과 보기', fn: function () { go('today'); } } });
     }
     return note;
   }
@@ -417,6 +451,7 @@
       S.subscribe(onStoreChange);
       applyPrefs();
       go('today');
+      if (DN.calsync) DN.calsync.start();
       if (res.recovered) ui.toast('지난번에 저장되지 않은 내용을 복구했습니다.', { duration: 6000 });
     }).catch(function (e) {
       document.getElementById('app').textContent = '데이터를 불러오지 못했습니다: ' + e.message;

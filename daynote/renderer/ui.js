@@ -69,6 +69,8 @@
     sidebar: '<rect x="3" y="4" width="18" height="16" rx="2"/><path d="M9 4v16"/>',
     copy: '<rect x="8" y="8" width="12" height="12" rx="2"/><path d="M16 8V6a2 2 0 0 0-2-2H6a2 2 0 0 0-2 2v8a2 2 0 0 0 2 2h2"/>',
     download: '<path d="M12 4v11M7 10l5 5 5-5M5 20h14"/>',
+    upload: '<path d="M12 16V5M7 10l5-5 5 5M5 20h14"/>',
+    pin: '<path d="M12 21s-6-5.6-6-11a6 6 0 0 1 12 0c0 5.4-6 11-6 11z"/><circle cx="12" cy="10" r="2.2"/>',
     spark: '<path d="M12 3v4M12 17v4M3 12h4M17 12h4M6 6l2.5 2.5M15.5 15.5L18 18M6 18l2.5-2.5M15.5 8.5L18 6"/>',
     check: '<path d="M5 12.5l4.5 4.5L19 7.5"/>',
     more: '<circle cx="5" cy="12" r="1.3"/><circle cx="12" cy="12" r="1.3"/><circle cx="19" cy="12" r="1.3"/>',
@@ -578,17 +580,39 @@
     return t;
   }
 
-  // 실제 작업 시간 — 마감일과 다른 정보임을 아이콘과 문구로 구분한다
+  // 앱 밖 알림 — 사용자가 Daynote 를 보고 있지 않을 때만 (보고 있으면 화면 안 카드로 충분하다)
+  function osNotify(title, body, opts) {
+    opts = opts || {};
+    if (!opts.always && document.hasFocus()) return false;
+    var host = window.Daynote.store.host;
+    if (host && host.notify) { try { host.notify(title, body, !!opts.sound); } catch (e) {} return true; }
+    return false;
+  }
+
+  // 날짜 네 가지는 어느 화면에서나 같은 말·같은 아이콘으로 (UX 점검 C-01)
+  //   마감(언제까지) = 깃발 · 할 날(이날 하기) = 달력 · 작업 시간(몇 시에) = 시계 · 일정 = 캘린더 카드
+  // 할 날 칩 — 누르면 날짜 창(할 날 탭)
+  function planChip(task, now) {
+    if (!task.planDate || task.status === 'done') return null;
+    now = now || window.Daynote.app.now();
+    var el = h('span.chip.chip-plan.is-editable', { role: 'button', tabindex: '0', title: '할 날 — 이날 하기로 한 일 (눌러서 바꾸기)' }, icon('calendar'), D.relDay(task.planDate, now) + '에 하기');
+    el.addEventListener('click', function (e) { e.preventDefault(); e.stopPropagation(); dueEditor(el, task.id); });
+    el.addEventListener('keydown', function (e) { if (e.key === 'Enter' || e.key === ' ') { e.preventDefault(); e.stopPropagation(); dueEditor(el, task.id); } });
+    el.addEventListener('dragstart', function (e) { e.preventDefault(); e.stopPropagation(); });
+    return el;
+  }
+
+  // 실제 작업 시간 — 마감일과 다른 정보임을 아이콘과 문구로 구분한다. 없으면 칩을 두지 않는다 ('없음' 칩은 잡음 — C-04)
   function scheduleChip(state, task, now) {
     if (task.status === 'done') return null;
     var b = M.nextBlockForTask(state, task.id, now);
     if (b) return h('span.chip.chip-sched', icon('clock'), '작업 ' + D.relDay(D.ymd(b.start), now) + ' ' + D.hm(b.start));
-    return h('span.chip.chip-unsched', '일정 미배치');
+    return null;
   }
 
   function estimateChip(task) {
     if (task.status === 'done') return null;
-    if (task.estimateMinutes == null) return h('span.chip', '소요 시간 미정');
+    if (task.estimateMinutes == null) return null;
     if (task.estimateSource === 'ai') return h('span.chip.chip-guess', { title: 'AI 추정값 — 눌러서 확인·수정' }, '약 ' + D.duration(task.estimateMinutes) + ' (추정)');
     return h('span.chip', icon('clock'), D.duration(task.estimateMinutes));
   }
@@ -632,7 +656,8 @@
     });
     var chips = h('div.task-chips',
       statusChips(state, task, now),
-      dueChip(task, now),
+      dueChip(task, now, { add: !task.planDate }),
+      planChip(task, now),
       opts.compact ? null : scheduleChip(state, task, now),
       opts.compact ? null : estimateChip(task),
       opts.hideProject ? null : projectChip(state, task.projectId),
@@ -815,7 +840,7 @@
     h: h, icon: icon, toast: toast, undoToast: undoToast, modal: modal, confirm: confirmDialog, menu: menu, closeMenu: closeMenu, popover: popover,
     kindChip: kindChip, KIND_LABEL: KIND_LABEL, KIND_ICON: KIND_ICON, josa: josa,
     stepsPanel: stepsPanel, stepsToggle: stepsToggle, stepTree: stepTree, dueEditor: dueEditor, projectPicker: projectPicker, projectPickChip: projectPickChip,
-    projectChip: projectChip, dueChip: dueChip, postponeOverdue: postponeOverdue, scheduleChip: scheduleChip, estimateChip: estimateChip,
+    projectChip: projectChip, dueChip: dueChip, planChip: planChip, osNotify: osNotify, postponeOverdue: postponeOverdue, scheduleChip: scheduleChip, estimateChip: estimateChip,
     statusChips: statusChips, sourceChip: sourceChip, taskRow: taskRow, projectOptions: projectOptions, highlight: highlight
   };
 })();

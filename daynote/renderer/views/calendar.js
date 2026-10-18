@@ -103,6 +103,10 @@
       if (t.dueDate && t.status !== 'done') (dueByDay[t.dueDate] = dueByDay[t.dueDate] || []).push(t);
       if (t.planDate && t.status !== 'done' && t.planDate !== t.dueDate) (planByDay[t.planDate] = planByDay[t.planDate] || []).push(t);
     });
+    function allDayLabel(key) {
+      var ad = DN.calsync ? DN.calsync.allDayOn(st, key) : [];
+      return ad.length ? h('div.due.is-ext', { title: ad.map(function (x) { return x.title; }).join(', ') }, '종일 · ' + ad[0].title + (ad.length > 1 ? ' 외 ' + (ad.length - 1) : '')) : null;
+    }
     var daysHead = h('div.cal-days-head', { style: { gridTemplateColumns: cols } }, h('div'),
       days.map(function (d) {
         var key = D.ymd(d);
@@ -110,7 +114,8 @@
         return h('div.cal-day-label' + (key === D.ymd(now) ? '.is-today' : ''),
           D.WEEKDAYS[d.getDay()], h('b', String(d.getDate())),
           due.length ? h('div.due', { title: due.map(function (t) { return t.title; }).join(', ') }, '마감 ' + due.length + ' · ' + due[0].title) : null,
-          (planByDay[key] || []).length ? h('div.due.is-plan', { title: planByDay[key].map(function (t) { return t.title; }).join(', ') }, '할 날 ' + planByDay[key].length + ' · ' + planByDay[key][0].title) : null);
+          (planByDay[key] || []).length ? h('div.due.is-plan', { title: planByDay[key].map(function (t) { return t.title; }).join(', ') }, '할 날 ' + planByDay[key].length + ' · ' + planByDay[key][0].title) : null,
+          allDayLabel(key));
       }));
 
     // ---------------------------------------------------------- 시간표
@@ -163,9 +168,11 @@
         var t = b.taskId && M.byId(S.state.tasks, b.taskId);
         var conflict = overl.length > 0;
         var label = t ? t.title : (b.title || '일정');
-        var el = h('div.cal-block.' + (b.kind === 'work' ? 'work' : 'event') + (t && t.status === 'done' ? '.is-done' : '') + (conflict ? '.is-conflict' : ''), {
-          role: 'button', tabindex: '0', draggable: 'true',
-          'aria-label': (b.kind === 'work' ? '작업: ' : '일정: ') + label + ', ' + D.hm(s) + '부터 ' + D.hm(e) + '까지' + (conflict ? ', 다른 일정과 겹침' : ''),
+        var ext = b.origin === 'ics';
+        var el = h('div.cal-block.' + (b.kind === 'work' ? 'work' : 'event') + (ext ? '.is-ext' : '') + (t && t.status === 'done' ? '.is-done' : '') + (conflict ? '.is-conflict' : ''), {
+          role: 'button', tabindex: '0', draggable: ext ? 'false' : 'true',
+          title: ext ? '‘' + (DN.calsync ? DN.calsync.calName(S.state, b.calId) : '외부 캘린더') + '’에서 가져온 일정 — 원래 캘린더에서 고쳐요' : null,
+          'aria-label': (b.kind === 'work' ? '작업: ' : ext ? '회사 캘린더 일정: ' : '일정: ') + label + ', ' + D.hm(s) + '부터 ' + D.hm(e) + '까지' + (conflict ? ', 다른 일정과 겹침' : ''),
           style: { top: top + 'px', height: height + 'px', left: 'calc(' + (b.__lane / n * 100) + '% + 3px)', width: 'calc(' + (100 / n) + '% - 6px)', right: 'auto' },
           onclick: function (ev) { ev.stopPropagation(); DN.views.schedule.open({ blockId: b.id }); },
           onkeydown: function (ev) { if (ev.key === 'Enter' || ev.key === ' ') { ev.preventDefault(); DN.views.schedule.open({ blockId: b.id }); } }
@@ -175,6 +182,7 @@
           conflict ? h('div.conf', '⚠ 겹침') : null,
           b.sample ? null : null);
         el.addEventListener('dragstart', function (ev) {
+          if (ext) { ev.preventDefault(); return; }
           var r = el.getBoundingClientRect();
           var offsetMin = Math.round((ev.clientY - r.top) / HOUR_PX * 60 / SNAP) * SNAP;
           drag = { kind: 'block', id: b.id, minutes: D.minutesBetween(s, e), offsetMin: offsetMin };
@@ -292,14 +300,20 @@
         var b = byDay[c.ymd] || { blocks: [], due: [] };
         var blocks = b.blocks.slice().sort(function (x, y) { return x.start < y.start ? -1 : 1; });
         var items = [];
+        (DN.calsync ? DN.calsync.allDayOn(st, c.ymd) : []).forEach(function (x) {
+          var cn = DN.calsync.calName(st, x.calId);
+          items.push(item('event.is-ext.is-allday', [ui.icon('calendar'), ' ', x.title], '종일 · ' + x.title + ' (' + cn + ')',
+            function () { ui.toast('‘' + cn + '’에서 가져온 종일 일정이에요 — 바꾸려면 원래 캘린더에서 고치세요.'); }));
+        });
         blocks.forEach(function (bl) {
           var t = bl.taskId && M.byId(st.tasks, bl.taskId);
           var label = t ? t.title : (bl.title || '일정');
           var s = new Date(bl.start);
-          items.push(item(bl.kind === 'work' ? 'work' + (t && t.status === 'done' ? '.is-done' : '') : 'event',
+          var ext = bl.origin === 'ics';
+          items.push(item(bl.kind === 'work' ? 'work' + (t && t.status === 'done' ? '.is-done' : '') : 'event' + (ext ? '.is-ext' : ''),
             [h('span.cal-m-time', D.hm(s)), ' ', label], (bl.kind === 'work' ? '작업 · ' : '') + label + ' ' + D.hm(s) + '–' + D.hm(bl.end),
             function () { DN.views.schedule.open({ blockId: bl.id }); },
-            { kind: 'block', id: bl.id, minutes: D.minutesBetween(s, new Date(bl.end)), keepTime: true }));
+            ext ? null : { kind: 'block', id: bl.id, minutes: D.minutesBetween(s, new Date(bl.end)), keepTime: true }));
         });
         (b.plan || []).forEach(function (t) {
           items.push(item('plan', [ui.icon('calendar'), ' ', t.title], '할 날 · ' + t.title + ' — 끌어서 시간에 놓으면 작업 시간',

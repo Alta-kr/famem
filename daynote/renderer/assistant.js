@@ -313,6 +313,7 @@
     if (!DN.app || DN.app.current().view !== 'today') return;
     S.mutate(null, function (s) { s.meta.lastRestNudgeAt = now().toISOString(); }, { source: 'chat', silent: true });
     post({ kind: 'text', text: '‘' + t.title + '’에 ' + DN.habits.LONG_FOCUS_MIN + '분 넘게 집중했어요. 3분만 쉬어 가면 다음 집중이 더 잘 돼요.', actions: ['rest'] });
+    DN.ui.osNotify('잠깐 쉬어 갈까요?', '‘' + t.title + '’에 ' + DN.habits.LONG_FOCUS_MIN + '분 넘게 집중했어요. 3분만 쉬어요.');
   }
 
   // 일한 흐름 — 50분쯤 이어서 일한 뒤 할 일·단계를 끝내면 쉬기를 권한다 (일이 끝나는 지점에서)
@@ -349,11 +350,29 @@
     var t = M.byId(S.state.tasks, taskId);
     if (!t) return;
     if (t.status !== 'in_progress') DN.app.startTask(taskId);
-    var end = new Date(Date.now() + (minutes || FOCUS_MIN) * 60000).toISOString();
-    S.mutate(null, function (s) { s.meta.focus = { taskId: taskId, end: end, minutes: minutes || FOCUS_MIN }; }, { source: 'chat' });
+    var mins = minutes || FOCUS_MIN;
+    var start = now(), end = new Date(Date.now() + mins * 60000);   // 블록은 앱 시계, 타이머는 실제 시계
+    // 집중 시간은 캘린더에도 — 그 시간은 '빈 시간' 이 아니다 (Microsoft Focus Time 2023)
+    S.mutate(null, function (s) {
+      var b = M.addBlock(s, { taskId: taskId, title: t.title, start: start.toISOString(), end: new Date(start.getTime() + mins * 60000).toISOString(), origin: 'focus' });
+      s.meta.focus = { taskId: taskId, end: end.toISOString(), minutes: minutes || FOCUS_MIN, blockId: b.id };
+    }, { source: 'chat' });
     armFocus();
   }
-  function stopFocus() { clearTimeout(focusTimer); S.mutate(null, function (s) { s.meta.focus = null; }, { source: 'chat' }); }
+  // 그만 — 캘린더 블록은 지금까지로 줄인다 (5분이 안 되면 지운다)
+  function stopFocus() {
+    clearTimeout(focusTimer);
+    S.mutate(null, function (s) {
+      var f = s.meta.focus;
+      var b = f && f.blockId && M.byId(s.blocks, f.blockId);
+      if (b) {
+        var nowIso = now().toISOString();
+        if (new Date(nowIso) - new Date(b.start) < 5 * 60000) M.deleteBlock(s, b.id);
+        else if (b.end > nowIso) M.updateBlock(s, b.id, { end: nowIso });
+      }
+      s.meta.focus = null;
+    }, { source: 'chat' });
+  }
   function armFocus() {
     clearTimeout(focusTimer);
     var f = S.state.meta.focus;
@@ -374,8 +393,9 @@
     }, { source: 'chat' });
     if (DN.rest && DN.rest.chime) DN.rest.chime();
     var longBreak = cnt % 4 === 0;
-    post({ kind: 'text', text: (t ? '‘' + t.title + '’에 ' : '') + f.minutes + '분 집중했어요 (오늘 ' + cnt + '번째). ' +
-      (longBreak ? '네 번 했으니 15분쯤 길게 쉬어 가요.' : '3분 쉬어 가면 다음 집중이 더 잘 돼요.'), actions: ['rest'] });
+    var msg = f.minutes + '분 집중했어요 (오늘 ' + cnt + '번째). ' + (longBreak ? '네 번 했으니 15분쯤 길게 쉬어 가요.' : '3분 쉬어 가면 다음 집중이 더 잘 돼요.');
+    post({ kind: 'text', text: (t ? '‘' + t.title + '’에 ' : '') + msg, actions: ['rest'] });
+    DN.ui.osNotify('집중 끝' + (t ? ' — ' + t.title : ''), msg, { sound: true });
   }
 
   // 휴식 — 앱 전체를 가리는 휴식 화면 (renderer/rest.js). 모드를 주지 않으면 쉬기 전 화면에서 고른다
@@ -399,6 +419,7 @@
   // ------------------------------------------------------------------ 자동 제안 ("잠깐 여유 있을 때")
   function tryNudge(reason) {
     if (!DN.app || DN.app.current().view !== 'today') return;
+    if (S.state.meta.focus) return;   // 집중하는 동안에는 제안을 미룬다 (끝나면 다음 끊는 지점에서 — Iqbal & Bailey 2008)
     if (DN.rest && DN.rest.isOpen()) return;   // 쉬는 동안에는 아무것도 묻지 않는다
     var input = document.querySelector('.chat-input textarea');
     if (input && document.activeElement === input && input.value.trim()) return;   // 쓰는 중에는 끼어들지 않는다
@@ -443,6 +464,19 @@
     armFocus();   // 집중 타이머가 되돌아왔으면 다시 맞추고, 이미 지났으면 바로 끝 알림
   }
 
+  // 정리 결과 한 줄 — 빠른 메모 창에 보여 줄 것
+  function quickSummary(n) {
+    var c = n.capture || {};
+    if (c.status === 'failed' || c.status === 'no_ai') return '메모로 저장했어요';
+    var items = DN.aiProposals.captureItems(S.state, n).filter(function (it) { return it.ref.kind !== 'note'; });
+    if (!items.length) return '메모로 저장했어요';
+    var it = items[0], x = it.item || {};
+    var label = it.kind === 'task' ? '할 일' : it.kind === 'event' ? '일정' : it.kind === 'done' ? '완료' : it.kind === 'moved' ? '날짜 변경' : '메모';
+    var when = it.kind === 'event' && x.start ? ' · ' + DN.dates.relDay(DN.dates.ymd(x.start), now()) + ' ' + DN.dates.hm(x.start)
+      : x.dueDate ? ' · ' + DN.dates.relDay(x.dueDate, now()) + ' 마감' : x.planDate ? ' · ' + DN.dates.relDay(x.planDate, now()) + '에 하기' : '';
+    return label + when + ' — ' + (x.title || '') + (items.length > 1 ? ' 외 ' + (items.length - 1) + '개' : '');
+  }
+
   var watching = false;
   var quickKey = null;   // 빠른 메모 단축키 (데스크톱 앱에서 등록됐을 때만)
   function watch() {
@@ -456,7 +490,7 @@
       var n = doneCount(S.state);
       var more = info.type === 'change' && n > lastDone;
       lastDone = n;
-      if (info.type !== 'change' || info.source === 'rest') return;
+      if (info.type !== 'change' || info.source === 'rest' || info.source === 'calendar') return;   // 쉬기·캘린더 가져오기는 '일한 것' 이 아니다
       touchWork();
       if (!more) return;
       var doneTask = M.liveTasks(S.state).filter(function (t) { return t.status === 'done' && t.completedAt; })
@@ -477,7 +511,20 @@
     armFocus();   // 앱을 다시 켰을 때 집중 타이머 이어서 (이미 지났으면 바로 끝 알림)
     // 빠른 메모 창(Ctrl+Shift+Space)에서 보낸 글 — 홈 입력과 똑같이 흐름에 올리고 분류한다
     var host = S.host;
-    if (host.onQuickCapture) host.onQuickCapture(function (text) { if (text.trim()) send(text); });
+    if (host.onQuickCapture) host.onQuickCapture(function (text) {
+      if (!text.trim()) return;
+      var note = send(text);
+      if (!host.quickResult) return;
+      if (!note) { host.quickResult('바로 실행했어요'); return; }
+      // 정리가 끝나면 "할 일 · 내일 마감 — 견적서 보내기" 처럼 한 줄 (최대 10초 기다림)
+      var tries = 0;
+      (function wait() {
+        var n = M.byId(S.state.notes, note.id);
+        var c = n && n.capture;
+        if (c && c.status !== 'pending') { host.quickResult(quickSummary(n)); return; }
+        if (++tries < 40) setTimeout(wait, 250);
+      })();
+    });
     if (host.setCloseToTray) host.setCloseToTray(S.state.prefs.closeToTray !== false);
     if (host.ready) host.ready().then(function (r) { quickKey = r && r.quickKey; }).catch(function () {});
     // 꺼져 있는 동안 끝난 휴식 타이머 정리

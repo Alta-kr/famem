@@ -677,7 +677,7 @@
       h('div.work-head',
         h('span.work-state', ui.icon(t.status === 'in_progress' ? 'play' : t.status === 'paused' ? 'pause' : done ? 'check' : 'task'), WORK_STATE[t.status] || '할 일',
           mins ? h('span.work-time', ' · ' + (mins >= 60 ? Math.floor(mins / 60) + '시간 ' + (mins % 60) + '분' : mins + '분')) : null),
-        ui.dueChip(t, now, { add: true })),
+        ui.dueChip(t, now, { add: !t.planDate }), ui.planChip(t, now)),
       h('div.work-title', { title: '오른쪽 클릭: 자세히 편집·미루기·삭제', oncontextmenu: function (e) { e.preventDefault(); A.taskMenu(t.id, e.currentTarget); } }, t.title || '(제목 없음)'),
       timeLine(st, t),
       t.status === 'paused' ? resumeBox(t) : (t.resumeNote && t.status === 'in_progress' ? h('div.work-resume', ui.icon('info'), '이어서: ' + t.resumeNote) : null),
@@ -762,14 +762,31 @@
     var picked = m.picked || {};
     function pick(id, label) { var p = Object.assign({}, picked); p[id] = label; AS.update(m.id, { picked: p }); }
     var open = left.filter(function (t) { return !picked[t.id] && t.status !== 'done'; });
+    // 한 번에 정하기 — 남은 일 전부 내일(할 날)로, 또는 전부 그대로
+    function pickAll(mode) {
+      var ids = open.map(function (t) { return t.id; });
+      if (!ids.length) return;
+      var p = Object.assign({}, picked);
+      if (mode === 'tomorrow') {
+        var tom = D.ymd(D.addDays(DN.app.now(), 1));
+        S.mutate('남은 일 전부 내일로', function (s) { ids.forEach(function (id) { M.updateTask(s, id, { planDate: tom }, DN.app.now()); }); });
+        ids.forEach(function (id) { p[id] = '내일 하기'; });
+      } else ids.forEach(function (id) { p[id] = '그대로 두기'; });
+      AS.update(m.id, { picked: p });
+    }
+    var SHOW = 5;
+    var shown = left.slice(0, SHOW), hidden = left.length - shown.length;
     return bubble('assistant', h('div.dayclose',
       m.replan ? h('div.msg-text', m.intro || '하나씩 다시 정해 볼게요. 언제 하면 좋을까요?')
         : h('div.dc-done',
             h('div.dc-title', done.length ? '오늘 끝낸 일 ' + done.length + '개 — 수고했어요!' : '오늘 하루도 수고했어요.'),
             done.length ? h('ul.dc-list', done.slice(0, 6).map(function (t) { return h('li', ui.icon('check'), t.title); }).concat(done.length > 6 ? [h('li.meta', '… 외 ' + (done.length - 6) + '개')] : [])) : null),
       left.length ? h('div.dc-left',
-        m.replan ? null : h('div.dc-sub', '남은 일 — 다음에 언제 할지 정해 두면 마음 놓고 쉴 수 있어요.'),
-        left.map(function (t) {
+        m.replan ? null : h('div.dc-sub', '오늘 하려던 일 중 남은 ' + left.length + '개 — 언제 할지 정해 두면 마음 놓고 쉴 수 있어요.'),
+        open.length > 1 ? h('div.msg-actions.dc-bulk',
+          h('button.btn.btn-primary.btn-xs', { type: 'button', onclick: function () { pickAll('tomorrow'); } }, '전부 내일 하기 (' + open.length + ')'),
+          h('button.btn.btn-xs.btn-ghost', { type: 'button', onclick: function () { pickAll('keep'); } }, '전부 그대로')) : null,
+        shown.map(function (t) {
           var p = picked[t.id];
           if (t.status === 'done') p = '끝냈어요';
           return h('div.dc-row' + (p ? '.is-set' : ''),
@@ -778,6 +795,7 @@
               : whenChips(t.id, function (label) { pick(t.id, label); },
                   [h('button.chip.chip-btn.is-ghost', { type: 'button', onclick: function () { pick(t.id, '그대로 두기'); } }, '그대로')]));
         }),
+        hidden > 0 ? h('div.meta.dc-more', '외 ' + hidden + '개는 위 버튼으로 함께 정할 수 있어요.') : null,
         !open.length ? h('div.dc-end', m.replan ? '다 정했어요.' : '다 정했어요. 오늘은 여기까지 — 푹 쉬어요.') : null)
         : (m.replan ? null : h('div.dc-end', '남은 일도 없어요. 오늘은 여기까지 — 푹 쉬어요.'))));
   }

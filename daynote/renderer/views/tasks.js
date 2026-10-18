@@ -12,12 +12,13 @@
 
   var GROUPS = [
     { id: 'progress', label: '진행 중' },
+    { id: 'paused', label: '일시 정지' },
     { id: 'overdue', label: '기한 지남' },
     { id: 'today', label: '오늘' },
     { id: 'tomorrow', label: '내일' },
     { id: 'week', label: '이번 주 (7일 내)' },
     { id: 'later', label: '이후' },
-    { id: 'nodue', label: '마감 없음' },
+    { id: 'nodue', label: '날짜 없음' },
     { id: 'waiting', label: '대기 · 선행 업무 대기' },
     { id: 'snoozed', label: '미뤄 둔 할 일' },
     { id: 'doneToday', label: '오늘 완료' },
@@ -37,21 +38,30 @@
   function groupOf(st, t, now) {
     var today = D.ymd(now);
     if (t.status === 'done') return t.completedAt && D.ymd(t.completedAt) === today ? 'doneToday' : 'done';
-    if (t.status === 'in_progress' || t.status === 'paused') return 'progress';
+    if (t.status === 'in_progress') return 'progress';
+    if (t.status === 'paused') return 'paused';
     if (t.status === 'waiting' || M.unmetBlockers(st, t).length) return 'waiting';
     if (t.snoozedUntil && new Date(t.snoozedUntil) > now) return 'snoozed';
-    if (!t.dueDate) return 'nodue';
-    if (D.parseYmd(t.dueDate, t.dueTime || '23:59') < now) return 'overdue';
-    var diff = D.dayDiff(now, D.parseYmd(t.dueDate));
+    if (t.dueDate && D.parseYmd(t.dueDate, t.dueTime || '23:59') < now) return 'overdue';
+    // 언제 볼 일인가 — 할 날과 마감 중 이른 날 (지난 할 날은 오늘로 넘어온다)
+    var day = whenDay(t, today);
+    if (!day) return 'nodue';
+    var diff = D.dayDiff(now, D.parseYmd(day));
     if (diff === 0) return 'today';
     if (diff === 1) return 'tomorrow';
     if (diff <= 7) return 'week';
     return 'later';
   }
 
+  function whenDay(t, today) {
+    var plan = t.planDate ? (t.planDate < today ? today : t.planDate) : null;
+    if (plan && t.dueDate) return plan < t.dueDate ? plan : t.dueDate;
+    return plan || t.dueDate || null;
+  }
   function compare(a, b) {
     if (a.status === 'done' && b.status === 'done' && a._g === 'done') return (a.completedAt || '') < (b.completedAt || '') ? 1 : -1;
-    var ad = (a.dueDate || '9999-99-99') + (a.dueTime || '99:99'), bd = (b.dueDate || '9999-99-99') + (b.dueTime || '99:99');
+    var td = D.ymd(DN.app.now());
+    var ad = (whenDay(a, td) || '9999-99-99') + (a.dueTime || '99:99'), bd = (whenDay(b, td) || '9999-99-99') + (b.dueTime || '99:99');
     if (ad !== bd) return ad < bd ? -1 : 1;
     var ap = PRIO[a.priority] != null ? PRIO[a.priority] : 1, bp = PRIO[b.priority] != null ? PRIO[b.priority] : 1;
     if (ap !== bp) return ap - bp;

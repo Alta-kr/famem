@@ -1753,3 +1753,60 @@ html.is-resting .toast, html.is-resting .toasts { display: none !important; }   
 /* 달력: 할 날 */
 .cal-m-item.plan { color: var(--primary); background: var(--primary-soft); }
 .cal-day-label .due.is-plan { color: var(--primary); }
+
+/* 홈 공간 (UX 점검 H-01·02·05): 머리 도구 한 묶음 · 한 줄 요약 · 2주 띠 접기 */
+.home-sec-head .home-sec-tools { margin-left: auto; display: inline-flex; align-items: center; gap: 2px; }
+.home-sec-head .home-sec-tools .btn { margin-left: 0; }
+.hz-strip-toggle { all: unset; cursor: pointer; display: inline-flex; align-items: center; gap: 4px; margin-left: 6px; padding: 4px 8px; border-radius: 999px; font-size: 12px; color: var(--text-secondary); border: 1px solid var(--border); }
+.hz-strip-toggle svg { width: 12px; height: 12px; }
+.hz-strip-toggle.is-on { color: var(--primary); border-color: var(--primary-soft); background: var(--primary-soft); }
+.hz-strip-toggle:focus-visible { outline: 2px solid var(--primary); }
+.hz-alerts { margin: 0 12px 4px; }
+.hz-alerts-row { display: flex; gap: 6px; flex-wrap: wrap; }
+.hz-alert { all: unset; cursor: pointer; display: inline-flex; align-items: center; gap: 6px; min-height: 26px; padding: 2px 10px; border-radius: 999px; font-size: 12.5px; background: var(--surface-subtle); color: var(--text-secondary); }
+.hz-alert b { color: var(--text-primary); font-variant-numeric: tabular-nums; }
+.hz-alert svg { width: 12px; height: 12px; }
+.hz-alert:hover, .hz-alert.is-on { background: var(--primary-soft); color: var(--primary); }
+.hz-alert.is-warn { background: rgba(217, 119, 6, .14); color: var(--warning, #B45309); }
+.hz-alert:focus-visible { outline: 2px solid var(--primary); }
+.hz-alerts .hz-upcoming, .hz-alerts .hz-undated { margin: 6px 0 2px; }
+
+.step-row label .meta { white-space: nowrap; }
+.detail-section h4 svg { width: 13px; height: 13px; vertical-align: -2px; }
+
+.dc-bulk { margin: 6px 0 4px; }
+.dc-more { padding: 4px 2px; }
+
+/* 프로젝트 쓴 시간 */
+.proj-overview { flex-wrap: wrap; }
+.proj-time-actions { display: flex; justify-content: flex-end; margin: 8px 0 4px; }
+
+/* 집중 타이머 — 사이드바 알약 */
+.focus-pill { display: flex; align-items: center; gap: 2px; margin: 0 4px 6px; border-radius: 10px; background: var(--primary-soft); color: var(--primary); }
+.focus-pill[hidden] { display: none; }
+.focus-pill-main { all: unset; cursor: pointer; flex: 1; display: flex; align-items: center; gap: 6px; padding: 7px 10px; font-size: 13px; font-variant-numeric: tabular-nums; min-width: 0; }
+.focus-pill-main svg { width: 14px; height: 14px; flex: none; }
+.focus-pill-stop { all: unset; cursor: pointer; width: 28px; height: 28px; display: grid; place-items: center; border-radius: 8px; }
+.focus-pill-stop:hover, .focus-pill-main:hover { background: rgba(124,140,248,.18); }
+.focus-pill-stop svg { width: 13px; height: 13px; }
+.focus-pill button:focus-visible { outline: 2px solid var(--primary); }
+.sidebar-collapsed .focus-pill-label { display: none; }
+.sidebar-collapsed .focus-pill { flex-direction: column; }
+
+/* 외부(회사) 캘린더 일정 — 읽기 전용: 빗금 · 끌 수 없음 */
+.cal-block.is-ext { cursor: pointer; background-image: repeating-linear-gradient(135deg, transparent 0 6px, rgba(127,127,127,.08) 6px 12px); border-left-style: dashed; }
+.cal-m-item.is-ext { background-image: repeating-linear-gradient(135deg, transparent 0 5px, rgba(127,127,127,.08) 5px 10px); }
+.cal-m-item.is-allday svg { width: 11px; height: 11px; vertical-align: -1px; }
+.cal-day-label .due.is-ext { color: var(--kind-event-ink); }
+.agenda-item.is-ext::before { background: repeating-linear-gradient(180deg, var(--kind-event) 0 4px, transparent 4px 7px); }
+.agenda-allday { display: flex; gap: 6px; align-items: center; padding: 4px 8px 6px 16px; font-size: 12px; color: var(--kind-event-ink); }
+.agenda-allday svg { width: 12px; height: 12px; flex: none; }
+.agenda-allday span { white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.ext-info { display: flex; flex-direction: column; gap: 8px; margin-bottom: 10px; font-size: 14px; }
+.ext-info-row { display: flex; gap: 8px; align-items: center; }
+.ext-info-row svg { width: 15px; height: 15px; color: var(--text-secondary); flex: none; }
+.cal-add { display: flex; gap: 8px; flex-wrap: wrap; align-items: center; margin-top: 12px; }
+.cal-help { margin-top: 10px; font-size: 13px; }
+.cal-help summary { cursor: pointer; color: var(--primary); }
+.cal-help ul { margin: 8px 0 6px 18px; display: flex; flex-direction: column; gap: 4px; color: var(--text-secondary); }
+.cal-sub-err { color: var(--error); }

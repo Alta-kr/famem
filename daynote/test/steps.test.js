@@ -90,3 +90,20 @@ test('메모를 할 일로: 첫 줄이 제목, 아래 목록은 세부 할 일',
   assert.deepStrictEqual(t.steps.map((x) => x.title), ['전원 디버깅', '클럭 확인', '인터페이스 확인']);
   assert.deepStrictEqual(t.steps[2].steps.map((x) => x.title), ['3.3V 레일', '5V 레일']);
 });
+
+test('정리: 회의록처럼 맨 위 줄이 제목이면 아래 체크 항목 할 일을 제목으로 바꾸지 않는다', () => {
+  const V = require('../src/core/ai/validate');
+  const P = require('../src/core/ai/proposals');
+  const C = require('../src/core/ai/capture');
+  const at = new Date(2026, 9, 18, 10, 0);
+  const st = M.emptyState();
+  const body = '온보딩 주간 회의\n- [ ] 설문 문항 정리해서 금요일까지 공유\n수요일 오후 3시 디자인 리뷰 회의\n예산 논의는 다음에 해야 함';
+  const note = M.addNote(st, { title: '', body, capture: { status: 'pending', at: at.toISOString() } }, at);
+  note.updatedAt = at.toISOString();
+  const nul = { text: null, date: null, time: null };
+  const out = { summary: '', sections: [], events: [], open_questions: [], entry_type: 'task', note_title: 'x', note_project_hint: null, note_kind: 'memo', done_tasks: [], updated_tasks: [], bulk_updates: [], commands: [],
+    tasks: [{ title: '설문 문항 정리해서 공유', evidence: { quote: '- [ ] 설문 문항 정리해서 금요일까지 공유', line: 2 }, due: nul, do_at: nul, project_hint: null, basis: 'explicit', size: 'small', breakdown: [] }] };
+  const run = P.startRun(st, { noteId: note.id, kind: 'capture', promptVersion: C.PROMPT_VERSION }, at);
+  P.applyCapture(st, { note, run, validated: V.validateOrganizeNote(out, { note, state: st, now: at }), output: out }, at);
+  assert.deepStrictEqual(M.liveTasks(st).map((t) => t.title), ['설문 문항 정리해서 공유']);
+});

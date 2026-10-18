@@ -82,8 +82,8 @@ test('clampAll: 세 칸 모두 min 이상, 합 1', () => {
 });
 
 test('round 뒤 isDefault (허용 오차 1e-3)', () => {
-  assert.ok(SP.isDefault(SP.round([0.45004, 0.32998, 0.21998])));
-  assert.ok(SP.isDefault([0.4505, 0.3298, 0.2197]));
+  assert.ok(SP.isDefault(SP.round([0.58004, 0.23998, 0.17998])));
+  assert.ok(SP.isDefault([0.5805, 0.2398, 0.1797]));
   assert.ok(!SP.isDefault(SP.round([0.46, 0.32, 0.22])));
 });
 

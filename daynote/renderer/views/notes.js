@@ -151,15 +151,18 @@
       proj.addEventListener('change', function () {
         S.mutate('메모 프로젝트 변경', function (s) { M.updateNote(s, n.id, { projectId: proj.value || null }, A.now()); }, { source: 'notes' });
       });
-      var aiBtn = h('button.btn.btn-sm.btn-ai', { type: 'button', title: '메모를 정리하고 할 일·일정 초안을 만듭니다. 고른 것만 저장됩니다.', onclick: function () { organize(false); } });
+      // 'AI로 정리' 는 홈 채팅과 같은 길 — 바로 반영하고 Ctrl+Z 로 되돌린다 (UX 점검 C-03)
+      var quickAiBtn = h('button.btn.btn-sm.btn-primary', { type: 'button', title: '홈 채팅과 똑같이 할 일·일정·메모로 바로 정리해요 (Ctrl+Z로 되돌리기)', onclick: function () { quickOrganize(); } }, ui.icon('spark'), 'AI로 정리');
+      var aiBtn = h('button.btn.btn-sm.btn-ai', { type: 'button', title: 'AI가 만든 초안을 보고 골라서 저장해요 (긴 회의록에 좋아요)', onclick: function () { organize(false); } });
       ed_aiBtn = aiBtn;
-      var toolbar = h('div.note-toolbar', proj, aiBtn,
+      var toolbar = h('div.note-toolbar', proj, quickAiBtn, aiBtn,
         h('button.btn.btn-sm', { type: 'button', title: '선택한 문장(없으면 지금 줄)을 할 일로 (Ctrl+Shift+T)', onclick: function () { makeTask(); } }, ui.icon('task'), '할 일로 만들기'),
         n.sample ? h('span.chip.chip-sample', '샘플') : null,
         statusEl,
         h('button.icon-btn', { type: 'button', 'aria-label': '메모 삭제', title: '메모 삭제', onclick: deleteNote }, ui.icon('trash')));
 
-      var titleEl = h('input.note-title-input', { value: n.title, placeholder: M.noteTitle(Object.assign({}, n, { title: '' })) === '제목 없는 메모' ? '제목' : M.noteTitle(Object.assign({}, n, { title: '' })), 'aria-label': '메모 제목' });
+      var autoTitle = M.noteTitle(Object.assign({}, n, { title: '' }));
+      var titleEl = h('input.note-title-input', { value: n.title, placeholder: autoTitle === '제목 없는 메모' ? '제목' : '제목 — 비워 두면 “' + autoTitle.slice(0, 30) + '”', 'aria-label': '메모 제목' });
       var ta = h('textarea');
       ta.value = n.body;
       var page = h('div.page', titleEl, ta);
@@ -289,10 +292,31 @@
       ed_aiBtn.disabled = running;
       ed_aiBtn.textContent = '';
       ed_aiBtn.appendChild(ui.icon('spark'));
-      ed_aiBtn.appendChild(document.createTextNode(running ? '정리 중…' : DN.aiProposals.digestFor(S.state, mem.noteId) ? 'AI 다시 정리' : 'AI 정리'));
+      ed_aiBtn.appendChild(document.createTextNode(running ? '정리 중…' : '초안 골라 저장'));
     }
 
     // 버튼을 눌렀을 때만 AI 를 부른다. 바뀌지 않은 메모는 지난 결과를 다시 쓴다(force 가 아니면).
+    // 홈 채팅과 같은 정리 — 바로 반영, 결과는 아래 '이 메모에서 만든 항목' 에 (되돌리기 한 칸)
+    function quickOrganize() {
+      var id = mem.noteId;
+      if (!id) return;
+      flushPending();
+      if (!DN.aiFlow.status().configured) { ui.toast('AI가 연결되어 있지 않아요. 설정에서 연결하면 바로 정리해요.'); return; }
+      var key = M.uid('nq');
+      S.mutate('AI로 정리', function (s) {
+        var x = M.byId(s.notes, id);
+        x.capture = Object.assign({ created: [] }, x.capture || {}, { status: 'pending', error: null, changedByUser: false, kindByUser: false, at: A.now().toISOString() });
+      }, { source: 'notes', key: key });
+      ui.toast('정리하는 중…');
+      DN.capture.classify(id, { join: key }).then(function (r) {
+        if (r && r.reason === 'undone') return;
+        var n = M.byId(S.state.notes, id);
+        var items = n ? DN.aiProposals.captureItems(S.state, n).filter(function (it) { return it.ref.kind !== 'note'; }) : [];
+        var cnt = {}; items.forEach(function (it) { cnt[it.kind] = (cnt[it.kind] || 0) + 1; });
+        var parts = [cnt.task ? '할 일 ' + cnt.task + '개' : null, cnt.event ? '일정 ' + cnt.event + '개' : null, cnt.moved ? '날짜 변경 ' + cnt.moved + '개' : null, cnt.done ? '완료 ' + cnt.done + '개' : null].filter(Boolean);
+        ui.undoToast(!r || !r.ok ? '정리하지 못했어요. 메모는 그대로예요.' : parts.length ? parts.join(' · ') + '로 정리했어요. 아래 ‘이 메모에서 만든 항목’에서 볼 수 있어요.' : '메모로 두는 게 맞아 보여요 — 따로 만든 항목은 없어요.');
+      });
+    }
     function organize(force) {
       var id = mem.noteId;
       if (!id) return;

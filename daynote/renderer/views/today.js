@@ -30,11 +30,15 @@
       if (focusEdge != null) { var bar = listsHost.querySelector('[data-split-edge="' + focusEdge + '"]'); if (bar) bar.focus(); }
     }
     paint();
+    // 창 크기가 바뀌면 다시 그린다 — 2주 띠 자동 접기·채팅 칸 기본 폭이 창 크기를 따른다
+    var resizeT = null;
+    function onResize() { clearTimeout(resizeT); resizeT = setTimeout(function () { if (S.state.prefs.homeCols == null) applyCols(home, null); paint(); }, 150); }
+    window.addEventListener('resize', onResize);
     // 막대를 끄는 중에는 다시 그리지 않는다 — 끝나면 한 번만 그린다
     splitDrag.repaint = function () { chat.refresh(); paint(); };
 
     return {
-      destroy: function () { root.style.overflow = ''; splitDrag.repaint = null; splitDrag.pending = false; if (chat.destroy) chat.destroy(); },
+      destroy: function () { window.removeEventListener('resize', onResize); clearTimeout(resizeT); root.style.overflow = ''; splitDrag.repaint = null; splitDrag.pending = false; if (chat.destroy) chat.destroy(); },
       // 입력창은 다시 만들지 않는다 — 쓰는 중에 AI 결과가 와도 입력·한글 조합이 끊기지 않게
       onChange: function (info) {
         if (info.source === 'today') return true;
@@ -124,13 +128,12 @@
     var selCount = Object.keys(memoSel).length;
     var openCount = tl.open.length;
     var secTasks = view !== 'today' ? rangeSection(st, now, view) : h('div.home-sec.home-sec-tasks',
-      h('div.home-sec-head', h('h2', '할 일'), h('span.meta', openCount ? '남은 ' + openCount + '개' : ''),
+      h('div.home-sec-head', h('h2', '할 일'), h('span.meta', openCount ? '남은 ' + openCount + '개' : ''), h('span.home-sec-tools',
         openCount > 3 ? h('button.btn.btn-ghost.btn-xs' + (st.prefs.todayTop3 ? '.is-on' : ''), { type: 'button', 'aria-pressed': String(!!st.prefs.todayTop3), title: '위 3개만 보여 줘요 — 고를 게 적을수록 시작이 쉬워요',
           onclick: function () { S.mutate(null, function (s) { s.prefs.todayTop3 = !s.prefs.todayTop3; }); } }, '3개만') : null,
         tl.done.length ? h('button.btn.btn-ghost.btn-xs', { type: 'button', title: '오늘 끝낸 일을 목록에서 치워요 (보관함에서 다시 볼 수 있어요)', onclick: function () { clearDone(tl.done); } }, '완료 비우기 (' + tl.done.length + ')') : null,
-        h('button.btn.btn-ghost.btn-xs', { type: 'button', onclick: function () { A.go('tasks'); } }, '전체 보기')),
-      upcomingLine(st, now, tl.open),
-      undatedLine(st, now, tl.open),
+        h('button.btn.btn-ghost.btn-xs', { type: 'button', onclick: function () { A.go('tasks'); } }, '전체 보기'))),
+      alertsLine(st, now, tl.open),
       h('div.home-scroll', { 'data-keep-scroll': 'home-tasks' },
         tl.open.length || tl.done.length ? taskUl : h('div.empty.home-empty', '오늘 할 일이 없어요. 왼쪽에 적으면 할 일은 여기로 들어와요.')));
     var secMemos = h('div.home-sec.home-sec-memos',
@@ -180,8 +183,8 @@
     var bar0 = splitter(secs, 0), bar1 = splitter(secs, 1);
     applySplit(secs, st.prefs.homeSplit);
     return h('section.home-today', { 'aria-label': '오늘' },
-      h('div.home-today-head', h('h1.home-title', viewTitle(view, now)), h('span.meta', D.longDay(now)), viewTabs(view)),
-      dayStrip(st, now, view),
+      h('div.home-today-head', h('h1.home-title', viewTitle(view, now)), h('span.meta', D.longDay(now)), viewTabs(view), stripToggle(st)),
+      stripShown(st) ? dayStrip(st, now, view) : null,
       secs[0], bar0, secs[1], bar1, secs[2]);
   }
 
@@ -318,7 +321,7 @@
       t.status === 'in_progress' ? h('span.chip.chip-progress', ui.icon('play'), '진행 중') : null,
       t.status === 'paused' ? h('span.chip.chip-paused', ui.icon('pause'), '일시 정지') : null,
       ui.dueChip(t, now, { add: true }),
-      !done && t.planDate && (t.planDate !== D.ymd(now) || !t.dueDate) ? planChip(t, now) : null,
+      !done && t.planDate && (t.planDate !== D.ymd(now) || !t.dueDate) ? ui.planChip(t, now) : null,
       DN.habits && DN.habits.isWeekGoal(t, now) ? h('span.chip.chip-goal', { title: '이번 주 꼭 끝낼 일' }, '★ 이번 주') : null,
       steps.length ? h('span.chip.chip-steps', '단계 ' + stepCnt.done + '/' + stepCnt.total, h('span.mini-bar', h('span', { style: { width: Math.round(stepCnt.done / stepCnt.total * 100) + '%' } }))) : null,
       pendingDraft ? h('button.chip.chip-guess.chip-btn', { type: 'button', title: 'AI가 나눠 둔 단계 보기', onclick: function (e) { e.stopPropagation(); DN.assistant.breakdown(t.id); } }, '나눠 둔 단계 있음') : null,
@@ -368,22 +371,6 @@
     S.mutate(day ? '할 날 정하기' : '할 날 지우기', function (s) { M.updateTask(s, taskId, { planDate: day || null }, now); });
     ui.undoToast(day ? '‘' + t.title + '’ ' + D.relDay(day, now) + '에 할게요 (' + DN.horizon.leftText(day, now) + ').' : '‘' + t.title + '’ 할 날을 지웠어요.');
   }
-  function planMenu(anchor, taskId) {
-    var t = M.byId(S.state.tasks, taskId), now = DN.app.now();
-    if (!t) return;
-    var items = [{ label: '할 날 — 이 날 하겠다 (마감과 따로)' }];
-    DN.horizon.planChoices(now).forEach(function (c) {
-      items.push({ label: c[0], sub: D.relDay(c[1], now), checked: t.planDate === c[1], onClick: function () { setPlan(taskId, c[1]); } });
-    });
-    if (t.planDate) items.push({ sep: true }, { label: '할 날 지우기', onClick: function () { setPlan(taskId, null); } });
-    ui.menu(anchor, items, { label: '할 날' });
-  }
-  function planChip(t, now) {
-    var el = h('span.chip.chip-plan.is-editable', { role: 'button', tabindex: '0', title: '할 날 — 눌러서 바꾸기' }, ui.icon('calendar'), '할 날 ' + D.relDay(t.planDate, now));
-    el.addEventListener('click', function (e) { e.preventDefault(); e.stopPropagation(); ui.dueEditor(el, t.id); });
-    el.addEventListener('keydown', function (e) { if (e.key === 'Enter' || e.key === ' ') { e.preventDefault(); e.stopPropagation(); ui.dueEditor(el, t.id); } });
-    return el;
-  }
   // 끌어 놓을 수 있는 날 — 할 일을 놓으면 그날을 할 날로
   function dropDay(el, day) {
     function isTask(e) { return e.dataTransfer && Array.prototype.indexOf.call(e.dataTransfer.types || [], 'application/x-daynote-task') !== -1; }
@@ -398,6 +385,16 @@
   }
   // 앞으로 2주 띠 — 날마다 할 일·일정 수, 바쁜 날 표시. 누르면 그날, 할 일을 끌어 놓으면 그날 할 일로
   //   주말도 같은 색으로 이어 그린다 (한 묶음으로 보이면 더 일찍 시작한다 — Tu & Soman 2014)
+  // 2주 띠 보이기 — prefs.homeStrip: 'show' | 'hide' | 없음(창 높이 760px 이상이면 보임)
+  function stripShown(st) {
+    var p = st.prefs.homeStrip;
+    return p === 'show' ? true : p === 'hide' ? false : window.innerHeight >= 760;
+  }
+  function stripToggle(st) {
+    var shown = stripShown(st);
+    return h('button.hz-strip-toggle' + (shown ? '.is-on' : ''), { type: 'button', 'aria-pressed': String(shown), title: shown ? '2주 띠 접기' : '앞으로 2주 띠 펼치기',
+      onclick: function () { S.mutate(null, function (s) { s.prefs.homeStrip = shown ? 'hide' : 'show'; }); } }, ui.icon('calendar'), '2주');
+  }
   function dayStrip(st, now, view) {
     var hz = DN.horizon, today = D.ymd(now);
     var shown = {};
@@ -441,24 +438,38 @@
         h('button.btn.btn-ghost.btn-xs', { type: 'button', onclick: function () { A.go('calendar'); } }, '캘린더')),
       h('div.home-scroll', { 'data-keep-scroll': 'home-range' }, body));
   }
-  // 날짜 안 정한 할 일 — 마감·할 날·작업 시간이 없고 오늘 목록에도 없는 일. 그냥 두면 홈 어디에도 안 보여 잊힌다
-  //   [보기] 를 누르면 펼쳐지고, 위의 2주 띠 날짜로 끌어 놓으면 그날 할 일이 된다
-  var showUndated = false;
-  function undatedLine(st, now, openToday) {
+  // 한 줄 요약 — "다가오는 마감 3 · 날짜 안 정한 할 일 1". 누르면 그 목록만 펼친다 (할 일 목록 자리를 지키려고)
+  var alertOpen = null;   // 'up' | 'undated' | null
+  function alertsLine(st, now, openToday) {
+    var r = DN.habits && DN.habits.estimateRatio(st);
+    var up = DN.horizon.upcoming(st, now, 7, openToday.map(function (t) { return t.id; }), r && r.ratio);
+    var undated = undatedList(st, now, openToday);
+    if (!up.length && !undated.length) return null;
+    var prep = up.filter(function (u) { return u.prep; }).length;
+    function chip(key, label, count, warn) {
+      if (!count) return null;
+      var on = alertOpen === key;
+      return h('button.hz-alert' + (on ? '.is-on' : '') + (warn ? '.is-warn' : ''), { type: 'button', 'aria-expanded': String(on),
+        onclick: function () { alertOpen = on ? null : key; DN.app.refresh(); } }, label, h('b', String(count)), ui.icon(on ? 'chevronDown' : 'chevronRight'));
+    }
+    return h('div.hz-alerts',
+      h('div.hz-alerts-row',
+        chip('up', prep ? '지금 시작할 마감' : '다가오는 마감', up.length, !!prep),
+        chip('undated', '날짜 안 정한 할 일', undated.length)),
+      alertOpen === 'up' && up.length ? upcomingLine(st, now, openToday) : null,
+      alertOpen === 'undated' && undated.length ? h('div.hz-undated', h('div.hz-undated-head', h('span.meta', '위 날짜 띠로 끌어 놓으면 그날 할 일이 돼요')),
+        h('ul.home-list', undated.slice(0, 12).map(function (t) { return taskRow(st, t, now, false); }))) : null);
+  }
+  function undatedList(st, now, openToday) {
     var on = {};
     openToday.forEach(function (t) { on[t.id] = true; });
-    var list = M.liveTasks(st).filter(function (t) {
+    return M.liveTasks(st).filter(function (t) {
       return t.status !== 'done' && t.status !== 'waiting' && !on[t.id] && !DN.horizon.anchorDay(st, t, now);
     }).sort(function (a, b) { return a.createdAt < b.createdAt ? 1 : -1; });
-    if (!list.length) return null;
-    return h('div.hz-undated',
-      h('div.hz-undated-head',
-        h('span.hz-up-label', '날짜 안 정한 할 일 ' + list.length + '개'),
-        h('span.meta', '위 날짜로 끌어 놓으면 그날 할 일로'),
-        h('button.link-btn', { type: 'button', 'aria-expanded': String(showUndated), onclick: function () { showUndated = !showUndated; DN.app.refresh(); } }, showUndated ? '접기' : '보기')),
-      showUndated ? h('ul.home-list', list.slice(0, 12).map(function (t) { return taskRow(st, t, now, false); })) : null);
   }
 
+  // 날짜 안 정한 할 일 — 마감·할 날·작업 시간이 없고 오늘 목록에도 없는 일. 그냥 두면 홈 어디에도 안 보여 잊힌다
+  //   [보기] 를 누르면 펼쳐지고, 위의 2주 띠 날짜로 끌어 놓으면 그날 할 일이 된다
   // 다가오는 마감 — 오늘 목록에 없는 7일 안의 마감을 '며칠 후' 로. 늦어도 시작할 날이 온 일은 먼저 + [오늘 하기]
   function upcomingLine(st, now, openToday) {
     var hz = DN.horizon;
@@ -594,9 +605,10 @@
   // ------------------------------------------------------------------ 좌우 비율 (채팅 | 오늘 패널)
   // 막대를 끌면 채팅 쪽 비율이 바뀐다. 끄는 동안은 화면만 바꾸고 놓을 때 한 번 저장(prefs.homeCols).
   // ←/→ 5%씩, 더블클릭·Enter 는 반반으로. 양쪽 모두 최소 320px.
+  function defaultCols() { var w = window.innerWidth; return w < 1150 ? 0.4 : w < 1350 ? 0.44 : DN.split.COL_DEFAULT; }
   function applyCols(home, r) {
     var SP = DN.split;
-    r = typeof r === 'number' ? r : SP.COL_DEFAULT;
+    r = typeof r === 'number' ? r : defaultCols();
     home.style.gridTemplateColumns = 'minmax(' + SP.COL_MIN_PX + 'px, ' + r + 'fr) 16px minmax(' + SP.COL_MIN_PX + 'px, ' + (1 - r) + 'fr)';
     var bar = home.querySelector('.home-colbar');
     if (bar) {
@@ -717,6 +729,7 @@
       var t = b.taskId && M.byId(st.tasks, b.taskId);
       return !(t && t.deletedAt);
     }).sort(function (a, b) { return a.start < b.start ? -1 : 1; });
+    var allDay = DN.calsync ? DN.calsync.allDayOn(st, today) : [];
     // 오늘 패널의 맨 아래 칸 (할 일 · 메모 · 일정)
     return h('div.home-sec.home-sec-agenda', { 'aria-labelledby': 'agenda-title' },
       h('div.home-sec-head', h('h2#agenda-title', '오늘 일정'), h('span.meta', list.length ? list.length + '개' : ''),
@@ -725,16 +738,17 @@
         } }, ui.icon('plus'), '일정 추가'),
         h('button.btn.btn-ghost.btn-xs', { type: 'button', onclick: function () { A.go('calendar'); } }, '캘린더')),
       h('div.home-scroll', { 'data-keep-scroll': 'home-agenda' },
+        allDay.length ? h('div.agenda-allday', { title: '외부 캘린더의 종일 일정' }, ui.icon('calendar'), h('span', '종일 · ' + allDay.map(function (x) { return x.title; }).join(', '))) : null,
         list.length ? list.map(function (b) {
           var t = b.taskId && M.byId(st.tasks, b.taskId);
           var conflict = M.conflictsFor(st, b.start, b.end, b.id).length > 0;
-          var cls = '.agenda-item' + (b.kind === 'work' ? '.is-work' : '') + (b.start <= nowIso && b.end > nowIso ? '.is-now' : '') + (b.end <= nowIso ? '.is-past' : '');
+          var cls = '.agenda-item' + (b.kind === 'work' ? '.is-work' : '') + (b.origin === 'ics' ? '.is-ext' : '') + (b.start <= nowIso && b.end > nowIso ? '.is-now' : '') + (b.end <= nowIso ? '.is-past' : '');
           return h('div' + cls,
             h('span.time', D.hm(b.start) + '–' + D.hm(b.end)),
             h('span.t', h('button.link-btn', { type: 'button', style: { color: 'inherit', textDecoration: t && t.status === 'done' ? 'line-through' : 'none' },
               onclick: function () { if (t) DN.assistant.work(t.id); else DN.views.schedule.open({ blockId: b.id }); } }, t ? t.title : (b.title || '일정')),
               conflict ? h('span.meta', { style: { color: 'var(--warning)', marginLeft: '6px' } }, '· 겹침') : null));
-        }) : h('div.empty.home-empty', '오늘 잡힌 일정이 없어요.')));
+        }) : allDay.length ? null : h('div.empty.home-empty', '오늘 잡힌 일정이 없어요.')));
   }
 
   DN.views.today = { title: '오늘', render: render, todayTaskList: todayTaskList, todayMemoList: todayMemoList };

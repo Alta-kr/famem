@@ -539,6 +539,11 @@
       }
       return -1;
     }
+    // 글 전체가 목록 하나(들)인가 — 아니면 맨 위 줄은 제목일 수 있다 (회의록 '온보딩 주간 회의' + 체크 항목)
+    //   그때는 위 줄이 할 일로 정리된 경우에만 묶고, 아래 항목 할 일을 위 줄 제목으로 바꾸지 않는다
+    var inGroups = {};
+    groups.forEach(function (g) { inGroups[g.line] = true; g.childLines.forEach(function (l) { inGroups[l] = true; }); });
+    var pureList = lines.every(function (L, i) { return !L.bare || inGroups[i]; });
     var drop = {}, covered = {};
     groups.forEach(function (g) {
       var members = created.filter(function (c) { return c.kind === 'task' && !drop[c.id]; }).map(function (c) {
@@ -546,7 +551,9 @@
         return t ? { t: t, line: lineOf(t) } : null;
       }).filter(function (x) { return x && (x.line === g.line || g.childLines.indexOf(x.line) !== -1); });
       if (!members.length) return;
-      var keep = members.filter(function (x) { return x.line === g.line; })[0] || members[0];
+      var head = members.filter(function (x) { return x.line === g.line; })[0];
+      if (!head && !pureList) return;
+      var keep = head || members[0];
       if (keep.line !== g.line) keep.t.title = g.title;
       if (!(keep.t.steps || []).length) keep.t.steps = g.steps;
       keep.t.breakdown = null;   // 직접 나눠 적었으니 AI 단계 초안은 쓰지 않는다

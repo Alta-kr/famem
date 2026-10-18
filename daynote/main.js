@@ -3,7 +3,7 @@
 // Daynote 메인 프로세스 — 창, 로컬 저장, 내보내기만 맡는다.
 // 업무 규칙은 src/core 에, 화면은 renderer 에 있다.
 
-const { app, BrowserWindow, ipcMain, dialog, clipboard, shell, safeStorage, nativeTheme, Tray, Menu, globalShortcut, nativeImage, screen } = require('electron');
+const { app, BrowserWindow, ipcMain, dialog, clipboard, shell, safeStorage, nativeTheme, Tray, Menu, globalShortcut, nativeImage, screen, Notification } = require('electron');
 const path = require('path');
 const fs = require('fs/promises');
 const fsSync = require('fs');
@@ -118,7 +118,9 @@ ipcMain.handle('file:export', async (_e, suggestedName, content) => {
     defaultPath: suggestedName,
     filters: suggestedName.endsWith('.json')
       ? [{ name: 'JSON', extensions: ['json'] }]
-      : [{ name: 'Markdown', extensions: ['md'] }, { name: '텍스트', extensions: ['txt'] }]
+      : suggestedName.endsWith('.csv')
+        ? [{ name: 'CSV (Excel)', extensions: ['csv'] }]
+        : [{ name: 'Markdown', extensions: ['md'] }, { name: '텍스트', extensions: ['txt'] }]
   });
   if (res.canceled || !res.filePath) return { ok: false, canceled: true };
   try {
@@ -127,6 +129,35 @@ ipcMain.handle('file:export', async (_e, suggestedName, content) => {
   } catch (e) {
     return { ok: false, error: e.message };
   }
+});
+
+// 회사 캘린더(ICS) 가져오기 — https(webcal) 주소만, 15초·5MB 까지. 주소에는 비공개 토큰이 들어 있으니 어디에도 남기지 않는다
+ipcMain.handle('cal:fetch', async (_e, rawUrl) => {
+  let url;
+  try {
+    url = new URL(String(rawUrl || '').trim().replace(/^webcals?:\/\//i, 'https://'));
+  } catch (e) { return { ok: false, error: '주소 모양이 아니에요' }; }
+  if (url.protocol !== 'https:') return { ok: false, error: 'https 로 시작하는 주소만 쓸 수 있어요' };
+  const ctrl = new AbortController();
+  const timer = setTimeout(() => ctrl.abort(), 15000);
+  try {
+    const res = await fetch(url.href, { signal: ctrl.signal, redirect: 'follow', headers: { Accept: 'text/calendar, text/plain, */*' } });
+    if (!res.ok) return { ok: false, error: res.status === 401 || res.status === 403 || res.status === 404 ? '캘린더가 주소를 거절했어요 (' + res.status + ') — 비공개 주소가 바뀌었을 수 있어요' : '캘린더 서버 응답이 ' + res.status + ' 이에요' };
+    const reader = res.body.getReader();
+    const chunks = []; let size = 0;
+    for (;;) {
+      const { done, value } = await reader.read();
+      if (done) break;
+      size += value.length;
+      if (size > 5 * 1024 * 1024) { ctrl.abort(); return { ok: false, error: '캘린더가 너무 커요 (5MB 넘음)' }; }
+      chunks.push(Buffer.from(value));
+    }
+    const text = Buffer.concat(chunks).toString('utf8');
+    if (!/BEGIN:VCALENDAR/i.test(text)) return { ok: false, error: '캘린더(ICS) 내용이 아니에요 — iCal 형식 주소인지 확인해 주세요' };
+    return { ok: true, text };
+  } catch (e) {
+    return { ok: false, error: e.name === 'AbortError' ? '15초 안에 답이 없었어요' : '가져오지 못했어요 — 인터넷 연결을 확인해 주세요' };
+  } finally { clearTimeout(timer); }
 });
 
 // ---------------------------------------------------------------- 창
@@ -243,6 +274,20 @@ ipcMain.handle('app:ready', () => {
   return { quickKey: quickRegistered ? QUICK_KEY : null };
 });
 
+// 앱 밖 알림 — 다른 앱(IDE 등)에서 일하는 중에도 집중 끝·쉬기 권유를 알 수 있게. 누르면 Daynote 창을 앞으로
+ipcMain.handle('app:notify', (_e, title, body, sound) => {
+  if (CHECK_RUN || !Notification.isSupported()) return false;
+  const n = new Notification({ title: String(title || 'Daynote').slice(0, 80), body: String(body || '').slice(0, 240), silent: !sound, icon: ICON(256) });
+  n.on('click', () => showMain());
+  n.show();
+  return true;
+});
+// 트레이 아이콘에 지금 상태 (예: "집중 18분 남음 · 배포 체크리스트")
+ipcMain.handle('app:status', (_e, text) => {
+  if (tray) tray.setToolTip(text ? 'Daynote — ' + String(text).slice(0, 100) : (quickRegistered ? 'Daynote — Ctrl+Shift+Space 빠른 메모' : 'Daynote'));
+  return true;
+});
+
 function showMain() {
   if (!mainWindow) return;
   if (mainWindow.isMinimized()) mainWindow.restore();
@@ -283,6 +328,8 @@ ipcMain.handle('quick:submit', (_e, text) => {
   return { ok: true };
 });
 ipcMain.on('quick:hide', () => { if (quickWindow) quickWindow.hide(); });
+// 메인 화면이 정리를 끝내면 결과 한 줄을 빠른 메모 창에 (창이 아직 떠 있을 때만 보인다)
+ipcMain.on('quick:result', (_e, text) => { if (quickWindow && !quickWindow.isDestroyed()) quickWindow.webContents.send('quick:result', String(text || '').slice(0, 200)); });
 ipcMain.on('quick:resize', (_e, h) => {
   if (!quickWindow) return;
   const [w] = quickWindow.getSize();

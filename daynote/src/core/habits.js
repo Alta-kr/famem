@@ -81,10 +81,23 @@
 
   // ---------------------------------------------------------------- 하루 마무리
   // 오늘 끝낸 일(작은 성취 — Amabile & Kramer 2011) + 아직 남은 오늘 일
+  //   남은 일은 '오늘 하려던 일' 만 — 앞날로 할 날·마감이 이미 정해진 일은 다시 묻지 않는다 (퇴근 직전 결정 수를 줄인다 — UX 점검 S-01)
   function dayClose(state, now, todayTasks) {
     var today = D.ymd(now);
+    var nowIso = new Date(now).toISOString();
     var done = M.liveTasks(state).filter(function (t) { return t.status === 'done' && t.completedAt && D.ymd(t.completedAt) === today; });
-    return { done: done, left: (todayTasks || []).filter(function (t) { return t.status !== 'done'; }) };
+    var blockToday = {};
+    state.blocks.forEach(function (b) { if (b.taskId && D.ymd(b.start) === today) blockToday[b.taskId] = true; });
+    var left = (todayTasks || []).filter(function (t) {
+      if (t.status === 'done') return false;
+      if (t.status === 'in_progress' || t.status === 'paused' || blockToday[t.id]) return true;
+      if (t.planDate) return t.planDate <= today;
+      if (t.dueDate) return t.dueDate <= today;
+      // 앞으로 잡힌 작업 시간이 있으면 이미 정한 것
+      if (state.blocks.some(function (b) { return b.taskId === t.id && b.start > nowIso; })) return false;
+      return true;
+    });
+    return { done: done, left: left };
   }
   // "내일 오전" · "내일 오후" · "이번 주 나중에" — 남은 일의 다음 시각 (실행 의도)
   //   빈 시간 찾기는 화면 쪽(schedule.findFreeSlot)이 하므로 여기서는 기준 시각만 준다

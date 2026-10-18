@@ -39,11 +39,30 @@
     }).join(', ');
   }
 
+  // 외부 캘린더(회사 캘린더)에서 가져온 일정 — 여기서는 보기만, 고치는 건 원래 캘린더에서
+  function externalInfo(b) {
+    var s = new Date(b.start), e = new Date(b.end);
+    var name = DN.calsync ? DN.calsync.calName(S.state, b.calId) : '외부 캘린더';
+    ui.modal({
+      title: b.title || '일정',
+      body: [
+        h('div.ext-info',
+          h('div.ext-info-row', ui.icon('clock'), h('span', D.longDay(s) + ' ' + D.hm(s) + '–' + D.hm(e) + ' (' + D.duration(D.minutesBetween(s, e)) + ')')),
+          b.location ? h('div.ext-info-row', ui.icon('pin'), h('span', b.location)) : null,
+          h('div.ext-info-row', ui.icon('calendar'), h('span', '‘' + name + '’에서 가져온 일정'))),
+        h('p.help', '바꾸려면 원래 캘린더(Google·Outlook 등)에서 고치세요. 다음에 가져올 때 여기도 바뀌어요. 빈 시간 찾기·추천은 이 일정을 피해서 잡아요.')
+      ],
+      actions: [{ label: '닫기', primary: true }]
+    });
+    return null;
+  }
+
   // opts: { taskId?, blockId?, start?: Date, minutes?, event?: true }
   function open(opts) {
     var A = DN.app;
     var st = S.state;
     var block = opts.blockId ? M.byId(st.blocks, opts.blockId) : null;
+    if (block && block.origin === 'ics') return externalInfo(block);
     var task = M.byId(st.tasks, opts.taskId || (block && block.taskId));
     var isEvent = !task;
     var now = A.now();

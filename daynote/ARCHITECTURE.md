@@ -40,7 +40,7 @@ flowchart LR
 
 ```
 daynote/
-├─ main.js               메인 프로세스: 창, 트레이, 빠른 메모 창, 전역 단축키, 단일 실행, 저장(원자적 쓰기 + .bak), IPC
+├─ main.js               메인 프로세스: 창, 트레이, 빠른 메모 창, 전역 단축키, 단일 실행, 저장(원자적 쓰기 + .bak), OS 알림, 캘린더(ICS) 가져오기, IPC
 ├─ preload.js            화면에 여는 API (저장·내보내기·AI·빠른 메모 수신)
 ├─ quick-preload.js      빠른 메모 창 전용 API
 ├─ services/
@@ -54,6 +54,11 @@ daynote/
 │  ├─ weekly.js          주간 정리·보고서 초안
 │  ├─ split.js           홈 세 칸 비율, 좌우 비율, 단계 시간 눈금
 │  ├─ habits.js          연구 기반 도움 (계획 오류 보정, 50분 휴식, 하루 마무리, 새 주 목표 …)
+│  ├─ steps.js           세부 할 일 나무 (몇 단계든), 개요 목록 → 할 일 + 세부 할 일
+│  ├─ horizon.js         앞을 보는 계획: 오늘·내일·이번 주·다음 주, 2주 띠, 할 날(planDate), 날짜별 부담
+│  ├─ timesheet.js       쓴 시간: 작업 구간(sessions) → 프로젝트·주별 합계, 예상 대비 실제, CSV
+│  ├─ ics.js             회사 캘린더(ICS) 읽기 — 반복·빠진 날·바뀐 한 번·시간대·종일
+│  ├─ exercises.js       휴식 스트레칭 동작 (단계별 시간)
 │  └─ ai/
 │     ├─ organizeNote.js 메모 정리 프롬프트·스키마 (기준)
 │     ├─ capture.js      던진 글 분류 프롬프트·스키마 (capture.v11)
@@ -71,6 +76,8 @@ daynote/
 │  ├─ capture.js         던진 글 → 저장 → AI 분류 → 반영
 │  ├─ assistant.js       채팅 조수: 명령 실행, 작업 카드, 작게 나누기, 추천, 휴식, 하루 마무리, 제안 시점
 │  ├─ palette.js         Ctrl+K 검색·명령
+│  ├─ rest.js            휴식 화면 (숨 고르고 눈 감기·스트레칭·산책, 소리)
+│  ├─ calsync.js         회사 캘린더 구독: 켤 때·30분마다 가져와 읽기 전용 일정으로 (되돌리기 대상 아님)
 │  ├─ editor.js · rules.js  마크다운 편집기 (CodeMirror 5, MD_Reflo 에서 가져옴)
 │  ├─ quick.html · quick.js 빠른 메모 창
 │  └─ views/             화면 하나당 파일 하나
@@ -80,8 +87,8 @@ daynote/
 │     ├─ tasks.js · notes.js · archive.js · projects.js · weekly.js · inbox.js · review.js
 │     ├─ detail.js       할 일 자세히 편집 (오른쪽 클릭 → 자세히 편집)
 │     ├─ schedule.js     일정·작업 시간 배치 대화상자, 빈 시간 찾기
-│     └─ settings.js     AI 키, 화면(테마·트레이), 데이터, 단축키
-├─ test/                 node:test — core 와 services 를 Node 에서 직접 검증 (16개 파일)
+│     └─ settings.js     캘린더 구독, AI 키, 휴식, 화면(테마·트레이), 데이터, 단축키
+├─ test/                 node:test — core 와 services 를 Node 에서 직접 검증
 └─ scripts/              serve(브라우저 미리보기), shots(스크린샷), make-icons, fix-electron
 ```
 
@@ -97,7 +104,7 @@ flowchart TB
   end
   subgraph L3["흐름"]
     direction LR
-    assistant --- capture2[capture.js] --- aiflow --- palette
+    assistant --- capture2[capture.js] --- aiflow --- palette --- rest --- calsync
   end
   subgraph L2["공통"]
     direction LR
@@ -105,7 +112,7 @@ flowchart TB
   end
   subgraph L1["src/core (window.Daynote.*)"]
     direction LR
-    dates --- model --- recommend --- habits --- split --- weekly2[weekly] --- aiCore["ai/ (validate · proposals · capture · commands · assist · fake)"]
+    dates --- model --- recommend --- habits --- split --- weekly2[weekly] --- steps --- horizon --- timesheet --- ics --- aiCore["ai/ (validate · proposals · capture · commands · assist · fake)"]
   end
   L4 --> L3 --> L2 --> L1
 ```
@@ -158,8 +165,10 @@ erDiagram
   AIRUN ||--o{ PROPOSAL : runId
   TASK {
     string status "todo·in_progress·paused·waiting·done"
-    string dueDate "마감"
+    string dueDate "마감 (언제까지)"
+    string planDate "할 날 (이날 하기)"
     number workedMs "한 시간"
+    array sessions "작업 구간 (쓴 시간·CSV)"
     array steps "세부 할 일"
     string resumeNote "이어서 할 첫 행동"
     string weekGoal "이번 주 목표"
@@ -171,12 +180,15 @@ erDiagram
   }
   BLOCK {
     string kind "event·work"
+    string origin "user·ai·focus·ics(읽기 전용)"
     string start
     string end
   }
 ```
 
-그 밖에 `chat`(채팅·카드 기록), `prefs`(테마·칸 비율·트레이), `meta`(마지막 제안 시각 등), `suggestions`·`emails`·`reports`가 있습니다.
+그 밖에 `chat`(채팅·카드 기록), `prefs`(테마·칸 비율·트레이·캘린더 구독 `calendars`), `meta`(마지막 제안 시각, 집중 `focus`, 외부 종일 일정 `extDays` 등), `suggestions`·`emails`·`reports`가 있습니다.
+
+**날짜 네 가지** — 어느 화면에서나 같은 말·같은 아이콘: 마감(깃발, `dueDate`) · 할 날(달력, `planDate`) · 작업 시간(시계, `kind:'work'` 블록) · 일정(`kind:'event'` 블록). 회사 캘린더 일정(`origin:'ics'`)은 보기만 하고, 빈 시간 찾기·추천·부담 계산에는 들어갑니다.
 
 ## 6. 확인하는 방법
 

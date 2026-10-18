@@ -61,6 +61,9 @@
       ['high', 'normal', 'low'].map(function (k) { return h('option', { value: k, selected: t.priority === k }, M.PRIORITY[k]); }));
     prio.addEventListener('change', function () { save({ priority: prio.value || null }, '우선순위 변경'); });
 
+    // 할 날 — 이날 하겠다 (마감과 따로)
+    var planDate = h('input.input', { type: 'date', value: t.planDate || '', 'aria-label': '할 날' });
+    planDate.addEventListener('change', function () { save({ planDate: planDate.value || null }, planDate.value ? '할 날 정하기' : '할 날 지우기'); });
     // 마감일 — 실제 작업 시간과 별개
     var dueDate = h('input.input', { type: 'date', value: t.dueDate || '', 'aria-label': '마감일' });
     var dueTime = h('input.input', { type: 'time', value: t.dueTime || '', 'aria-label': '마감 시각 (선택)' });
@@ -96,16 +99,8 @@
     addBlocker.addEventListener('change', function () { if (addBlocker.value) save({ blockedBy: (t.blockedBy || []).concat(addBlocker.value) }, '선행 업무 추가'); });
 
     // 작은 단계 — 긴 업무를 나눠 두면 '지금 할 일 추천'이 단계 단위로 제안할 수 있다
-    var steps = h('div', (t.steps || []).map(function (sp, i) {
-      var cb = h('input', { type: 'checkbox', checked: sp.done, 'aria-label': sp.title + ' 단계 완료' });
-      cb.addEventListener('change', function () {
-        var next = t.steps.map(function (x, j) { return j === i ? Object.assign({}, x, { done: cb.checked }) : x; });
-        save({ steps: next }, '단계 완료');
-      });
-      return h('div.step-row', cb, h('span', { style: { flex: 1, textDecoration: sp.done ? 'line-through' : 'none' } }, sp.title),
-        h('span.meta', sp.estimateMinutes != null ? D.duration(sp.estimateMinutes) : '미정'),
-        h('button.icon-btn', { type: 'button', 'aria-label': sp.title + ' 단계 삭제', style: { width: '26px', height: '26px' }, onclick: function () { save({ steps: t.steps.filter(function (_, j) { return j !== i; }) }, '단계 삭제'); } }, ui.icon('x')));
-    }));
+    // 홈과 같은 나무 모양 (아래 단계까지 보이고, + 하위·× 도 같다)
+    var steps = (t.steps || []).length ? ui.stepTree(t, { editable: true }) : h('div.help', '아직 단계가 없어요.');
     var stepTitle = h('input.input', { placeholder: '단계 추가 (예: 개요 잡기)', 'aria-label': '새 단계 이름' });
     var stepEst = h('input.input.est', { type: 'number', min: '1', placeholder: '분', 'aria-label': '새 단계 예상 시간(분)' });
     function addStep() {
@@ -167,9 +162,10 @@
           h('button.link-btn', { type: 'button', onclick: function () { save({ snoozedUntil: null }, '미루기 해제'); } }, '미루기 해제')) : null,
         h('div.field-row', field('상태', status), field('우선순위', prio)),
         t.status === 'waiting' ? field('대기 사유', waitingFor) : null,
-        h('div.detail-section', h('h4', '마감일'), h('div.field-row', dueDate, dueTime),
-          h('div.help', '마감일은 ‘언제까지’입니다. 실제로 일할 시간은 아래 작업 시간에서 정합니다.')),
-        h('div.detail-section', h('h4', '작업 시간'), blocks.length ? blocks : h('div.help', '아직 배치하지 않았습니다.'),
+        h('div.detail-section', h('h4', ui.icon('flag'), ' 마감 (언제까지)'), h('div.field-row', dueDate, dueTime)),
+        h('div.detail-section', h('h4', ui.icon('calendar'), ' 할 날 (이날 하기)'), h('div.field-row', planDate),
+          h('div.help', '할 날은 지나도 ‘마감 지남’이 되지 않고 다음 날 오늘 목록으로 넘어와요. 몇 시에 할지는 아래 작업 시간에서 정해요.')),
+        h('div.detail-section', h('h4', ui.icon('clock'), ' 작업 시간 (몇 시에)'), blocks.length ? blocks : h('div.help', '아직 배치하지 않았습니다.'),
           done ? null : h('div', h('button.btn.btn-sm', { type: 'button', onclick: function () { A.scheduleTask(taskId); } }, ui.icon('plus'), '작업 시간 추가'))),
         field('남은 예상 소요 시간 (분)', est, estHelp),
         field('프로젝트', proj),

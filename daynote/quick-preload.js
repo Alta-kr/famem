@@ -7,5 +7,6 @@ contextBridge.exposeInMainWorld('daynoteQuick', {
   submit: (text) => ipcRenderer.invoke('quick:submit', String(text || '').slice(0, 20000)),
   hide: () => ipcRenderer.send('quick:hide'),
   resize: (h) => ipcRenderer.send('quick:resize', Number(h) || 0),
-  onShown: (fn) => ipcRenderer.on('quick:shown', (_e, status) => fn(status))
+  onShown: (fn) => ipcRenderer.on('quick:shown', (_e, status) => fn(status)),
+  onResult: (fn) => ipcRenderer.on('quick:result', (_e, text) => fn(String(text || '')))
 });

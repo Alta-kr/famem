@@ -71,6 +71,78 @@
   // 화면은 키를 다시 받지 않는다 — 상태에는 '끝 4자리' 만 온다.
   var KEY_SOURCE = { env: '환경변수', dotenv: '앱 폴더의 .env 파일', saved: '이 앱에 저장한 키' };
 
+  // 회사·개인 캘린더 구독 (ICS) — 회의를 Daynote 에서도 보고, 빈 시간 찾기·추천이 회의를 피하게 (UX 점검 C-09)
+  function calCard() {
+    var C = DN.calsync;
+    var cals = S.state.prefs.calendars || [];
+    var now = A().now();
+    function ago(iso) {
+      if (!iso) return '아직 안 가져옴';
+      var m = Math.round((Date.now() - new Date(iso)) / 60000);
+      return m < 1 ? '방금 가져옴' : m < 60 ? m + '분 전에 가져옴' : D.relDay(D.ymd(new Date(iso)), now) + ' ' + D.hm(iso) + '에 가져옴';
+    }
+    var rows = cals.map(function (c) {
+      var busy = false;
+      var syncBtn = c.url ? h('button.btn.btn-sm', { type: 'button', onclick: function () {
+        if (busy) return;
+        busy = true; syncBtn.textContent = '가져오는 중…';
+        C.sync(c.id).then(function (r) { ui.toast(r.ok ? '‘' + c.name + '’ 일정 ' + r.count + '개를 가져왔어요.' : '가져오지 못했어요 — ' + r.error, r.ok ? {} : { error: true }); });
+      } }, '지금 가져오기') : null;
+      return h('div.provider.cal-sub',
+        ui.icon('calendar'),
+        h('div.grow',
+          h('b', c.name),
+          h('div.help', c.url ? C.maskUrl(c.url) + ' · ' : 'ICS 파일 · ', c.error ? h('span.cal-sub-err', c.error) : (ago(c.lastSync) + (c.lastSync ? ' · 일정 ' + (c.count || 0) + '개' : '')))),
+        syncBtn,
+        h('button.btn.btn-sm.btn-ghost', { type: 'button', onclick: function () {
+          ui.confirm('‘' + c.name + '’ 빼기', '이 캘린더에서 가져온 일정도 Daynote 에서 사라져요. 원래 캘린더는 그대로예요.', '빼기').then(function (ok) {
+            if (!ok) return;
+            C.remove(c.id);
+            ui.toast('‘' + c.name + '’ 캘린더를 뺐어요.');
+          });
+        } }, '빼기'));
+    });
+
+    var nameIn = h('input.input', { placeholder: '이름 (예: 회사 캘린더)', 'aria-label': '캘린더 이름', style: { width: '160px' } });
+    var urlIn = h('input.input', { type: 'password', autocomplete: 'off', spellcheck: 'false', placeholder: 'https://… 또는 webcal://… (.ics 주소)', 'aria-label': '캘린더 ICS 주소', 'aria-describedby': 'set-cal-help', style: { flex: '1', minWidth: '220px' } });
+    var addBtn = h('button.btn.btn-sm.btn-primary', { type: 'button', onclick: function () {
+      var url = urlIn.value.trim();
+      if (!url) { urlIn.focus(); return; }
+      if (!/^(https|webcals?):\/\//i.test(url)) { ui.toast('https:// 또는 webcal:// 로 시작하는 주소를 넣어 주세요.', { error: true }); urlIn.focus(); return; }
+      addBtn.disabled = true; addBtn.textContent = '가져오는 중…';
+      C.add(nameIn.value, url).then(function (r) {
+        ui.toast(r.ok ? '일정 ' + r.count + '개를 가져왔어요. 30분마다 새로 가져와요.' : '추가했지만 가져오지 못했어요 — ' + r.error, r.ok ? {} : { error: true });
+      });
+    } }, ui.icon('plus'), '추가');
+    var fileIn = h('input', { type: 'file', accept: '.ics,text/calendar', hidden: true, onchange: function () {
+      var f = fileIn.files && fileIn.files[0];
+      if (!f) return;
+      if (f.size > 5 * 1024 * 1024) { ui.toast('파일이 너무 커요 (5MB 넘음).', { error: true }); return; }
+      var rd = new FileReader();
+      rd.onload = function () {
+        var r = C.importFile(f.name, String(rd.result || ''));
+        ui.toast(r.ok ? '‘' + f.name + '’에서 일정 ' + r.count + '개를 가져왔어요.' : r.error, r.ok ? {} : { error: true });
+      };
+      rd.readAsText(f);
+    } });
+
+    return h('section.card.settings-card', { 'aria-labelledby': 'set-cal' },
+      h('h3#set-cal', '캘린더'),
+      h('div.status-line', h('span.status-dot' + (cals.some(function (c) { return c.error; }) ? '.err' : '.ok')),
+        cals.length ? '외부 캘린더 ' + cals.length + '개를 보는 중 (읽기 전용)' : '앱 안 캘린더만 사용 중'),
+      h('p.help', '회사·개인 캘린더의 회의를 Daynote 에서도 봐요. 빈 시간 찾기·작업 배치·추천이 회의를 피해서 잡아요. 고치는 건 원래 캘린더에서 해요.'),
+      rows.length ? h('div.provider-list', rows) : null,
+      h('div.cal-add', nameIn, urlIn, addBtn),
+      h('details.cal-help#set-cal-help',
+        h('summary', '주소는 어디서 찾나요?'),
+        h('ul',
+          h('li', h('b', 'Google 캘린더'), ' — 웹에서 설정 → 왼쪽 ‘내 캘린더의 설정’에서 캘린더 선택 → ‘캘린더 통합’ → ', h('b', 'iCal 형식의 비공개 주소'), ' 복사'),
+          h('li', h('b', 'Outlook (Microsoft 365)'), ' — 웹에서 설정 → 캘린더 → 공유 캘린더 → ', h('b', '캘린더 게시'), ' → ‘모든 세부 정보 보기’로 게시 → ICS 링크 복사'),
+          h('li', '회사 정책으로 게시가 막혀 있으면 캘린더를 .ics 파일로 내보낸 뒤 아래 ‘파일에서 가져오기’를 쓰세요 (자동으로 새로 가져오지는 않아요).')),
+        h('p.help', '이 주소는 비밀번호처럼 다뤄 주세요 — 아는 사람은 누구나 일정을 볼 수 있어요. Daynote 는 이 컴퓨터(와 전체 백업 파일)에만 저장하고 화면에는 앞부분만 보여요.')),
+      h('div.sug-actions', h('button.btn.btn-sm', { type: 'button', onclick: function () { fileIn.click(); } }, ui.icon('upload'), 'ICS 파일에서 가져오기'), fileIn));
+  }
+
   function aiCard(root) {
     var aiSt = DN.aiFlow.status();
     var rerender = function () { DN.aiFlow.loadStatus().then(function () { root.textContent = ''; render(root); }); };
@@ -187,10 +259,7 @@
     }
 
     // ---------------------------------------------------------------- 캘린더 · AI
-    var cal = h('section.card.settings-card', { 'aria-labelledby': 'set-cal' },
-      h('h3#set-cal', '캘린더'),
-      h('div.status-line', h('span.status-dot.ok'), '앱 안 캘린더만 사용 중'),
-      h('p.help', '외부 캘린더(Google·Outlook) 동기화는 별도 기능으로, 이 버전에서는 아직 지원하지 않습니다.'));
+    var cal = calCard();
 
     var ai = aiCard(root);
 
