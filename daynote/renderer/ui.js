@@ -363,7 +363,7 @@
     var S = window.Daynote.store, A = window.Daynote.app;
     var t = M.byId(S.state.tasks, taskId);
     if (!t) return null;
-    var now = A.now(), wd = now.getDay();
+    var now = A.now();
     // 마감(언제까지) · 할 날(이날 하기) 중 무엇을 정할지 — 할 날만 있는 일은 할 날부터
     var mode = !t.dueDate && t.planDate ? 'plan' : 'due';
     var dIn = h('input.input', { type: 'date', value: (mode === 'plan' ? t.planDate : t.dueDate) || '', 'aria-label': '날짜' });
@@ -391,8 +391,7 @@
       if (pop) pop.close(true);
       undoToast('‘' + t.title + '’ ' + D.relDay(day, now) + (to === 'plan' ? ' — 마감이 아니라 그날 할 일로 바꿨어요.' : ' — 할 날을 마감으로 바꿨어요.'));
     }
-    var quick = [['오늘', D.ymd(now)], ['내일', D.ymd(D.addDays(now, 1))],
-      ['이번 주 금요일', D.ymd(D.addDays(now, (5 - wd + 7) % 7))], ['다음 주 월요일', D.ymd(D.addDays(now, ((8 - wd) % 7) || 7))]];
+    var quick = window.Daynote.horizon.planChoices(now);   // 오늘 · 내일 · 이번 주 금요일 · 다음 주 월요일 (한 곳에서 계산)
     var cur = function () { return mode === 'plan' ? t.planDate : t.dueDate; };
     var form = h('form.due-editor', { onsubmit: function (e) { e.preventDefault(); if (dIn.value) save(dIn.value, mode === 'plan' ? null : tIn.value); else dIn.focus(); } });
     function draw() {
@@ -529,6 +528,7 @@
       h('div.dock-hint', '프로젝트 폴더에 놓으면 옮기고, 휴지통에 놓으면 지워요'),
       h('div.dock-row', tiles));
     document.body.appendChild(dock);
+    watchDock();
     document.documentElement.classList.add('is-note-dragging');
   }
   // 할 일을 끌면 아래에 휴지통이 퉁 하고 뜬다 — 놓으면 지운다 (앞으로 잡힌 작업 시간도 함께, Ctrl+Z 로 되돌리기)
@@ -551,6 +551,7 @@
     });
     dock = h('div.note-dock.is-trash-only', { role: 'region', 'aria-label': '할 일 지우기 — 휴지통에 놓으세요' }, bin);
     document.body.appendChild(dock);
+    watchDock();
   }
   document.addEventListener('dragstart', function (e) {
     var tEl = e.target && e.target.closest && e.target.closest('[data-task-id]');
@@ -570,7 +571,10 @@
   //   놓는 곳이 drop 을 멈추기도 한다 — 그래서 drop 은 캡처 단계에서 먼저 받고, 그래도 남으면 다음 마우스 움직임에 닫는다
   document.addEventListener('dragend', function () { setTimeout(hideDock, 0); }, true);
   document.addEventListener('drop', function () { setTimeout(hideDock, 0); }, true);
-  document.addEventListener('mousemove', function () { if (dock) hideDock(); }, true);
+  // 끌기가 끝났는데 drop·dragend 가 오지 않은 경우(창 밖에 놓기 등) — 독이 떠 있을 때만 다음 마우스 움직임에 닫는다
+  var dockShownAt = 0;
+  function onDockMove() { if (!dock) { document.removeEventListener('mousemove', onDockMove, true); return; } if (Date.now() - dockShownAt > 300) hideDock(); }
+  function watchDock() { dockShownAt = Date.now(); document.removeEventListener('mousemove', onDockMove, true); document.addEventListener('mousemove', onDockMove, true); }
 
   // 마감 지난 할 일을 지금 + 24시간으로 (Ctrl+Z 로 되돌릴 수 있다)
   function postponeOverdue(taskId) {

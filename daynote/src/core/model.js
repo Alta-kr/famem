@@ -72,7 +72,7 @@
   function normalizeTask(t) {
     var n = Object.assign({
       id: uid('task'), title: '', memo: '', projectId: null, status: 'todo', priority: null,
-      dueDate: null, dueTime: null,
+      dueDate: null, dueTime: null, planDate: null,   // planDate: 할 날 (이날 하기 — 마감과 다르다)
       // 남은 예상 소요 시간(분). null 은 "미정" — 0분과 다르다.
       estimateMinutes: null, estimateSource: null,      // 'user' | 'ai'
       blockedBy: [], waitingFor: '', snoozedUntil: null,

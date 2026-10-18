@@ -109,7 +109,7 @@
     document.body.appendChild(el);
     document.documentElement.classList.add('is-resting');
     cur = { el: el, pausedIds: pausedIds, parked: [], minutes: DN.habits.REST_DEFAULT_MIN, prevFocus: document.activeElement, sound: soundPref(prefs().restSound) };
-    el.addEventListener('keydown', function (e) { if (e.key === 'Escape') { e.preventDefault(); if (cur && cur.mode) finish(); else back(false); } });
+    el.addEventListener('keydown', function (e) { if (e.key === 'Escape') { e.preventDefault(); if (cur && cur.onEndEscape) cur.onEndEscape(); else if (cur && cur.mode) finish(); else back(false); } });
     var mode = normMode(opts.mode);
     if (mode) start(mode, true); else prepare();
   }
@@ -206,6 +206,7 @@
   function start(mode, reset) {
     clearTimers();
     cur.mode = mode;
+    cur.onEndEscape = null;
     if (reset || !cur.endAt) { cur.endAt = Date.now() + cur.minutes * 60000; cur.total = cur.minutes * 60000; }
     cur.startedAt = cur.startedAt || Date.now();
     var el = cur.el; el.textContent = '';
@@ -370,6 +371,8 @@
         } }, r[1]);
       })) : null;
     var tasks = cur.pausedIds.map(function (id) { return M.byId(S.state.tasks, id); }).filter(Boolean);
+    // 끝 화면에서 Esc — 기록하고 돌아가기 (끝 화면을 다시 그리지 않는다)
+    cur.onEndEscape = function () { save(mode, rated, spent); back(false); };
     el.appendChild(h('div.rest-end',
       h('h2.rest-title', timeUp ? '잘 쉬었어요.' : '휴식을 마칠까요?'),
       tasks.length ? h('div.rest-return', h('div.rest-label', '다시 시작할까요?'),
@@ -379,8 +382,9 @@
       rateRow,
       h('div.rest-actions',
         h('button.btn.btn-primary', { type: 'button', onclick: function () { save(mode, rated, spent); back(true); } }, tasks.length ? '작업 공간으로 (이어서 하기)' : '돌아가기'),
-        h('button.btn', { type: 'button', onclick: function () { save(mode, rated, spent); cur.minutes = 3; cur.startedAt = Date.now(); start(mode || 'calm', true); } }, '조금 더 쉬기 (3분)'),
-        h('button.btn.btn-ghost', { type: 'button', onclick: function () { save(mode, rated, spent); prepare(); } }, '다른 방법으로 쉬기'))));
+        // 조금 더 쉬기 — 같은 휴식을 이어서 (기록은 끝날 때 한 번, 시간은 처음부터 합쳐서)
+        h('button.btn', { type: 'button', onclick: function () { cur.minutes = 3; start(mode || 'calm', true); } }, '조금 더 쉬기 (3분)'),
+        h('button.btn.btn-ghost', { type: 'button', onclick: function () { save(mode, rated, spent); cur.startedAt = null; cur.onEndEscape = null; prepare(); } }, '다른 방법으로 쉬기'))));
     var b = el.querySelector('.rest-actions .btn-primary'); if (b) b.focus();
   }
   function save(mode, rating, minutes) {

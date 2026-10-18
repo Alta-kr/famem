@@ -64,8 +64,9 @@
     M.liveTasks(st).forEach(function (t) {
       if (t.status === 'done') { if (t.completedAt && D.ymd(t.completedAt) === today && !t.homeClearedAt) done.push(t); return; }
       if (t.status === 'in_progress' || t.status === 'paused' || blockToday[t.id] || (t.dueDate && t.dueDate <= today) || (t.planDate && t.planDate <= today)) { open.push(t); return; }
-      // 앞날로 '할 날' 을 정해 둔 일은 그날 칸에서 (오늘 만든 일이라도)
-      if (t.planDate && t.planDate > today) return;
+      // 앞날에 자리가 있는 일(할 날 · 작업 시간 · 마감)은 그날 칸에서 — 오늘 만든 일이라도 (결과 카드의 [→ 그날 칸] 과 같게)
+      var anchor = DN.horizon ? DN.horizon.anchorDay(st, t, now) : t.planDate;
+      if (anchor && anchor > today) return;
       if (D.ymd(t.createdAt) === today) open.push(t);
     });
     function rank(t) {
@@ -115,7 +116,8 @@
       focusOnly ? h('li.home-more', h('button.link-btn', { type: 'button', onclick: function () { S.mutate(null, function (s) { s.prefs.todayTop3 = false; }); } }, '나머지 ' + (tl.open.length - 3) + '개 보기')) : null,
       focusOnly ? null : tl.done.map(function (t) { return taskRow(st, t, now, t.id === sel); }));
     sortable(taskUl, shownOpen.map(function (t) { return t.id; }), function (ids) {
-      S.mutate('할 일 순서 바꾸기', function (s) { ids.forEach(function (id, i) { var t = M.byId(s.tasks, id); if (t) t.sortOrder = (i + 1) * 10; }); });
+      var all = ids.concat(tl.open.map(function (t) { return t.id; }).filter(function (id) { return ids.indexOf(id) === -1; }));
+      S.mutate('할 일 순서 바꾸기', function (s) { all.forEach(function (id, i) { var t = M.byId(s.tasks, id); if (t) t.sortOrder = (i + 1) * 10; }); });
     });
 
     var memoUl = h('ul.home-list', { 'aria-label': '오늘 적은 메모 (끌어서 순서 바꾸기, Alt+위/아래)' }, memos.map(function (n) { return memoRow(st, n, now); }));
@@ -533,7 +535,7 @@
         var list = memos();
         if (!list.length) { listBox.appendChild(h('div.empty', q ? '찾는 메모가 없어요.' : '보관함이 비어 있어요.')); return; }
         list.forEach(function (n) {
-          var body = (n.body || '').replace(/s+/g, ' ').trim();
+          var body = (n.body || '').replace(/\s+/g, ' ').trim();
           var proj = n.projectId && M.byId(S.state.projects, n.projectId);
           listBox.appendChild(h('div.shelf-row',
             h('div.shelf-main',

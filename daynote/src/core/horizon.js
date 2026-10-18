@@ -55,8 +55,10 @@
     var nowIso = new Date(now).toISOString();
     var b = state.blocks.filter(function (x) { return x.taskId === t.id && x.end > nowIso; })
       .sort(function (a, c) { return a.start < c.start ? -1 : 1; })[0];
-    if (b) return ymd(b.start);
-    return t.dueDate || null;
+    var work = b ? ymd(b.start) : null;
+    // 작업 시간과 마감 중 이른 날 — 마감보다 늦게 잡힌 작업 시간이 마감 날을 가리지 않게
+    if (work && t.dueDate) return work < t.dueDate ? work : t.dueDate;
+    return work || t.dueDate || null;
   }
 
   function openTasks(state) {
@@ -133,7 +135,7 @@
   function planChoices(now) {
     var today = ymd(now), wd = new Date(now).getDay();
     var list = [['오늘', today], ['내일', plus(today, 1)]];
-    var fri = plus(today, (5 - wd + 7) % 7);
+    var fri = plus(ymd(D.startOfWeek(now)), 4);
     if (fri > plus(today, 1)) list.push(['이번 주 금요일', fri]);
     list.push(['다음 주 월요일', plus(today, ((8 - wd) % 7) || 7)]);
     return list;

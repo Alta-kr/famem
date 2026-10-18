@@ -95,6 +95,9 @@
     if (t.status === 'waiting') return 'waiting';
     if (M.unmetBlockers(state, t).length) return 'blocked';
     if (t.snoozedUntil && new Date(t.snoozedUntil).getTime() > now.getTime()) return 'snoozed';
+    // 앞날에 하기로 한 일(할 날)은 그날까지 추천하지 않는다 — 마감이 오늘·지났으면 예외
+    var today = D.ymd(now);
+    if (t.planDate && t.planDate > today && !(t.dueDate && t.dueDate <= today)) return 'planned';
     return null;
   }
 
@@ -182,7 +185,7 @@
     ctx.next = cal.next ? { id: cal.next.id, title: blockTitle(state, cal.next), start: cal.next.start } : null;
     ctx.minutesToNext = cal.minutesToNext;
 
-    var excluded = { done: 0, waiting: 0, blocked: 0, snoozed: 0 };
+    var excluded = { done: 0, waiting: 0, blocked: 0, snoozed: 0, planned: 0 };
     var ranked = [], tooLong = [];
     var openCount = 0;
 
@@ -245,7 +248,8 @@
     var msg = {
       removed: '삭제되었거나 보관된 할 일입니다.', done: '이미 완료된 할 일입니다.',
       waiting: '대기 상태인 할 일입니다.', blocked: '선행 업무가 아직 끝나지 않았습니다.',
-      snoozed: '미뤄 둔 할 일입니다.'
+      snoozed: '미뤄 둔 할 일입니다.',
+      planned: '앞날에 하기로 한 일입니다 (할 날).'
     };
     return ex ? { ok: false, reason: msg[ex] } : { ok: true, task: t };
   }
@@ -255,7 +259,7 @@
     var parts = [];
     state.tasks.forEach(function (t) {
       parts.push([t.id, t.status, t.priority, t.sortOrder, t.dueDate, t.dueTime, t.estimateMinutes, (t.blockedBy || []).join('+'),
-        t.snoozedUntil, t.deletedAt, t.archivedAt, (t.steps || []).map(function (s) { return (s.done ? 1 : 0) + ':' + (s.estimateMinutes || ''); }).join(',')].join('|'));
+        t.snoozedUntil, t.deletedAt, t.archivedAt, leafSteps(t.steps).map(function (s) { return (s.done ? 1 : 0) + ':' + (s.estimateMinutes || ''); }).join(','), t.planDate].join('|'));
     });
     state.blocks.forEach(function (b) { parts.push([b.id, b.start, b.end, b.taskId].join('|')); });
     return parts.sort().join('\n');

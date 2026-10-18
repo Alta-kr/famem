@@ -73,19 +73,21 @@
     var weekEndEod = D.endOfDay(D.parseYmd(r.weekEnd)).toISOString();
     var open = M.liveTasks(state).filter(function (t) { return t.status !== 'done'; });
 
+    // 날짜 기준: 마감과 '할 날' 중 이른 날 (할 날로만 정한 일도 보고에 들어가게)
+    function day(t) { return [t.dueDate, t.planDate].filter(Boolean).sort()[0] || null; }
     var unfinished = open.filter(function (t) {
       if (t.createdAt && t.createdAt > weekEndEod) return false;
-      return (t.dueDate && t.dueDate <= r.weekEnd) || t.status === 'in_progress' || t.status === 'paused' || t.status === 'waiting';
+      return (day(t) && day(t) <= r.weekEnd) || t.status === 'in_progress' || t.status === 'paused' || t.status === 'waiting';
     }).sort(function (a, b) {
-      return (a.dueDate || '9999') < (b.dueDate || '9999') ? -1 : (a.dueDate || '9999') > (b.dueDate || '9999') ? 1 : 0;
+      return (day(a) || '9999') < (day(b) || '9999') ? -1 : (day(a) || '9999') > (day(b) || '9999') ? 1 : 0;
     }).map(function (t) {
-      return { taskId: t.id, title: t.title, projectId: t.projectId || null, dueDate: t.dueDate || null, status: t.status };
+      return { taskId: t.id, title: t.title, projectId: t.projectId || null, dueDate: t.dueDate || null, planDate: t.planDate || null, status: t.status };
     });
 
     var nextWeek = open.filter(function (t) {
-      return t.dueDate && t.dueDate > r.weekEnd && t.dueDate <= r.nextWeekEnd;
-    }).sort(function (a, b) { return a.dueDate < b.dueDate ? -1 : a.dueDate > b.dueDate ? 1 : 0; })
-      .map(function (t) { return { taskId: t.id, title: t.title, dueDate: t.dueDate, projectId: t.projectId || null }; });
+      return day(t) && day(t) > r.weekEnd && day(t) <= r.nextWeekEnd;
+    }).sort(function (a, b) { return day(a) < day(b) ? -1 : day(a) > day(b) ? 1 : 0; })
+      .map(function (t) { return { taskId: t.id, title: t.title, dueDate: t.dueDate || null, planDate: t.planDate || null, projectId: t.projectId || null }; });
 
     function ofType(type) { return weekHist.filter(function (h) { return h.type === type; }); }
 
@@ -148,6 +150,7 @@
       var meta = [];
       if (t.status && t.status !== 'todo' && M.TASK_STATUS[t.status]) meta.push(M.TASK_STATUS[t.status]);
       if (t.dueDate) meta.push('마감 ' + shortMd(t.dueDate));
+      else if (t.planDate) meta.push(shortMd(t.planDate) + ' 예정');
       return '- ' + oneLine(t.title) + (meta.length ? ' (' + meta.join(', ') + ')' : '');
     })));
 
@@ -159,7 +162,7 @@
 
     out.push('', '## 다음 주 계획');
     out.push(list(s.nextWeek.map(function (t) {
-      return '- ' + oneLine(t.title) + (t.dueDate ? ' (마감 ' + shortMd(t.dueDate) + ')' : '');
+      return '- ' + oneLine(t.title) + (t.dueDate ? ' (마감 ' + shortMd(t.dueDate) + ')' : t.planDate ? ' (' + shortMd(t.planDate) + ' 예정)' : '');
     })));
 
     return out.join('\n') + '\n';

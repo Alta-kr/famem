@@ -715,7 +715,7 @@
   }
   // 단계 합계 — 나눠 보면 예상이 더 정확해진다 (단계 합이 예상보다 길면 알려 주고 바꿀 수 있게)
   function stepsSumLine(t) {
-    var steps = t.steps || [];
+    var steps = DN.steps ? DN.steps.leaves(t.steps || []) : (t.steps || []);   // 아래 단계가 있으면 맨 아래 단계들로
     if (!steps.length || !steps.every(function (x) { return x.estimateMinutes > 0; })) return null;
     var sum = steps.reduce(function (a, x) { return a + x.estimateMinutes; }, 0);
     if (t.estimateMinutes && sum <= t.estimateMinutes * 1.15) return null;

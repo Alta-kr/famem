@@ -727,7 +727,7 @@
   // 바꾼 것은 사용자 결정이라 다음 AI 정리가 덮지 않는다 (kindByUser · changedByUser).
   // 할 일 ↔ 일정을 오가도 원래 값(마감·완료·단계·소요 시간·장소·길이)을 잃지 않게 바꾸기 전 값을 함께 둔다.
   var KINDS = { task: 1, event: 1, memo: 1, idea: 1, link: 1 };
-  var TASK_KEEP = ['dueDate', 'dueTime', 'memo', 'priority', 'estimateMinutes', 'estimateSource', 'steps', 'breakdown', 'blockedBy', 'waitingFor', 'snoozedUntil', 'proposalId', 'sortOrder', 'elaboratedAt',
+  var TASK_KEEP = ['planDate', 'dueDate', 'dueTime', 'memo', 'priority', 'estimateMinutes', 'estimateSource', 'steps', 'breakdown', 'blockedBy', 'waitingFor', 'snoozedUntil', 'proposalId', 'sortOrder', 'elaboratedAt',
     'workedMs', 'pausedAt', 'resumeNote', 'weekGoal', 'postponedCount', 'sample'];
 
   function hm(d) { return ('0' + d.getHours()).slice(-2) + ':' + ('0' + d.getMinutes()).slice(-2); }
@@ -759,10 +759,11 @@
       start = new Date(work.start); end = new Date(work.end); uncertain = false;
       M.deleteBlock(state, work.id);
     // 일정에서 왔던 할 일이고 날짜를 안 바꿨으면 원래 일정 그대로
-    } else if (back && D.ymd(new Date(back.start)) === t.dueDate) {
+    } else if (back && D.ymd(new Date(back.start)) === (t.dueDate || t.planDate)) {
       start = new Date(back.start); end = new Date(back.end); uncertain = !!back.timeUncertain;
     } else {
-      var g = guessStart(t.dueDate, t.dueTime, now, slot);
+      // 마감이 없으면 '할 날' 에 (없으면 오늘)
+      var g = guessStart(t.dueDate || t.planDate, t.dueDate ? t.dueTime : null, now, slot);
       start = g.start; uncertain = g.uncertain;
       end = new Date(start.getTime() + (back ? new Date(back.end) - new Date(back.start) : 60 * 60000));
     }
@@ -792,7 +793,11 @@
       ['status', 'completedAt', 'startedAt', 'origin', 'createdAt'].forEach(function (k) { if (back[k] !== undefined) fields[k] = back[k]; });
       if (fields.status === 'in_progress') fields.runningSince = M.iso(now);   // 진행 중이던 일은 지금부터 다시 센다
       // 일정에서 날짜·시각을 직접 바꿨으면 그 값을 마감으로. 그대로면 원래 마감(없었으면 없음)
-      if (b.start !== back.blockStart) { fields.dueDate = D.ymd(s); fields.dueTime = b.timeUncertain ? null : hm(s); }
+      // (원래 '할 날' 만 있던 일이면 바뀐 날짜를 할 날로)
+      if (b.start !== back.blockStart) {
+        if (back.planDate && !back.dueDate) fields.planDate = D.ymd(s);
+        else { fields.dueDate = D.ymd(s); fields.dueTime = b.timeUncertain ? null : hm(s); }
+      }
     } else {
       fields.dueDate = D.ymd(s);
       fields.dueTime = b.timeUncertain ? null : hm(s);
