@@ -1810,3 +1810,24 @@ html.is-resting .toast, html.is-resting .toasts { display: none !important; }   
 .cal-help summary { cursor: pointer; color: var(--primary); }
 .cal-help ul { margin: 8px 0 6px 18px; display: flex; flex-direction: column; gap: 4px; color: var(--text-secondary); }
 .cal-sub-err { color: var(--error); }
+
+/* 로그인 화면 */
+.login-screen { min-height: 100vh; display: grid; place-items: center; padding: 24px; background: var(--bg-app); }
+.login-card { width: min(440px, 100%); background: var(--surface); border: 1px solid var(--border-deco); border-radius: 16px; padding: 32px 32px 24px; box-shadow: 0 8px 32px rgba(0,0,0,.06); }
+.login-brand { display: flex; align-items: center; gap: 10px; font-weight: 700; font-size: 17px; margin-bottom: 22px; }
+.login-title { font-size: 21px; font-weight: 700; margin: 0 0 8px; }
+.login-sub { color: var(--text-secondary); font-size: 14px; line-height: 1.6; margin: 0 0 22px; }
+.login-google { all: unset; box-sizing: border-box; width: 100%; display: flex; align-items: center; justify-content: center; gap: 10px; height: 44px; border-radius: 10px; background: #fff; color: #1f1f1f; border: 1px solid #dadce0; font-family: Roboto, 'Segoe UI', 'Malgun Gothic', sans-serif; font-size: 15px; font-weight: 500; cursor: pointer; }
+.login-google:hover { background: #f8f9fa; border-color: #c6c9cc; }
+.login-google:focus-visible { outline: 2px solid var(--primary); outline-offset: 2px; }
+.login-google[disabled] { opacity: .55; cursor: default; }
+.login-row { display: flex; align-items: center; gap: 8px; min-height: 30px; margin-top: 10px; }
+.login-msg { flex: 1; margin: 0; font-size: 13px; color: var(--text-secondary); line-height: 1.5; }
+.login-msg.is-err { color: var(--error); }
+.login-msg.is-ok { color: var(--success); }
+.login-setup:empty { display: none; }
+.login-setup { margin-top: 8px; padding: 12px 14px; border-radius: 10px; background: var(--surface-subtle); font-size: 13px; line-height: 1.6; }
+.login-setup ol { margin: 6px 0 0 18px; padding: 0; }
+.login-setup code { font-size: 12px; }
+.login-fine { margin: 18px 0 0; font-size: 12px; color: var(--text-tertiary); line-height: 1.5; }
+.acc-avatar { width: 26px; height: 26px; border-radius: 50%; display: grid; place-items: center; background: var(--primary-soft); color: var(--primary); font-weight: 700; font-size: 13px; flex: none; }

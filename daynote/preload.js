@@ -29,5 +29,12 @@ contextBridge.exposeInMainWorld('daynoteHost', {
   notify: (title, body, sound) => ipcRenderer.invoke('app:notify', String(title || ''), String(body || ''), !!sound),
   setStatus: (text) => ipcRenderer.invoke('app:status', String(text || '')),
   quickResult: (text) => ipcRenderer.send('quick:result', String(text || '')),
-  fetchCalendar: (url) => ipcRenderer.invoke('cal:fetch', String(url || ''))
+  fetchCalendar: (url) => ipcRenderer.invoke('cal:fetch', String(url || '')),
+  auth: {
+    status: () => ipcRenderer.invoke('auth:status'),
+    signIn: () => ipcRenderer.invoke('auth:signIn'),
+    cancel: () => ipcRenderer.invoke('auth:cancel'),
+    signOut: () => ipcRenderer.invoke('auth:signOut')
+  },
+  onAuthChanged: (fn) => ipcRenderer.on('auth:changed', () => fn())
 });

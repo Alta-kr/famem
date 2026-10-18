@@ -31,6 +31,17 @@ if (process.argv.includes('--shots') || (process.argv.includes('--smoke') && pro
 const keystoreMod = require('./services/keystore');
 keystoreMod.loadDotEnv(__dirname);
 
+// 구글 로그인 — Daynote 는 로그인해야 쓴다. 설정은 .env 의 GOOGLE_OAUTH_CLIENT_ID · GOOGLE_OAUTH_CLIENT_SECRET
+//   (DAYNOTE_ALLOWED_EMAILS 로 쓸 수 있는 계정을 정할 수 있다. 없으면 처음 로그인한 계정만)
+//   창(렌더러) 프로세스가 물려받지 않게 값을 옮겨 두고 환경변수에서 지운다
+const authMod = require('./services/auth');
+const OAUTH = { clientId: process.env.GOOGLE_OAUTH_CLIENT_ID || '', clientSecret: process.env.GOOGLE_OAUTH_CLIENT_SECRET || '', allowed: process.env.DAYNOTE_ALLOWED_EMAILS || '' };
+['GOOGLE_OAUTH_CLIENT_ID', 'GOOGLE_OAUTH_CLIENT_SECRET', 'DAYNOTE_ALLOWED_EMAILS'].forEach((k) => { delete process.env[k]; });
+let auth = null;
+// 검사 실행(smoke·shots)은 로그인 없이 돈다. DAYNOTE_FORCE_LOGIN=1 이면 검사에서도 로그인 화면
+const LOGIN_BYPASS = CHECK_RUN && process.env.DAYNOTE_FORCE_LOGIN !== '1';
+function signedIn() { return LOGIN_BYPASS || !!(auth && auth.status().signedIn); }
+
 let mainWindow = null;
 let quickWindow = null;
 let tray = null;
@@ -75,8 +86,19 @@ function saveData(json) {
   return writing;
 }
 
-ipcMain.handle('store:load', () => loadData());
-ipcMain.handle('store:save', (_e, json) => saveData(json));
+// 로그인 전에는 데이터를 열지도 쓰지도 않는다
+ipcMain.handle('store:load', () => signedIn() ? loadData() : { ok: false, locked: true });
+ipcMain.handle('store:save', (_e, json) => signedIn() ? saveData(json) : { ok: false, error: '로그인이 필요해요' });
+
+// 구글 로그인 — 기본 브라우저에서 로그인하고 돌아온다 (services/auth.js)
+ipcMain.handle('auth:status', () => LOGIN_BYPASS ? { configured: true, signedIn: true, bypass: true, user: null } : auth.status());
+ipcMain.handle('auth:signIn', async () => {
+  const r = await auth.signIn();
+  if (r.ok) showMain();   // 브라우저에서 돌아오면 Daynote 창을 앞으로
+  return r;
+});
+ipcMain.handle('auth:cancel', () => { auth.cancel(); return true; });
+ipcMain.handle('auth:signOut', () => auth.signOut());
 ipcMain.handle('store:path', () => DATA_FILE());
 ipcMain.handle('store:reveal', () => { shell.showItemInFolder(DATA_FILE()); });
 
@@ -91,7 +113,7 @@ function aiStatus() {
   return Object.assign(ai.status(), { savedKey: keystore ? keystore.hint(k) : null });
 }
 ipcMain.handle('ai:status', () => aiStatus());
-ipcMain.handle('ai:organizeNote', (_e, input) => ai.organize(input));
+ipcMain.handle('ai:organizeNote', (_e, input) => signedIn() ? ai.organize(input) : { ok: false, error: { type: 'auth', message: '로그인이 필요해요.', retryable: false } });
 ipcMain.handle('ai:setKey', (_e, key) => {
   const r = keystore.save(key);
   if (!r.ok) return Object.assign({ ok: false, error: r.error }, { status: aiStatus() });
@@ -324,6 +346,7 @@ ipcMain.handle('quick:submit', (_e, text) => {
   text = String(text || '').trim();
   if (!text) return { ok: false };
   if (!mainWindow) return { ok: false };
+  if (!signedIn()) { showMain(); return { ok: false, login: true }; }
   if (rendererReady) mainWindow.webContents.send('quick:capture', text); else pendingQuick.push(text);
   return { ok: true };
 });
@@ -371,7 +394,10 @@ app.on('before-quit', () => { isQuitting = true; });
 app.whenReady().then(() => {
   keystore = keystoreMod.create(app.getPath('userData'), safeStorage);
   if (!CHECK_RUN) ai.setSavedKey(keystore.read());
+  auth = authMod.create(Object.assign({ dir: app.getPath('userData'), safeStorage, openExternal: (u) => shell.openExternal(u) }, OAUTH));
   createWindow();
+  // Google 쪽에서 연결을 끊었으면(권한 해제 등) 로그아웃하고 로그인 화면으로
+  if (!CHECK_RUN) auth.check().then((r) => { if (r.signedOut && mainWindow) mainWindow.webContents.send('auth:changed'); });
   if (!CHECK_RUN) {
     try { createTray(); } catch (e) { console.log('tray failed: ' + e.message); tray = null; }
     try { quickRegistered = globalShortcut.register(QUICK_KEY, toggleQuick); } catch (e) { quickRegistered = false; }

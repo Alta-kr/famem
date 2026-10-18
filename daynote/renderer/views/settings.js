@@ -71,6 +71,29 @@
   // 화면은 키를 다시 받지 않는다 — 상태에는 '끝 4자리' 만 온다.
   var KEY_SOURCE = { env: '환경변수', dotenv: '앱 폴더의 .env 파일', saved: '이 앱에 저장한 키' };
 
+  // 계정 — 데스크톱 앱은 구글 로그인으로만 열린다
+  function accountCard() {
+    var auth = S.host.auth;
+    if (!auth) return null;
+    var line = h('div.status-line', h('span.status-dot'), '확인 중…');
+    var box = h('section.card.settings-card', { 'aria-labelledby': 'set-acc' }, h('h3#set-acc', '계정'), line);
+    auth.status().then(function (st) {
+      line.textContent = '';
+      if (st.bypass || !st.user) { line.appendChild(h('span.status-dot')); line.appendChild(h('span', '검사 실행 — 로그인 없이 보는 중')); return; }
+      var u = st.user;
+      line.appendChild(h('span.acc-avatar', { 'aria-hidden': 'true' }, (u.name || u.email).trim().charAt(0).toUpperCase()));
+      line.appendChild(h('span', h('b', u.name || u.email), ' · ' + u.email));
+      box.appendChild(h('p.help', '이 컴퓨터의 Daynote는 이 Google 계정으로만 열려요. 메모·할 일은 지금처럼 이 컴퓨터에만 저장돼요.'));
+      box.appendChild(h('div.sug-actions', h('button.btn.btn-sm', { type: 'button', onclick: function () {
+        ui.confirm('로그아웃', '로그아웃하면 다시 로그인할 때까지 Daynote를 열 수 없어요. 데이터는 이 컴퓨터에 그대로 있어요.', '로그아웃').then(function (ok) {
+          if (!ok) return;
+          Promise.resolve(S.flush()).then(function () { return auth.signOut(); }).then(function () { location.reload(); });
+        });
+      } }, '로그아웃')));
+    });
+    return box;
+  }
+
   // 회사·개인 캘린더 구독 (ICS) — 회의를 Daynote 에서도 보고, 빈 시간 찾기·추천이 회의를 피하게 (UX 점검 C-09)
   function calCard() {
     var C = DN.calsync;
@@ -259,6 +282,7 @@
     }
 
     // ---------------------------------------------------------------- 캘린더 · AI
+    var acc = accountCard();
     var cal = calCard();
 
     var ai = aiCard(root);
@@ -365,7 +389,7 @@
 
     root.appendChild(h('div.view-pad',
       h('div.page-head', h('div', h('div.page-title', '연결과 설정'), h('div.page-sub', '외부 연결 상태와 데이터, 화면 설정을 관리합니다.'))),
-      mail, cal, ai, restCard, data, view));
+      acc, mail, cal, ai, restCard, data, view));
     return {};
   }
 

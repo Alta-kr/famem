@@ -45,7 +45,8 @@ daynote/
 ├─ quick-preload.js      빠른 메모 창 전용 API
 ├─ services/
 │  ├─ ai.js              AI 호출 — 분류는 gemini-3.5-flash-lite, 나머지는 gemini-3.8-flash, 서로 대체 / 키 가림
-│  └─ keystore.js        .env 읽기, 설정에서 넣은 키를 Windows DPAPI 로 암호화 보관
+│  ├─ keystore.js        .env 읽기, 설정에서 넣은 키를 Windows DPAPI 로 암호화 보관
+│  └─ auth.js            구글 로그인 (기본 브라우저 + 127.0.0.1 임시 주소 + PKCE), 처음 계정만 허용, 토큰은 DPAPI
 ├─ src/core/             순수 규칙 (DOM 없음, 테스트 대상)
 │  ├─ dates.js           날짜·시각, 남은 시간("3시간 남음"), 월간 달력 칸
 │  ├─ model.js           상태 모양(SCHEMA v3), 할 일·메모·블록 CRUD, 시작/일시 정지/완료, 한 시간 기록
@@ -69,6 +70,7 @@ daynote/
 │     └─ fake.js         데모 AI (규칙 기반 — 브라우저 미리보기·스크린샷·smoke)
 ├─ renderer/
 │  ├─ index.html         스크립트 로드 순서 = 의존 순서 (core → 공통 → 흐름 → 뷰)
+│  ├─ login.js           로그인 화면 — 로그인 전에는 데이터를 열지 않는다 (메인도 store:load 를 막는다)
 │  ├─ store.js           상태 저장소: mutate/undo, 디바운스 저장, 저장 실패 시 localStorage
 │  ├─ ui.js              h() DOM 도우미, 아이콘, 칩(마감·상태), 메뉴·팝오버, 세부 할 일 펼치기
 │  ├─ app.js             앱 셸: 사이드바, 화면 전환, 단축키, 할 일 동작(시작·멈춤·완료·미루기)

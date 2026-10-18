@@ -445,7 +445,18 @@
   }
 
   // ------------------------------------------------------------------ 시작
+  // 데스크톱 앱은 구글 로그인을 먼저 — 로그인 전에는 데이터를 열지 않는다 (메인 프로세스도 막는다)
   function start() {
+    var auth = S.host.auth;
+    if (!auth) { boot(); return; }   // 브라우저 미리보기
+    var again = function () { location.reload(); };
+    auth.status().then(function (st) {
+      if (st.signedIn) boot(); else DN.login.show(auth, st, again);
+    }, function () { DN.login.show(auth, { configured: true }, again); });
+  }
+  function boot() {
+    // Google 쪽에서 연결이 끊기면(권한 해제 등) 로그인 화면으로
+    if (S.host.onAuthChanged) S.host.onAuthChanged(function () { location.reload(); });
     buildShell();
     S.load().then(function (res) {
       S.subscribe(onStoreChange);
