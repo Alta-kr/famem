@@ -1,6 +1,6 @@
 'use strict';
 
-// daynote_architecture_bug_report.md (2026-10-17) 회귀 테스트 — BUG-NEW-01 ~ 10 중 코어에서 확인할 수 있는 것
+// 아키텍처 점검 리포트(2026-10-17, 커밋 353cfff 에 있음 — 고친 뒤 저장소에서 뺌) 회귀 테스트 — BUG-NEW-01 ~ 10 중 코어에서 확인할 수 있는 것
 
 const test = require('node:test');
 const assert = require('node:assert');

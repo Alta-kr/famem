@@ -1,7 +1,7 @@
 # Daynote
 
 **적기만 하세요. 정리는 Daynote가.** — 아무 형식 없이 던진 글을 AI가 할 일 / 일정 / 메모 / 아이디어 / 링크로 나눠 제자리에 넣는 데스크톱 메모앱.
-설계: `../DAYNOTE_UX_V2.md` (v2 기준) · 이전: `../DAYNOTE_CLAUDE_DESIGN_BRIEF.md`, `../DAYNOTE_CLAUDE_WORK_PROMPTS.md`
+설계: `../DAYNOTE_UX_V2.md` (v2 기준) · 연구 근거: `../DAYNOTE_UX_RESEARCH.md` · 구조: `ARCHITECTURE.md`
 
 ## 실행
 

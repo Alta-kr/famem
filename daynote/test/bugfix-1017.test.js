@@ -1,6 +1,6 @@
 'use strict';
 
-// daynote_bug_report.md (2026-10-17) 회귀 테스트 — 코어에서 확인할 수 있는 것만 (BUG-02, 03, 05)
+// 버그 리포트(2026-10-17, 커밋 b3038dc 에 있음 — 고친 뒤 저장소에서 뺌) 회귀 테스트 — 코어에서 확인할 수 있는 것만 (BUG-02, 03, 05)
 
 const test = require('node:test');
 const assert = require('node:assert');
