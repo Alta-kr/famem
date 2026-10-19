@@ -89,6 +89,10 @@ $env:DAYNOTE_AI_FAKE = "1"              # 키 없이 흐름만 시험: 규칙 �
 - **실패**: 429·5xx·연결 오류는 SDK가 재시도, 그래도 실패하면 ‘다시 시도’. 형식 오류는 한 번 더 요청 후 실패 처리. 앱이 꺼져 끝나지 않은 실행은 다음 실행 때 ‘다시 시도 가능한 실패’가 된다. 어떤 경우에도 메모 저장은 AI와 무관하다.
 - **호출**: Gemini 는 `gemini-3.8-flash`, thinking `low`, `response_format` JSON 스키마, `store: false`, 429·5xx·연결 오류는 한 번 재시도. Claude 는 `claude-opus-5-5`, effort `low`, 구조화 출력, 거절 시 서버 측 대체 모델(`fallbacks: "default"`), 고정 지침은 캐시. 두 제공자 모두 같은 프롬프트·스키마·검증기를 쓴다. 메모 본문은 데이터로만 다루고 그 안의 지시는 따르지 않도록 지시한다.
 
+## 실행 파일 만들기
+
+`npm.cmd run dist` → `dist/Daynote-Setup-버전.exe`(설치) · `dist/Daynote-버전-portable.exe`(설치 없이). `.env`(AI 키·구글 로그인 설정)가 실행 파일 안에 들어가므로 **dist/ 파일은 다른 사람에게 주지 마세요.** electron-builder 가 이 폴더에 없으면 `ELECTRON_BUILDER_DIR` 의 것을 쓰고, Electron 런타임은 `node_modules/electron/dist` 를 그대로 씁니다.
+
 ## 실제 동작 / 시연 / 미구현
 
 | 구분 | 내용 |

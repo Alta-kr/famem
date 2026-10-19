@@ -8,8 +8,9 @@
 const fs = require('fs');
 const path = require('path');
 
-function loadDotEnv(dir) {
-  const file = path.join(dir, '.env');
+function loadDotEnv(dir, opts) {
+  opts = opts || {};
+  const file = opts.file ? dir : path.join(dir, '.env');
   let text;
   try { text = fs.readFileSync(file, 'utf8'); } catch (e) { return false; }
   let found = false;
@@ -17,7 +18,7 @@ function loadDotEnv(dir) {
     const m = /^\s*([A-Z0-9_]+)\s*=\s*(.*?)\s*$/.exec(line);
     if (!m || line.trim().startsWith('#')) return;
     const v = m[2].replace(/^(['"])(.*)\1$/, '$2');
-    if (!process.env[m[1]] && v) {
+    if ((opts.override || !process.env[m[1]]) && v) {
       process.env[m[1]] = v;
       if (m[1] === 'GEMINI_API_KEY' || m[1] === 'GOOGLE_API_KEY') found = true;
     }

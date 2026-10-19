@@ -30,6 +30,10 @@ if (process.argv.includes('--shots') || (process.argv.includes('--smoke') && pro
 // 개발용 .env (GEMINI_API_KEY=...) — 환경변수가 이미 있으면 그대로 둔다
 const keystoreMod = require('./services/keystore');
 keystoreMod.loadDotEnv(__dirname);
+// 설치판(실행 파일): 빌드할 때 넣은 설정(resources/app.env — AI 키·구글 로그인)을 쓴다. PC 에 남은 옛 환경변수보다 먼저
+if (app.isPackaged) keystoreMod.loadDotEnv(path.join(process.resourcesPath, 'app.env'), { file: true, override: true });
+// Windows 알림·작업 표시줄이 설치판 바로 가기와 같은 앱으로 묶이게 (electron-builder appId 와 같게)
+if (process.platform === 'win32') app.setAppUserModelId('kr.alta.daynote');
 
 // 구글 로그인 — Daynote 는 로그인해야 쓴다. 설정은 .env 의 GOOGLE_OAUTH_CLIENT_ID · GOOGLE_OAUTH_CLIENT_SECRET
 //   (DAYNOTE_ALLOWED_EMAILS 로 쓸 수 있는 계정을 정할 수 있다. 없으면 처음 로그인한 계정만)
