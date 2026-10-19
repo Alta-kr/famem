@@ -166,7 +166,7 @@
     if (!notes.length) { wrap.appendChild(h('p.muted.proj-none', '이 프로젝트에 연결된 메모가 없습니다.')); return wrap; }
     var list = h('ul.proj-notes');
     notes.forEach(function (n) {
-      list.appendChild(h('li', h('button.proj-note', { type: 'button', onclick: function () { A().go('notes', { noteId: n.id }); } },
+      list.appendChild(h('li', h('button.proj-note', { type: 'button', onclick: function () { A().openNote(n.id); } },
         ui.icon('note'), h('span.n', M.noteTitle(n)), h('span.meta', D.relDay(D.ymd(n.updatedAt), now())))));
     });
     wrap.appendChild(list);

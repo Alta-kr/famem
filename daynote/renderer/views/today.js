@@ -105,8 +105,11 @@
     var memos = todayMemoList(st, now);
     var sel = A.detailTaskId();
     var view = st.prefs.homeView || 'today';
-    if (view.indexOf('day:') === 0 && view.slice(4) === D.ymd(now)) view = 'today';
-    if (view.indexOf('day:') === 0 && view.slice(4) < D.ymd(now)) view = 'today';
+    var tomorrow = D.ymd(D.addDays(now, 1));
+    if (view === 'tomorrow') view = 'today';   // 내일은 [오늘] 안에 함께 보인다
+    if (view.indexOf('day:') === 0 && view.slice(4) <= tomorrow) view = 'today';
+    // 내일 할 일 — 오늘 목록 아래 '내일' 묶음으로
+    var tmr = DN.horizon.byDay(st, [tomorrow], now)[0] || { day: tomorrow, tasks: [], events: [] };
 
     // 3개만 보기 — 할 일이 많으면 위 3개만 (나머지는 접어 둔다. 고를 게 적을수록 시작이 쉽다)
     var focusOnly = !!st.prefs.todayTop3 && tl.open.length > 3;
@@ -135,9 +138,10 @@
           onclick: function () { S.mutate(null, function (s) { s.prefs.todayTop3 = !s.prefs.todayTop3; }); } }, '3개만') : null,
         tl.done.length ? h('button.btn.btn-ghost.btn-xs', { type: 'button', title: '오늘 끝낸 일을 목록에서 치워요 (보관함에서 다시 볼 수 있어요)', onclick: function () { clearDone(tl.done); } }, '완료 비우기 (' + tl.done.length + ')') : null,
         h('button.btn.btn-ghost.btn-xs', { type: 'button', onclick: function () { A.go('tasks'); } }, '전체 보기'))),
-      alertsLine(st, now, tl.open),
+      alertsLine(st, now, tl.open.concat(tmr.tasks)),
       h('div.home-scroll', { 'data-keep-scroll': 'home-tasks' },
-        tl.open.length || tl.done.length ? taskUl : h('div.empty.home-empty', '오늘 할 일이 없어요. 왼쪽에 적으면 할 일은 여기로 들어와요.')));
+        tl.open.length || tl.done.length ? taskUl : h('div.empty.home-empty' + (tmr.tasks.length ? '.is-compact' : ''), '오늘 할 일이 없어요. 왼쪽에 적으면 할 일은 여기로 들어와요.'),
+        tomorrowGroup(st, now, tmr, sel)));
     var secMemos = h('div.home-sec.home-sec-memos',
       h('div.home-sec-head', h('h2', '메모'), h('span.meta', memos.length ? memos.length + '개' : ''),
         selCount ? h('button.btn.btn-ghost.btn-xs.is-on', { type: 'button', onclick: function () { shelve(Object.keys(memoSel)); } }, '체크한 메모 비우기 (' + selCount + ')') : null,
@@ -365,6 +369,18 @@
       return h('button.hz-tab' + (on ? '.is-on' : ''), { type: 'button', role: 'tab', 'aria-selected': String(on), onclick: function () { setView(v.id); } }, v.label);
     }));
   }
+  // [오늘] 아래 '내일' 묶음 — 내일 할 일·일정. 머리에 끌어 놓으면 내일 할 일로
+  function tomorrowGroup(st, now, g, sel) {
+    var head = dropDay(h('div.hz-group-head.hz-tomorrow-head',
+      h('b', '내일'), h('span.meta', D.shortDay(D.parseYmd(g.day))),
+      g.tasks.length || g.events.length ? h('span.meta', [g.tasks.length ? '할 일 ' + g.tasks.length : null, g.events.length ? '일정 ' + g.events.length : null].filter(Boolean).join(' · ')) : null), g.day);
+    var events = g.events.map(function (b) {
+      return h('div.hz-event', h('span.time', D.hm(b.start) + '–' + D.hm(b.end)), h('button.link-btn', { type: 'button', onclick: function () { DN.views.schedule.open({ blockId: b.id }); } }, b.title || '일정'));
+    });
+    return h('div.hz-group.hz-tomorrow', head, events,
+      g.tasks.length ? h('ul.home-list', { 'aria-label': '내일 할 일' }, g.tasks.map(function (t) { return taskRow(st, t, now, t.id === sel); }))
+        : h('div.hz-empty.meta', g.events.length ? '' : '비어 있어요 — 할 일이나 메모를 여기로 끌어 놓으면 내일 할 일로'));
+  }
   // 할 날 정하기 — 끌어 놓기·칩·오른쪽 클릭 메뉴가 함께 쓴다
   function setPlan(taskId, day) {
     var t = M.byId(S.state.tasks, taskId);
@@ -373,14 +389,21 @@
     S.mutate(day ? '할 날 정하기' : '할 날 지우기', function (s) { M.updateTask(s, taskId, { planDate: day || null }, now); });
     ui.undoToast(day ? '‘' + t.title + '’ ' + D.relDay(day, now) + '에 할게요 (' + DN.horizon.leftText(day, now) + ').' : '‘' + t.title + '’ 할 날을 지웠어요.');
   }
-  // 끌어 놓을 수 있는 날 — 할 일을 놓으면 그날을 할 날로
+  // 끌어 놓을 수 있는 날 — 할 일을 놓으면 그날을 할 날로, 메모를 놓으면 AI 로 할 일로 정리해 그날 할 일로
   function dropDay(el, day) {
-    function isTask(e) { return e.dataTransfer && Array.prototype.indexOf.call(e.dataTransfer.types || [], 'application/x-daynote-task') !== -1; }
-    el.addEventListener('dragover', function (e) { if (!isTask(e)) return; e.preventDefault(); e.dataTransfer.dropEffect = 'move'; el.classList.add('is-drop'); });
-    el.addEventListener('dragleave', function (e) { if (!el.contains(e.relatedTarget)) el.classList.remove('is-drop'); });
+    function has(e, t) { return e.dataTransfer && Array.prototype.indexOf.call(e.dataTransfer.types || [], t) !== -1; }
+    function isTask(e) { return has(e, 'application/x-daynote-task'); }
+    function isNote(e) { return has(e, 'application/x-daynote-note'); }
+    el.addEventListener('dragover', function (e) {
+      if (!isTask(e) && !isNote(e)) return;
+      e.preventDefault(); e.dataTransfer.dropEffect = 'move';
+      el.classList.add('is-drop'); el.classList.toggle('is-note-drop', isNote(e));
+    });
+    el.addEventListener('dragleave', function (e) { if (!el.contains(e.relatedTarget)) el.classList.remove('is-drop', 'is-note-drop'); });
     el.addEventListener('drop', function (e) {
-      if (!isTask(e)) return;
-      e.preventDefault(); e.stopPropagation(); el.classList.remove('is-drop');
+      if (!isTask(e) && !isNote(e)) return;
+      e.preventDefault(); e.stopPropagation(); el.classList.remove('is-drop', 'is-note-drop');
+      if (isNote(e)) { DN.app.memoToTask(e.dataTransfer.getData('application/x-daynote-note'), { planDate: day }); return; }
       setPlan(e.dataTransfer.getData('application/x-daynote-task'), day);
     });
     return el;
@@ -400,7 +423,7 @@
   function dayStrip(st, now, view) {
     var hz = DN.horizon, today = D.ymd(now);
     var shown = {};
-    hz.days(view, now).forEach(function (d) { shown[d] = true; });
+    hz.days(view === 'today' ? 'today+' : view, now).forEach(function (d) { shown[d] = true; });
     var WD = ['일', '월', '화', '수', '목', '금', '토'];
     return h('div.hz-strip', { role: 'list', 'aria-label': '앞으로 2주 — 눌러서 그날 보기, 할 일을 끌어 놓으면 그날 할 일로' }, hz.load(st, now, 14).map(function (d, i) {
       var date = D.parseYmd(d.day);
@@ -409,7 +432,7 @@
       var cell = h('button.hz-day' + (d.day === today ? '.is-today' : '') + (shown[d.day] ? '.is-shown' : '') + (busy ? '.is-busy' : '') + (weekStart ? '.is-week' : ''), {
         type: 'button', role: 'listitem',
         title: D.relDay(d.day, now) + ' · ' + hz.leftText(d.day, now) + ' — 할 일 ' + d.tasks + '개' + (d.due ? ' (마감 ' + d.due + ')' : '') + ' · 일정 ' + d.events + '개' + (d.minutes ? ' · 약 ' + D.duration(d.minutes) : ''),
-        onclick: function () { setView(d.day === today ? 'today' : 'day:' + d.day); }
+        onclick: function () { setView(d.day <= D.ymd(D.addDays(now, 1)) ? 'today' : 'day:' + d.day); }
       },
         h('span.hz-wd', WD[date.getDay()]),
         h('span.hz-date', String(date.getDate())),
@@ -436,8 +459,7 @@
     });
     return h('div.home-sec.home-sec-tasks.is-range',
       h('div.home-sec-head', h('h2', '할 일 · 일정'), h('span.meta', total ? total + '개' : ''),
-        h('button.btn.btn-ghost.btn-xs', { type: 'button', onclick: function () { setView('today'); } }, '오늘로'),
-        h('button.btn.btn-ghost.btn-xs', { type: 'button', onclick: function () { A.go('calendar'); } }, '캘린더')),
+        h('button.btn.btn-ghost.btn-xs', { type: 'button', onclick: function () { A.go('calendar'); } }, '캘린더')),   // '오늘로' 는 위 [오늘] 탭과 같아서 뺐다
       h('div.home-scroll', { 'data-keep-scroll': 'home-range' }, body));
   }
   // 한 줄 요약 — "다가오는 마감 3 · 날짜 안 정한 할 일 1". 누르면 그 목록만 펼친다 (할 일 목록 자리를 지키려고)
@@ -481,7 +503,7 @@
     return h('div.hz-upcoming', h('span.hz-up-label', '다가오는 마감'),
       list.map(function (u) {
         return h('span.hz-up' + (u.prep ? '.is-prep' : ''), { title: u.prep ? '예상 시간으로 거꾸로 세면 지금 시작해야 해요' : '' },
-          h('button.link-btn', { type: 'button', onclick: function () { setView(u.left <= 1 ? 'tomorrow' : 'week'); } }, u.task.title),
+          h('button.link-btn', { type: 'button', onclick: function () { setView(u.left <= 1 ? 'today' : 'week'); } }, u.task.title),
           h('span.meta', ' ' + hz.leftText(u.task.dueDate, now) + (u.prep ? ' · 지금 시작해야 해요' : u.startBy && u.startBy < u.task.dueDate ? ' · 늦어도 ' + D.relDay(u.startBy, now) + ' 시작' : '')),
           h('button.btn.btn-xs.btn-ghost', { type: 'button', title: '오늘 할 일로 가져오기', onclick: function () { setPlan(u.task.id, D.ymd(now)); } }, '오늘 하기'));
       }),
@@ -549,7 +571,7 @@
               ui.toast('‘' + M.noteTitle(n) + '’를 홈으로 불러왔어요.');
               draw();
             } }, '홈으로'),
-            h('button.icon-btn', { type: 'button', title: '메모 열기', 'aria-label': '‘' + M.noteTitle(n) + '’ 열기', onclick: function () { m.close(); DN.app.go('notes', { noteId: n.id }); } }, ui.icon('chevronRight'))));
+            h('button.icon-btn', { type: 'button', title: '메모 열기', 'aria-label': '‘' + M.noteTitle(n) + '’ 열기', onclick: function () { m.close(); DN.app.openNote(n.id); } }, ui.icon('chevronRight'))));
         });
       } else {
         var done = cleared();
@@ -584,8 +606,8 @@
     var preview = (body[0] && (body[0] === title || body[0].indexOf(title) === 0) ? body.slice(1) : body).join(' ');
     return h('li.home-row.home-memo', {
       'data-id': n.id, 'data-note-id': n.id, 'data-kind': kind, draggable: 'true', tabindex: '0', title: '끌어서 할 일 목록에 놓으면 할 일로 정리해요',
-      onclick: function () { A.go('notes', { noteId: n.id }); },
-      onkeydown: function (e) { if (e.target === e.currentTarget && e.key === 'Enter') { e.preventDefault(); A.go('notes', { noteId: n.id }); } }
+      onclick: function () { A.openNote(n.id); },
+      onkeydown: function (e) { if (e.target === e.currentTarget && e.key === 'Enter') { e.preventDefault(); A.openNote(n.id); } }
     },
       h('span.drag-handle', { 'aria-hidden': 'true', title: '끌어서 순서 바꾸기' }, '⋮⋮'),
       h('input.check', { type: 'checkbox', checked: !!memoSel[n.id], 'aria-label': '‘' + M.noteTitle(n) + '’ 비울 메모로 고르기', title: '체크한 메모는 [체크한 메모 비우기] 로 보관함에 넣어요',

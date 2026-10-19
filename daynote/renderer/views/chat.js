@@ -315,7 +315,7 @@
     var titleBtn = h('button.cap-title', {
       type: 'button', title: isNote ? '메모 열기' : it.kind === 'task' ? '할 일 열기' : '일정 열기',
       onclick: function () {
-        if (isNote) A.go('notes', { noteId: n.id });
+        if (isNote) A.openNote(n.id);
         else if (it.kind === 'task') DN.assistant.work(item.id);
         else DN.views.schedule.open({ blockId: item.id });
       }
@@ -385,7 +385,7 @@
     if (!day || day <= today || it.item.status === 'done') return null;
     return h('button.chip.chip-btn.cap-where', { type: 'button', title: '홈에서 그날 칸 보기',
       onclick: function () {
-        S.mutate(null, function (s) { s.prefs.homeView = 'day:' + day; });
+        S.mutate(null, function (s) { s.prefs.homeView = day <= D.ymd(D.addDays(now, 1)) ? 'today' : 'day:' + day; });   // 내일은 [오늘] 안에
         if (DN.app.current().view !== 'today') DN.app.go('today');
       } }, '→ ' + DN.horizon.leftText(day, now) + ' 칸');
   }

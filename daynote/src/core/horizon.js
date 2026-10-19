@@ -19,9 +19,9 @@
 })(function (D, M) {
   var WORK_MIN_PER_DAY = 240;   // 한 일에 하루에 쓸 수 있다고 보는 시간 (나머지는 회의·다른 일) — '늦어도 시작할 날' 계산용
 
+  // [오늘] 은 오늘과 내일을 함께 보여 준다 (내일 탭을 따로 두지 않는다)
   var VIEWS = [
     { id: 'today', label: '오늘' },
-    { id: 'tomorrow', label: '내일' },
     { id: 'week', label: '이번 주' },
     { id: 'next', label: '다음 주' }
   ];
@@ -46,6 +46,7 @@
       for (var j = 0; j < 7; j++) list.push(plus(nmon, j));
       return list;
     }
+    if (view === 'today+') return [today, plus(today, 1)];   // 홈 [오늘] — 오늘과 내일
     return [today];
   }
 

@@ -212,32 +212,42 @@
   // 메모를 할 일로 — 오늘 화면에서 메모를 할 일 목록으로 끌어 놓을 때.
   //   AI 로 다시 정리한다 (마감·프로젝트를 알아내게, 목록이면 세부 할 일로). AI 가 없거나 할 일을 못 만들면 첫 줄 제목 + 아래 줄 세부 할 일로
   //   끌어 놓기 · AI 정리 · 대신 만들기는 되돌리기 한 칸 (Ctrl+Z 한 번에 메모로)
-  function memoToTask(noteId) {
+  //   opts.planDate: 날짜 칸에 끌어 놓았으면 그날을 '할 날' 로 (AI 가 찾은 마감은 그대로 둔다)
+  function memoToTask(noteId, opts) {
+    opts = opts || {};
     var n = M.byId(S.state.notes, noteId);
     if (!n || n.deletedAt) return null;
+    var day = opts.planDate || null;
+    function planOn(tasks, key) {
+      if (!day || !tasks.length) return;
+      S.mutate('할 날 정하기', function (s) { tasks.forEach(function (t) { M.updateTask(s, t.id, { planDate: day }, now()); }); }, { join: key });
+    }
+    function dayText() { return day ? ' — ' + D.relDay(day, now()) + '에 하기 (' + DN.horizon.leftText(day, now()) + ')' : ''; }
     function local(key) {
       var t = S.withJoin(key, function () { return DN.capture.toTask(noteId); });
       if (!t) return null;
+      planOn([t], key);
       var cnt = DN.steps.count(t.steps);
-      ui.undoToast('‘' + t.title + '’ 할 일로 정리했어요' + (cnt.total ? ' — 세부 할 일 ' + cnt.total + '개' : '') + '.');
+      ui.undoToast('‘' + t.title + '’ 할 일로 정리했어요' + dayText() + (cnt.total ? ' · 세부 할 일 ' + cnt.total + '개' : '') + '.');
       return t;
     }
-    if (!DN.aiFlow.status().configured) return local(null);
+    if (!DN.aiFlow.status().configured) return local(day ? M.uid('mt') : null);
     var key = M.uid('mt');
     S.mutate('할 일로 정리', function (s) {
       var x = M.byId(s.notes, noteId);
       x.capture = Object.assign({ created: [] }, x.capture || {}, { status: 'pending', error: null, changedByUser: false, kindByUser: false });
     }, { source: 'capture', key: key });
-    ui.toast('‘' + M.noteTitle(n) + '’ 할 일로 정리하는 중…');
+    ui.toast('‘' + M.noteTitle(n) + '’ 할 일로 정리하는 중…' + (day ? ' (' + D.relDay(day, now()) + '에 하기)' : ''));
     return DN.capture.classify(noteId, { moveToTask: true, join: key }).then(function (r) {
       if (r && r.reason === 'undone') return null;
       var note = M.byId(S.state.notes, noteId);
       var made = note && note.capture && (note.capture.created || []).filter(function (c) { return c.kind === 'task'; })
         .map(function (c) { return M.byId(S.state.tasks, c.id); }).filter(function (t) { return t && !t.deletedAt; });
       if (!r || !r.ok || !made || !made.length) return local(key);
+      planOn(made, key);
       var t = made[0], cnt = DN.steps.count(t.steps);
       var proj = t.projectId && M.byId(S.state.projects, t.projectId);
-      var bits = [t.dueDate ? '마감 ' + D.relDay(t.dueDate, now()) + (t.dueTime ? ' ' + t.dueTime : '') : null, proj ? proj.name : null, cnt.total ? '세부 할 일 ' + cnt.total + '개' : null].filter(Boolean);
+      var bits = [day ? D.relDay(day, now()) + '에 하기' : null, t.dueDate ? '마감 ' + D.relDay(t.dueDate, now()) + (t.dueTime ? ' ' + t.dueTime : '') : null, proj ? proj.name : null, cnt.total ? '세부 할 일 ' + cnt.total + '개' : null].filter(Boolean);
       ui.undoToast('‘' + t.title + '’' + (made.length > 1 ? ' 외 ' + (made.length - 1) + '개' : '') + ' 할 일로 정리했어요' + (bits.length ? ' — ' + bits.join(' · ') : '') + '.');
       return t;
     });
@@ -365,11 +375,16 @@
 
   function scheduleTask(id, opts) { return DN.views.schedule.open(Object.assign({ taskId: id }, opts || {})); }
 
+  // 메모 열기 — 팝업으로 (메모 화면에 있으면 거기서)
+  function openNote(id) {
+    if (cur.view === 'notes' || !DN.notePopup) { go('notes', { noteId: id }); return; }
+    DN.notePopup.open(id);
+  }
   // 출처/참조 열기 — 메모·메일·할 일·프로젝트
   function openRef(ref) {
     var r = M.resolveRef(S.state, ref);
     if (r.missing) { ui.toast('원본이 삭제되어 열 수 없습니다.'); return; }
-    if (r.kind === 'note') go('notes', { noteId: r.id });
+    if (r.kind === 'note') openNote(r.id);
     else if (r.kind === 'task') openTask(r.id);
     else if (r.kind === 'email') DN.views.inbox.openEmail(r.id);
     else if (r.kind === 'project') go('projects', { projectId: r.id });
@@ -481,7 +496,7 @@
   DN.app = {
     now: now, go: go, undo: undo, redo: redo, memoToTask: memoToTask, taskToMemo: taskToMemo, refresh: function () { renderView(); renderNav(); }, openTask: openTask, closeDetail: closeDetail, toggleDone: toggleDone, startTask: startTask, pauseTask: pauseTask, returnToTodo: returnToTodo,
     snoozeMenu: snoozeMenu, taskMenu: taskMenu, deleteTask: deleteTask, scheduleTask: scheduleTask, openRef: openRef, applyPrefs: applyPrefs,
-    quickCapture: quickCapture, saveQuick: saveQuick, reload: reload, loadSample: loadSample, clearSample: clearSample,
+    quickCapture: quickCapture, saveQuick: saveQuick, reload: reload, openNote: openNote, loadSample: loadSample, clearSample: clearSample,
     current: function () { return cur; }, detailTaskId: function () { return detailTaskId; },
     nav: function () { return NAV.map(function (n) { return Object.assign({}, n); }); }
   };

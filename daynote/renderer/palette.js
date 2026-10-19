@@ -45,7 +45,7 @@
   }
 
   // ------------------------------------------------------------------ 데이터 찾기
-  function openNote(id) { DN.app.go('notes', { noteId: id }); }
+  function openNote(id) { DN.app.openNote(id); }
   function openEvent(id) { DN.views.schedule.open({ blockId: id }); }
 
   function taskOpt(t, n) {

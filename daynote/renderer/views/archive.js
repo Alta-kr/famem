@@ -72,7 +72,7 @@
       if (TASKISH[made[0].kind]) { A.openTask(made[0].item.id); return; }
       if (made[0].kind === 'event') { DN.views.schedule.open({ blockId: made[0].item.id }); return; }
     }
-    A.go('notes', { noteId: n.id });
+    A.openNote(n.id);
   }
 
   function render(root, params) {
