@@ -71,6 +71,36 @@
   // 화면은 키를 다시 받지 않는다 — 상태에는 '끝 4자리' 만 온다.
   var KEY_SOURCE = { env: '환경변수', dotenv: '앱 폴더의 .env 파일', saved: '이 앱에 저장한 키' };
 
+  // 마크다운 파일 — 메모·할 일·주간 보고를 프로젝트별 폴더의 .md 로 (데스크톱 앱)
+  function mdCard() {
+    var host = S.host.md;
+    if (!host) return null;
+    var line = h('div.status-line', h('span.status-dot'), '확인 중…');
+    var pathEl = h('code', '');
+    var actions = h('div.sug-actions');
+    var box = h('section.card.settings-card', { 'aria-labelledby': 'set-md' },
+      h('h3#set-md', '마크다운 파일'), line,
+      h('p.help', '저장할 때마다 메모·할 일·주간 보고를 .md 파일로 맞춰 써요. 메모 파일을 직접 고치면 Daynote 로 돌아올 때 앱에도 반영돼요.'),
+      h('div.md-tree', h('pre', ['Daynote/', '├─ <프로젝트>/메모/2026-10-21 제목.md', '├─ <프로젝트>/할 일.md', '├─ 미분류/…', '└─ 주간 보고/2026-10-19 주간 보고.md'].join('\n'))),
+      h('div.status-line', h('span', '위치: '), pathEl), actions);
+    function draw() {
+      host.status().then(function (st) {
+        line.textContent = '';
+        line.appendChild(h('span.status-dot' + (st.error ? '.err' : st.enabled ? '.ok' : '')));
+        line.appendChild(h('span', st.error ? '쓰지 못했어요: ' + st.error : st.enabled ? '켜짐' + (st.at ? ' · 파일 ' + st.files + '개 · ' + D.hm(st.at) + '에 맞춤' : '') : '꺼짐'));
+        pathEl.textContent = st.dir || '';
+        actions.textContent = '';
+        actions.appendChild(h('button.btn.btn-sm', { type: 'button', onclick: function () { host.open(); } }, '폴더 열기'));
+        actions.appendChild(h('button.btn.btn-sm', { type: 'button', onclick: function () { host.choose().then(function (r) { if (r && r.ok) { ui.toast('마크다운 파일을 ‘' + r.dir + '’에 저장해요.'); draw(); } }); } }, '위치 바꾸기'));
+        actions.appendChild(h('button.btn.btn-sm.btn-ghost', { type: 'button', onclick: function () {
+          host.setEnabled(!st.enabled).then(function () { ui.toast(st.enabled ? '마크다운 파일 쓰기를 껐어요 (이미 있는 파일은 그대로예요).' : '마크다운 파일 쓰기를 켰어요.'); draw(); });
+        } }, st.enabled ? '끄기' : '켜기'));
+      });
+    }
+    draw();
+    return box;
+  }
+
   // 계정 — 데스크톱 앱은 구글 로그인으로만 열린다
   function accountCard() {
     var auth = S.host.auth;
@@ -283,6 +313,7 @@
 
     // ---------------------------------------------------------------- 캘린더 · AI
     var acc = accountCard();
+    var md = mdCard();
     var cal = calCard();
 
     var ai = aiCard(root);
@@ -389,7 +420,7 @@
 
     root.appendChild(h('div.view-pad',
       h('div.page-head', h('div', h('div.page-title', '연결과 설정'), h('div.page-sub', '외부 연결 상태와 데이터, 화면 설정을 관리합니다.'))),
-      acc, mail, cal, ai, restCard, data, view));
+      acc, mail, cal, md, ai, restCard, data, view));
     return {};
   }
 

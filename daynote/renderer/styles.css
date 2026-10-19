@@ -1906,3 +1906,33 @@ html.is-resting .toast, html.is-resting .toasts { display: none !important; }   
 .menu[role=menu] { max-height: min(70vh, 520px); overflow-y: auto; }
 
 .np-status.is-dirty { color: var(--warning-ink, var(--warning)); }
+
+.md-tree pre { margin: 6px 0 4px; padding: 10px 12px; border-radius: 8px; background: var(--surface-subtle); font-size: 12px; line-height: 1.6; color: var(--text-secondary); overflow-x: auto; }
+
+/* 끌어 놓을 자리 — 줄 사이 한가운데 선 하나 */
+.hz-today-zone, .hz-group, .home-scroll ul.home-list { position: relative; }
+.drop-line { position: absolute; left: 6px; right: 6px; height: 2px; border-radius: 2px; background: var(--primary); pointer-events: none; z-index: 6; box-shadow: 0 0 0 1px var(--surface); }
+.drop-line::before { content: ''; position: absolute; left: -4px; top: -3px; width: 8px; height: 8px; border-radius: 50%; background: var(--primary); }
+
+/* 세부 할 일 끌기 · 할 일 안으로 넣기 */
+.step-tree li[draggable="true"] > .step-row { cursor: grab; }
+.step-tree li.is-dragging { opacity: .45; }
+.home-row.is-nest-target { outline: 2px solid var(--primary); outline-offset: -2px; background: var(--primary-soft); border-radius: 10px; position: relative; }
+.home-row.is-nest-target::after { content: '세부 할 일로 넣기'; position: absolute; right: 10px; top: 8px; font-size: 11px; font-weight: 600; color: var(--primary); background: var(--surface); border: 1px solid var(--primary); border-radius: 999px; padding: 1px 8px; pointer-events: none; }
+
+/* Ctrl 끌기 — 나눠서 놓기 */
+.drop-line.is-split { background: var(--success, #2f9e5b); }
+.drop-line.is-split::before { background: var(--success, #2f9e5b); }
+.drop-line.is-split::after { content: '나눠서 놓기 (1/2 · 2/2)'; position: absolute; right: 0; top: -10px; font-size: 11px; font-weight: 600; color: #fff; background: var(--success, #2f9e5b); border-radius: 999px; padding: 1px 8px; white-space: nowrap; }
+
+/* 보관함 — 아래쪽 폴더 줄 */
+.shelf-dock { bottom: 24px; }
+.shelf-dock-head { display: flex; align-items: center; gap: 8px; }
+.shelf-dock-head .dock-hint { flex: 1; }
+.shelf-dock-x svg { width: 14px; height: 14px; }
+.shelf-dock-tile { all: unset; box-sizing: border-box; cursor: pointer; }
+.shelf-dock-tile.dock-tile * { pointer-events: none; }
+.shelf-dock-tile:hover, .shelf-dock-tile:focus-visible { background: var(--primary-soft); border-color: var(--primary); }
+.shelf-dock-tile.is-trash:hover, .shelf-dock-tile.is-trash:focus-visible { background: rgba(220, 38, 38, .12); border-color: #DC2626; }
+.shelf-dock-count { font-size: 11px; color: var(--text-tertiary); }
+.dock-tile .shelf-done-icon { width: 40px; height: 36px; }

@@ -233,10 +233,10 @@
     }
     if (!DN.aiFlow.status().configured) return local(day ? M.uid('mt') : null);
     var key = M.uid('mt');
-    S.mutate('할 일로 정리', function (s) {
+    S.mutate(null, function (s) {
       var x = M.byId(s.notes, noteId);
       x.capture = Object.assign({ created: [] }, x.capture || {}, { status: 'pending', error: null, changedByUser: false, kindByUser: false });
-    }, { source: 'capture', key: key });
+    }, { source: 'capture' });
     ui.toast('‘' + M.noteTitle(n) + '’ 할 일로 정리하는 중…' + (day ? ' (' + D.relDay(day, now()) + '에 하기)' : ''));
     return DN.capture.classify(noteId, { moveToTask: true, join: key }).then(function (r) {
       if (r && r.reason === 'undone') return null;
@@ -248,7 +248,7 @@
       var t = made[0], cnt = DN.steps.count(t.steps);
       var proj = t.projectId && M.byId(S.state.projects, t.projectId);
       var bits = [day ? D.relDay(day, now()) + '에 하기' : null, t.dueDate ? '마감 ' + D.relDay(t.dueDate, now()) + (t.dueTime ? ' ' + t.dueTime : '') : null, proj ? proj.name : null, cnt.total ? '세부 할 일 ' + cnt.total + '개' : null].filter(Boolean);
-      ui.undoToast('‘' + t.title + '’' + (made.length > 1 ? ' 외 ' + (made.length - 1) + '개' : '') + ' 할 일로 정리했어요' + (bits.length ? ' — ' + bits.join(' · ') : '') + '.');
+      ui.toast('‘' + t.title + '’' + (made.length > 1 ? ' 외 ' + (made.length - 1) + '개' : '') + ' 할 일로 정리했어요' + (bits.length ? ' — ' + bits.join(' · ') : '') + '.');
       return t;
     });
   }
@@ -375,6 +375,17 @@
 
   function scheduleTask(id, opts) { return DN.views.schedule.open(Object.assign({ taskId: id }, opts || {})); }
 
+  // 채팅 입력칸에 커서 — 단축키(Ctrl+Shift+Space)로 앱이 열려 있을 때
+  function focusChat() {
+    if (document.querySelector('.overlay')) return;   // 대화상자가 떠 있으면 그대로 (쓰던 것을 잃지 않게)
+    if (cur.view !== 'today') go('today');
+    setTimeout(function () {
+      var x = document.querySelector('.chat-input textarea');
+      if (!x) return;
+      x.focus();
+      try { x.setSelectionRange(x.value.length, x.value.length); } catch (e) {}
+    }, 30);
+  }
   // 메모 열기 — 팝업으로 (메모 화면에 있으면 거기서)
   function openNote(id) {
     if (cur.view === 'notes' || !DN.notePopup) { go('notes', { noteId: id }); return; }
@@ -474,6 +485,25 @@
   function boot() {
     // Google 쪽에서 연결이 끊기면(권한 해제 등) 로그인 화면으로
     if (S.host.onAuthChanged) S.host.onAuthChanged(reload);
+    // 마크다운 폴더에서 직접 고친 메모 → 앱으로 (한 번에 되돌리기)
+    if (S.host.onMdExternal) S.host.onMdExternal(function (list) {
+      var changed = [];
+      S.mutate('파일에서 고친 메모 가져오기', function (s) {
+        list.forEach(function (x) {
+          var n = M.byId(s.notes, x.id);
+          if (!n || n.deletedAt) return;
+          var v = DN.mdexport.noteFromFile(n, x.content);
+          if (v.body === (n.body || '').replace(/\s+$/, '') && (v.title || '') === (n.title || '')) return;
+          M.updateNote(s, x.id, { title: v.title, body: v.body }, now());
+          changed.push(M.noteTitle(n));
+        });
+      }, { source: 'md' });
+      if (changed.length) ui.undoToast('마크다운 파일에서 고친 메모 ' + changed.length + '개를 가져왔어요' + (changed.length === 1 ? ' — ‘' + changed[0] + '’' : '') + '.');
+    });
+    if (S.host.onFocusChat) S.host.onFocusChat(focusChat);
+    if (S.host.onMdConflict) S.host.onMdConflict(function (list) {
+      ui.toast('앱과 마크다운 파일 양쪽에서 고친 메모가 있어 파일 쪽은 ‘(파일에서 고친 것 …)’ 이름으로 남겨 뒀어요 (' + list.length + '개).', { duration: 8000 });
+    });
     buildShell();
     S.load().then(function (res) {
       S.subscribe(onStoreChange);
@@ -496,7 +526,7 @@
   DN.app = {
     now: now, go: go, undo: undo, redo: redo, memoToTask: memoToTask, taskToMemo: taskToMemo, refresh: function () { renderView(); renderNav(); }, openTask: openTask, closeDetail: closeDetail, toggleDone: toggleDone, startTask: startTask, pauseTask: pauseTask, returnToTodo: returnToTodo,
     snoozeMenu: snoozeMenu, taskMenu: taskMenu, deleteTask: deleteTask, scheduleTask: scheduleTask, openRef: openRef, applyPrefs: applyPrefs,
-    quickCapture: quickCapture, saveQuick: saveQuick, reload: reload, openNote: openNote, loadSample: loadSample, clearSample: clearSample,
+    quickCapture: quickCapture, saveQuick: saveQuick, reload: reload, openNote: openNote, focusChat: focusChat, loadSample: loadSample, clearSample: clearSample,
     current: function () { return cur; }, detailTaskId: function () { return detailTaskId; },
     nav: function () { return NAV.map(function (n) { return Object.assign({}, n); }); }
   };

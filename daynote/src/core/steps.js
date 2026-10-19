@@ -131,7 +131,21 @@
     });
   }
 
+  // 할 일 → 세부 할 일 (그 할 일의 세부 할 일은 아래 단계로 따라온다)
+  function fromTask(t) {
+    var node = { id: M.uid('step'), title: String(t.title || '').trim().slice(0, MAX_TITLE) || '(제목 없음)', done: t.status === 'done', estimateMinutes: t.estimateMinutes > 0 ? t.estimateMinutes : null };
+    if (t.steps && t.steps.length) node.steps = clone(t.steps);
+    return node;
+  }
+  // 세부 할 일 → 새 할 일의 값 (아래 단계는 그 할 일의 세부 할 일로)
+  function toTaskFields(node) {
+    return { title: node.title || '(제목 없음)', estimateMinutes: node.estimateMinutes > 0 ? node.estimateMinutes : null, steps: clone(kids(node)) };
+  }
+  // 다른 목록 맨 끝에 붙이기
+  function append(steps, node) { return settle(clone(steps).concat([clone(node)])); }
+
   return {
+    fromTask: fromTask, toTaskFields: toTaskFields, append: append,
     walk: walk, flat: flat, count: count, leaves: leaves, find: find, toggle: toggle, add: add, remove: remove, settle: settle,
     parseOutline: parseOutline, stepsFromNodes: stepsFromNodes, taskFromText: taskFromText, outlineGroups: outlineGroups
   };

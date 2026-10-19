@@ -52,14 +52,15 @@
   function send(text, projectId) {
     text = String(text || '').trim();
     if (!text) return null;
-    // 보낸 글 하나가 되돌리기 한 칸 — 말풍선 · 메모 저장 · AI 정리 · 명령 실행이 모두 이 칸에 합쳐진다 (Ctrl+Z 한 번에 통째로)
+    // 보낸 글 · 메모 저장 · AI 정리는 되돌리기 칸을 만들지 않는다 (AI 정리는 되돌리지 않는다)
+    //   AI 가 알아들은 명령(마감 미루기 등)은 그 명령만 한 칸으로 되돌릴 수 있다
     var key = M.uid('send');
     var um = { id: M.uid('msg'), at: now().toISOString(), role: 'user', kind: 'text', text: text, pin: true };   // 보낸 글은 채팅 화면 맨 위로 올라가고 답이 그 아래에 붙는다
-    S.mutate('보낸 글', function (s) {
+    S.mutate(null, function (s) {
       if (!s.chat) s.chat = [];
       s.chat.push(um);
       if (s.chat.length > MAX_MESSAGES) s.chat.splice(0, s.chat.length - MAX_MESSAGES);
-    }, { source: 'chat', key: key });
+    }, { source: 'chat' });
     // 자주 쓰는 짧은 명령("할 일 추천해줘", "쉬고 싶어", "캘린더 보여줘")은 AI 없이 바로 — 메모로 남기지 않는다
     var local = DN.aiCommands.matchLocal(S.state, text, focusTask());
     if (local) { S.withJoin(key, function () { runCommand(local); }); return null; }

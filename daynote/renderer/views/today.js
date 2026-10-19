@@ -153,7 +153,7 @@
       h('div.home-sec-head', h('h2', '메모'), h('span.meta', memos.length ? memos.length + '개' : ''),
         selCount ? h('button.btn.btn-ghost.btn-xs.is-on', { type: 'button', onclick: function () { shelve(Object.keys(memoSel)); } }, '체크한 메모 비우기 (' + selCount + ')') : null,
         memos.length ? h('button.btn.btn-ghost.btn-xs', { type: 'button', title: '홈의 메모를 모두 보관함으로 (지우지 않아요)', onclick: function () { shelve(memos.map(function (n) { return n.id; })); } }, '전체 비우기') : null,
-        h('button.btn.btn-ghost.btn-xs', { type: 'button', onclick: function (e) { shelfPopup(e.currentTarget); } }, '보관함')),
+        h('button.btn.btn-ghost.btn-xs.shelf-open-btn', { type: 'button', onclick: function () { shelfDock(); } }, '보관함')),
       h('div.home-scroll', { 'data-keep-scroll': 'home-memos' },
         memos.length ? memoUl : h('div.empty.home-empty', '오늘 적은 메모가 여기에 모여요.')));
     secTasks.id = 'home-sec-tasks';
@@ -403,24 +403,133 @@
   var dragFromDay = null;
   //   opts.ownSort: 그 안에 자체 순서 바꾸기가 있으면(오늘 목록) 같은 날 끌기는 받지 않는다. 없으면(내일·이번 주 날 묶음) 같은 날 안에서도 끼워 넣기로 순서 바꾸기
   function dayZone(el, day, opts) {
-    el.addEventListener('dragstart', function (e) { if (e.target.closest && e.target.closest('[data-task-id]')) dragFromDay = day; }, true);
+    el.addEventListener('dragstart', function (e) { if (e.target.closest && e.target.closest('[data-task-id]') && !e.target.closest('[data-step-id]')) dragFromDay = day; }, true);
     el.addEventListener('dragend', function () { dragFromDay = null; }, true);
     return dropDay(el, day, Object.assign({ zone: true }, opts || {}));
   }
   // 끌고 있는 할 일 — dragover 에서는 끄는 내용(getData)을 못 읽어서 시작할 때 기억해 둔다
   var dragTaskId = null;
-  document.addEventListener('dragstart', function (e) { var x = e.target && e.target.closest && e.target.closest('[data-task-id]'); dragTaskId = x ? x.getAttribute('data-task-id') : null; }, true);
+  document.addEventListener('dragstart', function (e) {
+    var isStep = e.target && e.target.closest && e.target.closest('[data-step-id]');
+    var x = !isStep && e.target && e.target.closest && e.target.closest('[data-task-id]');
+    dragTaskId = x ? x.getAttribute('data-task-id') : null;
+  }, true);
   document.addEventListener('dragend', function () { dragTaskId = null; }, true);
-  // 놓을 자리 — 커서 아래 첫 줄 앞 (없으면 마지막 줄 뒤). 줄에 선을 그어 보여 준다
-  function insertPoint(el, clientY) {
-    var rows = Array.prototype.filter.call(el.querySelectorAll('li[data-task-id]'), function (r) { return r.getAttribute('data-task-id') !== dragTaskId; });
-    for (var i = 0; i < rows.length; i++) {
-      var r = rows[i].getBoundingClientRect();
-      if (clientY < r.top + r.height / 2) return { before: rows[i], row: rows[i], after: false };
-    }
-    return rows.length ? { before: null, row: rows[rows.length - 1], after: true } : { before: null, row: null };
+  // 놓을 자리 — 커서가 있는 두 줄 사이. 그 틈 한가운데에 선 하나를 그린다 (A 아래와 B 위는 같은 자리)
+  //   rows: 놓을 수 있는 줄들(끌고 있는 줄은 뺀다) · 돌려주는 값: { beforeId, afterId } (끝이면 afterId)
+  function dropLineAt(box, rows, clientY, idAttr) {
+    var line = null;
+    for (var c = box.firstChild; c; c = c.nextSibling) if (c.classList && c.classList.contains('drop-line')) { line = c; break; }
+    if (!line) { line = h('div.drop-line', { 'aria-hidden': 'true' }); box.appendChild(line); }
+    var br = box.getBoundingClientRect(), idx = rows.length;
+    for (var i = 0; i < rows.length; i++) { var r = rows[i].getBoundingClientRect(); if (clientY < r.top + r.height / 2) { idx = i; break; } }
+    var y;
+    if (!rows.length) y = 6;
+    else if (idx === 0) y = rows[0].getBoundingClientRect().top - br.top - 1;
+    else if (idx === rows.length) y = rows[rows.length - 1].getBoundingClientRect().bottom - br.top - 1;
+    else { var a = rows[idx - 1].getBoundingClientRect(), b = rows[idx].getBoundingClientRect(); y = (a.bottom + b.top) / 2 - br.top - 1; }
+    line.style.top = Math.round(y) + 'px';
+    return { beforeId: idx < rows.length ? rows[idx].getAttribute(idAttr) : null, afterId: idx === rows.length && rows.length ? rows[rows.length - 1].getAttribute(idAttr) : null };
   }
-  function clearInsert(el) { Array.prototype.forEach.call(el.querySelectorAll('.drop-before, .drop-after'), function (r) { r.classList.remove('drop-before', 'drop-after'); }); }
+  function clearLine(box) { Array.prototype.forEach.call(box.querySelectorAll('.drop-line'), function (l) { l.remove(); }); clearNest(box); }
+  // 할 일 줄의 가운데(위·아래 30% 를 뺀 곳)에 있으면 그 할 일 안으로 — 세부 할 일로 넣기
+  function nestRowAt(rows, clientY, exceptTaskId) {
+    for (var i = 0; i < rows.length; i++) {
+      var r = rows[i], tid = r.getAttribute('data-task-id');
+      if (!tid || tid === exceptTaskId) continue;
+      var main = r.querySelector('.home-main') || r;
+      var b = main.getBoundingClientRect();
+      var band = Math.min(14, b.height * 0.3);
+      if (clientY > b.top + band && clientY < b.bottom - band) return r;
+    }
+    return null;
+  }
+  function markSplit(box, on) { Array.prototype.forEach.call(box.querySelectorAll('.drop-line'), function (l) { l.classList.toggle('is-split', !!on); }); }
+  function clearNest(box) { Array.prototype.forEach.call(box.querySelectorAll('.is-nest-target'), function (r) { r.classList.remove('is-nest-target'); }); }
+  function showNest(box, row) { clearNest(box); Array.prototype.forEach.call(box.querySelectorAll('.drop-line'), function (l) { l.remove(); }); row.classList.add('is-nest-target'); }
+  function stepData(e) { try { return JSON.parse(e.dataTransfer.getData('application/x-daynote-step') || 'null'); } catch (err) { return null; } }
+  // 그날 목록의 순서 다시 매기기 (s 안에서 — 한 번의 되돌리기 칸에 함께)
+  function orderInto(s, day, taskId, beforeId, afterId, now) {
+    var list = (day === D.ymd(now) ? todayTaskList(s, now).open : DN.horizon.byDay(s, [day], now)[0].tasks).map(function (x) { return x.id; }).filter(function (id) { return id !== taskId; });
+    var idx = beforeId ? list.indexOf(beforeId) : afterId ? list.indexOf(afterId) + 1 : list.length;
+    if (idx < 0) idx = list.length;
+    list.splice(idx, 0, taskId);
+    list.forEach(function (id, i) { var x = M.byId(s.tasks, id); if (x) x.sortOrder = (i + 1) * 10; });
+  }
+  // Ctrl 을 누른 채 끌어 놓기 — 할 일을 나눠서 그날에도 하나 더 (제목 뒤 (1/2) · (2/2)). 세부 할 일은 그대로 복사
+  //   이미 나눈 일이면 묶음 전체를 다시 매긴다 (1/3 · 2/3 · 3/3 — 새로 놓는 것이 마지막)
+  var SPLIT_RE = /\s*\((\d+)\/(\d+)\)\s*$/;
+  function baseTitle(title) { return String(title || '').replace(SPLIT_RE, '').trim(); }
+  function splitTask(taskId, day, beforeId, afterId) {
+    var now = DN.app.now();
+    var t = M.byId(S.state.tasks, taskId);
+    if (!t || t.deletedAt) return;
+    var made = S.mutate('할 일 나누기', function (s) {
+      var x = M.byId(s.tasks, taskId);
+      var sid = x.split && x.split.id;
+      var parts = sid ? s.tasks.filter(function (y) { return !y.deletedAt && y.split && y.split.id === sid; }) : [];
+      if (!sid) { sid = M.uid('split'); x.split = { id: sid, part: 1 }; parts = [x]; }
+      parts.sort(function (a, b) { return ((a.split.part || 0) - (b.split.part || 0)) || (a.createdAt < b.createdAt ? -1 : 1); });
+      var base = baseTitle(x.title);
+      var copy = M.addTask(s, {
+        title: base, projectId: x.projectId || null, memo: x.memo || '', priority: x.priority || null, dueDate: x.dueDate || null, dueTime: x.dueTime || null,
+        estimateMinutes: x.estimateMinutes || null, estimateSource: x.estimateSource || null,
+        steps: JSON.parse(JSON.stringify(x.steps || [])), sources: JSON.parse(JSON.stringify(x.sources || [])),
+        planDate: day || null, split: { id: sid }
+      }, now);
+      parts.push(copy);
+      var n = parts.length;
+      parts.forEach(function (p, i) { p.split = { id: sid, part: i + 1 }; p.title = baseTitle(p.title) + ' (' + (i + 1) + '/' + n + ')'; });
+      if (day) orderInto(s, day, copy.id, beforeId, afterId, now);
+      return copy;
+    });
+    ui.undoToast('‘' + baseTitle(t.title) + '’를 나눴어요 — ' + made.title + (day ? '를 ' + D.relDay(day, now) + '에' : '') + ' 놓았어요.');
+  }
+  // 세부 할 일 → 메인 할 일 (그날 할 일로, 놓은 자리에)
+  function stepToTask(data, day, beforeId, afterId) {
+    var now = DN.app.now(), ST = DN.steps;
+    var src = M.byId(S.state.tasks, data.taskId);
+    var node = src && ST.find(src.steps || [], data.stepId);
+    if (!node) return;
+    var made = S.mutate('세부 할 일을 할 일로', function (s) {
+      var t = M.byId(s.tasks, data.taskId);
+      t.steps = ST.remove(t.steps || [], data.stepId);
+      var f = ST.toTaskFields(node);
+      var nt = M.addTask(s, Object.assign(f, { projectId: t.projectId || null, planDate: day || null }), now);
+      if (node.done) M.completeTask(s, nt.id, now);
+      if (day) orderInto(s, day, nt.id, beforeId, afterId, now);
+      return nt;
+    });
+    ui.undoToast('‘' + made.title + '’를 ‘' + src.title + '’에서 빼서 ' + (day ? D.relDay(day, now) + ' 할 일로' : '할 일로') + ' 만들었어요.');
+  }
+  // 할 일 → 다른 할 일의 세부 할 일 / 세부 할 일 → 다른 할 일 밑으로
+  function nestInto(targetId, taskId, data) {
+    var now = DN.app.now(), ST = DN.steps;
+    var target = M.byId(S.state.tasks, targetId);
+    if (!target) return;
+    if (taskId) {
+      var t = M.byId(S.state.tasks, taskId);
+      if (!t || t.id === targetId) return;
+      S.mutate('할 일을 세부 할 일로', function (s) {
+        var x = M.byId(s.tasks, taskId), tg = M.byId(s.tasks, targetId);
+        tg.steps = ST.append(tg.steps || [], ST.fromTask(x));
+        M.deleteTask(s, taskId, now);
+      });
+      ui.undoToast('‘' + t.title + '’를 ‘' + target.title + '’의 세부 할 일로 넣었어요.');
+      return;
+    }
+    if (!data || data.taskId === targetId) return;
+    var src = M.byId(S.state.tasks, data.taskId);
+    var node = src && ST.find(src.steps || [], data.stepId);
+    if (!node) return;
+    S.mutate('세부 할 일 옮기기', function (s) {
+      var a = M.byId(s.tasks, data.taskId), b = M.byId(s.tasks, targetId);
+      a.steps = ST.remove(a.steps || [], data.stepId);
+      b.steps = ST.append(b.steps || [], node);
+    });
+    ui.undoToast('‘' + node.title + '’를 ‘' + target.title + '’ 밑으로 옮겼어요.');
+  }
+  function taskRowsIn(el) { return Array.prototype.filter.call(el.querySelectorAll('li[data-task-id]'), function (r) { return r.getAttribute('data-task-id') !== dragTaskId; }); }
   // 그날 목록의 그 자리에 끼워 넣기 — 할 날·순서를 한 번에 (Ctrl+Z 한 번)
   function placeInDay(taskId, day, beforeId, afterId) {
     var st = S.state, now = DN.app.now(), today = D.ymd(now);
@@ -446,29 +555,45 @@
     function has(e, t) { return e.dataTransfer && Array.prototype.indexOf.call(e.dataTransfer.types || [], t) !== -1; }
     function isTask(e) { return has(e, 'application/x-daynote-task'); }
     function isNote(e) { return has(e, 'application/x-daynote-note'); }
+    function isStep(e) { return has(e, 'application/x-daynote-step'); }
     function same(e) { return isTask(e) && dragFromDay === day && opts.ownSort; }
+    function nestAt(e) { return opts.zone && (isTask(e) || isStep(e)) ? nestRowAt(taskRowsIn(el), e.clientY, dragTaskId) : null; }
+    function splitting(e) { return isTask(e) && e.ctrlKey; }
     el.addEventListener('dragover', function (e) {
-      if ((!isTask(e) && !isNote(e)) || same(e)) return;
-      e.preventDefault(); e.stopPropagation(); e.dataTransfer.dropEffect = 'move';
-      el.classList.add('is-drop'); el.classList.toggle('is-note-drop', isNote(e));
-      // 날 묶음이면 할 일 사이 어디에 넣을지 선으로 보여 준다
-      if (opts.zone && isTask(e)) {
-        clearInsert(el);
-        var p = insertPoint(el, e.clientY);
-        if (p.row) p.row.classList.add(p.after ? 'drop-after' : 'drop-before');
-      }
+      if ((!isTask(e) && !isNote(e) && !isStep(e)) || same(e)) return;
+      e.preventDefault(); e.stopPropagation(); e.dataTransfer.dropEffect = splitting(e) ? 'copy' : 'move';
+      el.classList.add('is-drop'); el.classList.toggle('is-note-drop', isNote(e)); el.classList.toggle('is-split-drop', splitting(e));
+      // 날 묶음이면 할 일 사이 어디에 넣을지 선으로 — 할 일 줄 가운데면 그 할 일 안으로(세부 할 일로). Ctrl 이면 나눠서 놓기
+      var nest = splitting(e) ? null : nestAt(e);
+      if (nest) showNest(el, nest);
+      else if (opts.zone && (isTask(e) || isStep(e))) { clearNest(el); dropLineAt(el, taskRowsIn(el), e.clientY, 'data-task-id'); markSplit(el, splitting(e)); }
     });
-    el.addEventListener('dragleave', function (e) { if (!el.contains(e.relatedTarget)) { el.classList.remove('is-drop', 'is-note-drop'); clearInsert(el); } });
+    el.addEventListener('dragleave', function (e) { if (!el.contains(e.relatedTarget)) { el.classList.remove('is-drop', 'is-note-drop', 'is-split-drop'); clearLine(el); } });
     el.addEventListener('drop', function (e) {
-      if ((!isTask(e) && !isNote(e)) || same(e)) return;
-      e.preventDefault(); e.stopPropagation(); el.classList.remove('is-drop', 'is-note-drop');
+      if ((!isTask(e) && !isNote(e) && !isStep(e)) || same(e)) return;
+      e.preventDefault(); e.stopPropagation(); el.classList.remove('is-drop', 'is-note-drop', 'is-split-drop');
       dragFromDay = null;
-      if (isNote(e)) { clearInsert(el); DN.app.memoToTask(e.dataTransfer.getData('application/x-daynote-note'), { planDate: day }); return; }
+      if (splitting(e)) {
+        var spp = opts.zone ? dropLineAt(el, taskRowsIn(el), e.clientY, 'data-task-id') : { beforeId: null, afterId: null };
+        clearLine(el);
+        splitTask(e.dataTransfer.getData('application/x-daynote-task'), day, spp.beforeId, spp.afterId);
+        return;
+      }
+      var nest = nestAt(e);
+      if (nest) { clearLine(el); nestInto(nest.getAttribute('data-task-id'), isTask(e) ? e.dataTransfer.getData('application/x-daynote-task') : null, isStep(e) ? stepData(e) : null); return; }
+      if (isStep(e)) {
+        var sp = opts.zone ? dropLineAt(el, taskRowsIn(el), e.clientY, 'data-task-id') : { beforeId: null, afterId: null };
+        clearLine(el);
+        var d = stepData(e);
+        if (d) stepToTask(d, day, sp.beforeId, sp.afterId);
+        return;
+      }
+      if (isNote(e)) { clearLine(el); DN.app.memoToTask(e.dataTransfer.getData('application/x-daynote-note'), { planDate: day }); return; }
       var tid = e.dataTransfer.getData('application/x-daynote-task');
       if (opts.zone) {
-        var p = insertPoint(el, e.clientY);
-        clearInsert(el);
-        placeInDay(tid, day, p.before ? p.before.getAttribute('data-task-id') : null, p.after && p.row ? p.row.getAttribute('data-task-id') : null);
+        var p = dropLineAt(el, taskRowsIn(el), e.clientY, 'data-task-id');
+        clearLine(el);
+        placeInDay(tid, day, p.beforeId, p.afterId);
         return;
       }
       setPlan(tid, day);
@@ -592,86 +717,129 @@
     ids.forEach(function (id) { delete memoSel[id]; });
     ui.undoToast('메모 ' + ids.length + '개를 보관함에 넣었어요. 홈에서는 안 보여요.');
   }
-  // 보관함 팝업 — 홈에 없는 메모(비운 메모 · 지난 메모)와 비운 완료 할 일. [홈으로] 로 다시 불러온다
-  function shelfPopup(anchor) {
-    var st = S.state, now = DN.app.now();
-    var onHome = {};
-    todayMemoList(st, now).forEach(function (n) { onHome[n.id] = true; });
+  // 보관함 — [보관함] 을 누르면 화면 아래에 작은 폴더 줄 (메모를 끌 때 뜨는 것과 같은 모양)
+  //   미분류 · 프로젝트 · 비운 완료 할 일 · 휴지통. 폴더를 누르면 그 안의 목록 창
+  function shelfFolderOf(n) { var p = n.projectId && M.byId(S.state.projects, n.projectId); return p && !p.deletedAt ? p.id : null; }
+  function shelfOnHome() { var on = {}; todayMemoList(S.state, DN.app.now()).forEach(function (n) { on[n.id] = true; }); return on; }
+  function shelfArchived(onHome) { return M.liveNotes(S.state).filter(function (n) { return n.captureRole !== 'task_source' && !onHome[n.id]; }); }
+  function shelfCleared() { return M.liveTasks(S.state).filter(function (t) { return t.status === 'done' && t.homeClearedAt; }); }
+  function shelfTrash() { return S.state.notes.filter(function (n) { return n.deletedAt && !n.sample; }); }
+  var shelfDockEl = null;
+  function closeShelfDock() {
+    if (!shelfDockEl) return;
+    shelfDockEl.remove(); shelfDockEl = null;
+    document.removeEventListener('mousedown', onShelfDown, true);
+    document.removeEventListener('keydown', onShelfKey, true);
+  }
+  function onShelfDown(e) { if (shelfDockEl && !shelfDockEl.contains(e.target) && !(e.target.closest && e.target.closest('.shelf-open-btn'))) closeShelfDock(); }
+  function onShelfKey(e) { if (e.key === 'Escape') { e.stopPropagation(); closeShelfDock(); } }
+  function shelfDock() {
+    if (shelfDockEl) { closeShelfDock(); return; }
+    var onHome = shelfOnHome(), all = shelfArchived(onHome);
+    function count(pid) { return all.filter(function (n) { return shelfFolderOf(n) === pid; }).length; }
+    function tile(cls, label, iconEl, cnt, open) {
+      return h('button.dock-tile.shelf-dock-tile' + cls, { type: 'button', title: '‘' + label + '’ 열기', onclick: function () { closeShelfDock(); open(); } },
+        h('div.dock-icon', iconEl), h('div.dock-name', label), h('div.shelf-dock-count', cnt + '개'));
+    }
+    var projects = M.liveProjects(S.state).filter(function (p) { return !p.archivedAt || count(p.id); });
+    var tiles = [tile('.is-none', '미분류', ui.folderIcon(ui.UNFILED_COLOR), count(null), function () { shelfPopup({ tab: 'memo', folder: null }); })]
+      .concat(projects.map(function (p) { return tile('', p.name, ui.folderIcon(p.color), count(p.id), function () { shelfPopup({ tab: 'memo', folder: p.id }); }); }));
+    tiles.push(tile('.is-done-folder', '비운 완료 할 일', h('span.shelf-done-icon', ui.icon('check')), shelfCleared().length, function () { shelfPopup({ tab: 'done' }); }));
+    tiles.push(tile('.is-trash', '휴지통', h('span.dock-trash', ui.icon('trash')), shelfTrash().length, function () { shelfPopup({ tab: 'trash' }); }));
+    shelfDockEl = h('div.note-dock.shelf-dock', { role: 'dialog', 'aria-label': '보관함 — 폴더를 고르세요' },
+      h('div.shelf-dock-head', h('div.dock-hint', '보관함 — 폴더를 누르면 그 안을 봐요'),
+        h('button.icon-btn.shelf-dock-x', { type: 'button', 'aria-label': '닫기', onclick: closeShelfDock }, ui.icon('x'))),
+      h('div.dock-row', tiles));
+    document.body.appendChild(shelfDockEl);
+    setTimeout(function () {
+      document.addEventListener('mousedown', onShelfDown, true);
+      document.addEventListener('keydown', onShelfKey, true);
+      var first = shelfDockEl && shelfDockEl.querySelector('.dock-tile'); if (first) first.focus();
+    }, 0);
+  }
+  // 폴더 안 목록 창 — start: { tab: 'memo', folder } · { tab: 'done' } · { tab: 'trash' }. [← 폴더] 는 아래 폴더 줄로
+  function shelfPopup(start) {
+    start = start || { tab: 'memo', folder: null };
+    var now = DN.app.now();
+    var onHome = shelfOnHome();
     var q = '';
-    var tab = 'folders';     // 'folders' 폴더 고르기 · 'memo' 한 폴더의 메모 · 'done' 비운 완료 할 일
-    var folder = null;       // 고른 폴더: 프로젝트 id · null(미분류)
+    var tab = start.tab, folder = start.folder || null;
     var listBox = h('div.shelf-list');
     var search = h('input.input.shelf-search', { type: 'search', placeholder: '찾기', 'aria-label': '보관함에서 찾기',
       oninput: function () { q = search.value.trim().toLowerCase(); draw(); } });
-    var tabs = h('div.shelf-tabs', { role: 'tablist' });
-    function folderOf(n) { var p = n.projectId && M.byId(S.state.projects, n.projectId); return p && !p.deletedAt ? p.id : null; }
-    function archived() { return M.liveNotes(S.state).filter(function (n) { return n.captureRole !== 'task_source' && !onHome[n.id]; }); }
+    var tabs = h('div.shelf-tabs', h('button.btn.btn-ghost.btn-xs.shelf-back', { type: 'button', onclick: function () { m.close(); shelfDock(); } }, ui.icon('chevronLeft'), '폴더'));
+    var trashBtn = h('button.btn.btn-sm.btn-danger', { type: 'button', hidden: true, onclick: emptyTrash });
+    function match(text) { return !q || String(text || '').toLowerCase().indexOf(q) !== -1; }
     function memos() {
-      return archived().filter(function (n) { return folderOf(n) === folder; })
-        .filter(function (n) { return !q || ((n.title || '') + ' ' + (n.body || '')).toLowerCase().indexOf(q) !== -1; })
+      return shelfArchived(onHome).filter(function (n) { return shelfFolderOf(n) === folder && match((n.title || '') + ' ' + (n.body || '')); })
         .sort(function (a, b) { var x = a.homeHiddenAt || a.createdAt, y = b.homeHiddenAt || b.createdAt; return x < y ? 1 : -1; }).slice(0, 80);
     }
-    function setTitle(text) { var t = m && m.box.querySelector('.modal-head h2'); if (t) t.textContent = text; }
-    // 폴더 창 — 미분류 · 프로젝트(보관한 메모 수) · 비운 완료 할 일
-    function drawFolders() {
-      setTitle('보관함');
-      tabs.textContent = ''; search.hidden = true;
-      listBox.textContent = '';
-      var all = archived();
-      function count(pid) { return all.filter(function (n) { return folderOf(n) === pid; }).length; }
-      function tileEl(label, iconEl, cnt, onClick, cls) {
-        return h('button.shelf-folder' + (cls || ''), { type: 'button', onclick: onClick, title: '‘' + label + '’ 열기' },
-          h('span.shelf-folder-icon', iconEl), h('span.shelf-folder-name', label), h('span.shelf-folder-count.meta', cnt + '개'));
-      }
-      var projects = M.liveProjects(S.state).filter(function (p) { return !p.archivedAt || count(p.id); });
-      var tiles = [tileEl('미분류', ui.folderIcon(ui.UNFILED_COLOR), count(null), function () { folder = null; tab = 'memo'; q = ''; search.value = ''; draw(); }, '.is-unfiled')]
-        .concat(projects.map(function (p) { return tileEl(p.name, ui.folderIcon(p.color), count(p.id), function () { folder = p.id; tab = 'memo'; q = ''; search.value = ''; draw(); }); }));
-      tiles.push(tileEl('비운 완료 할 일', h('span.shelf-done-icon', ui.icon('check')), cleared().length, function () { tab = 'done'; q = ''; search.value = ''; draw(); }, '.is-done'));
-      listBox.appendChild(h('p.help', { style: { margin: '0 0 10px' } }, '폴더를 누르면 그 안의 메모를 봐요. 홈의 메모를 끌어 폴더에 던져 넣으면 여기로 들어와요.'));
-      listBox.appendChild(h('div.shelf-folders', tiles));
+    function title() {
+      if (tab === 'done') return '보관함 · 비운 완료 할 일';
+      if (tab === 'trash') return '보관함 · 휴지통';
+      var fp = folder && M.byId(S.state.projects, folder);
+      return '보관함 · ' + (fp ? fp.name : '미분류');
     }
-    function cleared() {
-      return M.liveTasks(S.state).filter(function (t) { return t.status === 'done' && t.homeClearedAt; })
-        .filter(function (t) { return !q || t.title.toLowerCase().indexOf(q) !== -1; })
-        .sort(function (a, b) { return a.homeClearedAt < b.homeClearedAt ? 1 : -1; }).slice(0, 80);
+    function emptyTrash() {
+      var list = shelfTrash();
+      if (!list.length) return;
+      ui.confirm('휴지통 비우기', '휴지통의 메모 ' + list.length + '개를 완전히 지워요. (바로 뒤 Ctrl+Z 로는 되돌릴 수 있어요)', '비우기').then(function (ok) {
+        if (!ok) return;
+        var ids = {}; list.forEach(function (n) { ids[n.id] = true; });
+        S.mutate('휴지통 비우기', function (s) { s.notes = s.notes.filter(function (n) { return !ids[n.id]; }); });
+        ui.undoToast('휴지통을 비웠어요 — 메모 ' + list.length + '개.');
+        draw();
+      });
+    }
+    function noteRow(n, buttons) {
+      var body = (n.body || '').replace(/\s+/g, ' ').trim();
+      var proj = n.projectId && M.byId(S.state.projects, n.projectId);
+      var when = n.deletedAt ? '버린 날 ' + D.relDay(D.ymd(n.deletedAt), now) : n.homeHiddenAt ? '비운 날 ' + D.relDay(D.ymd(n.homeHiddenAt), now) : '적은 날 ' + D.relDay(D.ymd(n.createdAt), now);
+      return h('div.shelf-row',
+        h('div.shelf-main',
+          h('div.shelf-title', M.noteTitle(n)),
+          body && body !== M.noteTitle(n) ? h('div.shelf-preview', body.slice(0, 100)) : null,
+          h('div.shelf-meta.meta', when, proj ? h('span.chip.chip-project', { style: { '--pc': proj.color } }, proj.name) : null)),
+        buttons);
     }
     function draw() {
-      if (tab === 'folders') { drawFolders(); return; }
-      var fp = folder && M.byId(S.state.projects, folder);
-      setTitle(tab === 'done' ? '보관함 · 비운 완료 할 일' : '보관함 · ' + (fp ? fp.name : '미분류'));
-      search.hidden = false;
-      tabs.textContent = '';
-      tabs.appendChild(h('button.btn.btn-ghost.btn-xs.shelf-back', { type: 'button', onclick: function () { tab = 'folders'; draw(); } }, ui.icon('chevronLeft'), '폴더'));
+      var t = m && m.box.querySelector('.modal-head h2'); if (t) t.textContent = title();
       listBox.textContent = '';
+      trashBtn.hidden = tab !== 'trash';
       if (tab === 'memo') {
         var list = memos();
         if (!list.length) { listBox.appendChild(h('div.empty', q ? '찾는 메모가 없어요.' : '이 폴더는 비어 있어요.')); return; }
         list.forEach(function (n) {
-          var body = (n.body || '').replace(/\s+/g, ' ').trim();
-          var proj = n.projectId && M.byId(S.state.projects, n.projectId);
-          listBox.appendChild(h('div.shelf-row',
-            h('div.shelf-main',
-              h('div.shelf-title', M.noteTitle(n)),
-              body && body !== M.noteTitle(n) ? h('div.shelf-preview', body.slice(0, 100)) : null,
-              h('div.shelf-meta.meta', n.homeHiddenAt ? '비운 날 ' + D.relDay(D.ymd(n.homeHiddenAt), now) : '적은 날 ' + D.relDay(D.ymd(n.createdAt), now),
-                proj ? h('span.chip.chip-project', { style: { '--pc': proj.color } }, proj.name) : null)),
+          listBox.appendChild(noteRow(n, [
             h('button.btn.btn-xs', { type: 'button', onclick: function () {
               S.mutate('메모 홈으로', function (s) { var x = M.byId(s.notes, n.id); if (x) { x.homeHiddenAt = null; x.homePinnedAt = DN.app.now().toISOString(); } });
               onHome[n.id] = true;
               ui.toast('‘' + M.noteTitle(n) + '’를 홈으로 불러왔어요.');
               draw();
             } }, '홈으로'),
-            h('button.icon-btn', { type: 'button', title: '메모 열기', 'aria-label': '‘' + M.noteTitle(n) + '’ 열기', onclick: function () { m.close(); DN.app.openNote(n.id); } }, ui.icon('chevronRight'))));
+            h('button.icon-btn', { type: 'button', title: '메모 열기', 'aria-label': '‘' + M.noteTitle(n) + '’ 열기', onclick: function () { m.close(); DN.app.openNote(n.id); } }, ui.icon('chevronRight'))]));
+        });
+      } else if (tab === 'trash') {
+        var tr = shelfTrash().filter(function (n) { return match((n.title || '') + ' ' + (n.body || '')); }).sort(function (a, b) { return a.deletedAt < b.deletedAt ? 1 : -1; });
+        trashBtn.textContent = '휴지통 비우기 (' + shelfTrash().length + ')';
+        trashBtn.disabled = !shelfTrash().length;
+        if (!tr.length) { listBox.appendChild(h('div.empty', q ? '찾는 메모가 없어요.' : '휴지통이 비어 있어요.')); return; }
+        tr.forEach(function (n) {
+          listBox.appendChild(noteRow(n, h('button.btn.btn-xs', { type: 'button', onclick: function () {
+            S.mutate('메모 되살리기', function (s) { var x = M.byId(s.notes, n.id); if (x) { x.deletedAt = null; x.homeHiddenAt = x.homeHiddenAt || DN.app.now().toISOString(); } });
+            ui.toast('‘' + M.noteTitle(n) + '’를 되살렸어요 — 원래 폴더에 있어요.');
+            draw();
+          } }, '되살리기')));
         });
       } else {
-        var done = cleared();
+        var done = shelfCleared().filter(function (x) { return match(x.title); }).sort(function (a, b) { return a.homeClearedAt < b.homeClearedAt ? 1 : -1; }).slice(0, 80);
         if (!done.length) { listBox.appendChild(h('div.empty', '비운 완료 할 일이 없어요.')); return; }
-        done.forEach(function (t) {
+        done.forEach(function (x) {
           listBox.appendChild(h('div.shelf-row',
-            h('div.shelf-main', h('div.shelf-title.is-done', t.title), h('div.shelf-meta.meta', '끝낸 날 ' + D.relDay(D.ymd(t.completedAt), now))),
+            h('div.shelf-main', h('div.shelf-title.is-done', x.title), h('div.shelf-meta.meta', '끝낸 날 ' + D.relDay(D.ymd(x.completedAt), now))),
             h('button.btn.btn-xs', { type: 'button', title: '오늘 끝낸 일이면 오늘 목록에 다시 보여요', onclick: function () {
-              S.mutate('완료 할 일 다시 보이기', function (s) { var x = M.byId(s.tasks, t.id); if (x) x.homeClearedAt = null; });
-              ui.toast('‘' + t.title + '’를 다시 보이게 했어요.');
+              S.mutate('완료 할 일 다시 보이기', function (s) { var y = M.byId(s.tasks, x.id); if (y) y.homeClearedAt = null; });
+              ui.toast('‘' + x.title + '’를 다시 보이게 했어요.');
               draw();
             } }, '홈으로')));
         });
@@ -679,10 +847,11 @@
     }
     var m = null;
     draw();
-    m = ui.modal({ title: '보관함', wide: true,
+    m = ui.modal({ title: title(), wide: true,
       body: h('div.shelf', h('div.shelf-top', tabs, search), listBox),
-      footLeft: h('button.btn.btn-ghost.btn-sm', { type: 'button', onclick: function () { m.close(); DN.app.go('archive'); } }, '보관함 화면에서 보기'),
+      footLeft: [trashBtn, h('button.btn.btn-ghost.btn-sm', { type: 'button', onclick: function () { m.close(); DN.app.go('archive'); } }, '보관함 화면에서 보기')],
       actions: [{ label: '닫기', primary: true }] });
+    draw();
   }
 
   function memoRow(st, n, now) {
@@ -780,7 +949,8 @@
   function sortable(ul, ids, commit) {
     var dragId = null;
     function rows() { return Array.prototype.slice.call(ul.querySelectorAll('li[data-id]')); }
-    function clearMarks() { rows().forEach(function (r) { r.classList.remove('drop-before', 'drop-after', 'is-dragging'); }); }
+    function clearMarks() { rows().forEach(function (r) { r.classList.remove('drop-before', 'drop-after', 'is-dragging'); }); clearLine(ul); }
+    function others() { return rows().filter(function (r) { return r.getAttribute('data-id') !== dragId; }); }
     function move(id, targetId, after) {
       var order = ids.filter(function (x) { return x !== id; });
       var i = order.indexOf(targetId);
@@ -802,24 +972,28 @@
       var nid = li.getAttribute('data-note-id');
       if (nid) { e.dataTransfer.effectAllowed = 'copyMove'; e.dataTransfer.setData('application/x-daynote-note', nid); }
     });
+    function nestOk() { return dragId && others().some(function (r) { return r.getAttribute('data-task-id'); }) && M.byId(S.state.tasks, dragId); }
     ul.addEventListener('dragover', function (e) {
       if (!dragId) return;
-      var li = e.target.closest && e.target.closest('li[data-id]');
       e.preventDefault();
-      rows().forEach(function (r) { r.classList.remove('drop-before', 'drop-after'); });
-      if (!li || li.getAttribute('data-id') === dragId) return;
-      var r = li.getBoundingClientRect();
-      li.classList.add(e.clientY < r.top + r.height / 2 ? 'drop-before' : 'drop-after');
+      var split = e.ctrlKey && M.byId(S.state.tasks, dragId);
+      if (e.dataTransfer) e.dataTransfer.dropEffect = split ? 'copy' : 'move';
+      var nest = !split && nestOk() ? nestRowAt(others(), e.clientY, dragId) : null;
+      if (nest) showNest(ul, nest);
+      else { clearNest(ul); dropLineAt(ul, others(), e.clientY, 'data-id'); markSplit(ul, split); }
     });
     ul.addEventListener('drop', function (e) {
       if (!dragId) return;
       e.preventDefault();
-      var li = e.target.closest && e.target.closest('li[data-id]');
+      var split = e.ctrlKey && M.byId(S.state.tasks, dragId);
+      var nest = !split && nestOk() ? nestRowAt(others(), e.clientY, dragId) : null;
+      var p = nest ? null : dropLineAt(ul, others(), e.clientY, 'data-id');
       var id = dragId; dragId = null;
       clearMarks();
-      if (!li || li.getAttribute('data-id') === id) return;
-      var r = li.getBoundingClientRect();
-      move(id, li.getAttribute('data-id'), e.clientY >= r.top + r.height / 2);
+      if (split) { e.stopPropagation(); splitTask(id, D.ymd(DN.app.now()), p.beforeId, p.afterId); return; }
+      if (nest) { e.stopPropagation(); nestInto(nest.getAttribute('data-task-id'), id, null); return; }
+      if (p.beforeId) move(id, p.beforeId, false);
+      else if (p.afterId) move(id, p.afterId, true);
     });
     ul.addEventListener('dragend', function () { dragId = null; clearMarks(); });
     ul.addEventListener('keydown', function (e) {

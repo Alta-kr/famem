@@ -91,8 +91,48 @@ function saveData(json) {
 }
 
 // 로그인 전에는 데이터를 열지도 쓰지도 않는다
-ipcMain.handle('store:load', () => signedIn() ? loadData() : { ok: false, locked: true });
-ipcMain.handle('store:save', (_e, json) => signedIn() ? saveData(json) : { ok: false, error: '로그인이 필요해요' });
+ipcMain.handle('store:load', async () => {
+  if (!signedIn()) return { ok: false, locked: true };
+  const r = await loadData();
+  if (mdMirror && r && r.data) mdMirror.schedule(r.data, 3000);
+  return r;
+});
+ipcMain.handle('store:save', async (_e, json) => {
+  if (!signedIn()) return { ok: false, error: '로그인이 필요해요' };
+  const r = await saveData(json);
+  if (mdMirror && r && r.ok) mdMirror.schedule(json);
+  return r;
+});
+
+// ---------------------------------------------------------------- 마크다운 폴더 (services/mdmirror.js)
+// 저장할 때마다 문서\Daynote 에 메모·할 일·주간 보고를 .md 로 맞춰 쓴다. 설정에서 끄거나 위치를 바꾼다
+// 검사 실행(smoke·shots)은 쓰지 않는다 — DAYNOTE_MD_DIR 을 주면 그 폴더로 (테스트)
+const mdMirrorMod = require('./services/mdmirror');
+let mdMirror = null;
+const MD_CFG = () => path.join(app.getPath('userData'), 'md-mirror.json');
+function mdConfig() { try { return JSON.parse(fsSync.readFileSync(MD_CFG(), 'utf8')) || {}; } catch (e) { return {}; } }
+function mdSaveConfig(c) { try { fsSync.mkdirSync(path.dirname(MD_CFG()), { recursive: true }); fsSync.writeFileSync(MD_CFG(), JSON.stringify(c, null, 1)); } catch (e) {} }
+function mdChosenDir() { return process.env.DAYNOTE_MD_DIR || mdConfig().dir || path.join(app.getPath('documents'), 'Daynote'); }
+function mdDir() {
+  if (process.env.DAYNOTE_MD_DIR) return process.env.DAYNOTE_MD_DIR;
+  if (CHECK_RUN || mdConfig().enabled === false) return null;
+  return mdChosenDir();
+}
+ipcMain.handle('md:status', () => Object.assign({ enabled: !!mdDir(), dir: mdChosenDir() }, mdMirror ? mdMirror.status() : {}));
+ipcMain.handle('md:open', async () => { const d = mdChosenDir(); try { await fs.mkdir(d, { recursive: true }); } catch (e) {} return shell.openPath(d); });
+ipcMain.handle('md:choose', async () => {
+  const r = await dialog.showOpenDialog(mainWindow, { title: '마크다운 파일을 저장할 폴더', defaultPath: mdChosenDir(), properties: ['openDirectory', 'createDirectory'] });
+  if (r.canceled || !r.filePaths || !r.filePaths[0]) return { ok: false, canceled: true };
+  mdSaveConfig(Object.assign(mdConfig(), { dir: r.filePaths[0], enabled: true }));
+  if (mdMirror) await mdMirror.runNow();
+  return { ok: true, dir: r.filePaths[0] };
+});
+ipcMain.handle('md:setEnabled', async (_e, on) => {
+  mdSaveConfig(Object.assign(mdConfig(), { enabled: !!on }));
+  if (on && mdMirror) await mdMirror.runNow();
+  return { ok: true, enabled: !!mdDir() };
+});
+ipcMain.handle('md:syncNow', async () => (mdMirror ? mdMirror.runNow() : null));
 
 // 구글 로그인 — 기본 브라우저에서 로그인하고 돌아온다 (services/auth.js)
 ipcMain.handle('auth:status', () => LOGIN_BYPASS ? { configured: true, signedIn: true, bypass: true, user: null } : auth.status());
@@ -285,6 +325,8 @@ function createWindow() {
 
   // 닫기 — 트레이가 있으면 숨기기만 한다 (빠른 메모 단축키가 계속 동작하도록)
   // 정말 끌 때는 화면에 남은 저장 대기분을 비우고 끈다
+  // 창으로 돌아오면 — 밖에서 고친 마크다운 메모가 있는지 본다
+  mainWindow.on('focus', () => { if (mdMirror && signedIn()) mdMirror.runNow().catch(() => {}); });
   mainWindow.on('close', (e) => {
     if (tray && closeToTray && !isQuitting) {
       e.preventDefault();
@@ -346,9 +388,15 @@ function createQuickWindow() {
   quickWindow.webContents.on('will-navigate', (e) => e.preventDefault());
   quickWindow.on('closed', () => { quickWindow = null; });
 }
+// Ctrl+Shift+Space — 앱 창이 열려 있으면(보이고 최소화 안 됨) 그 창의 채팅 입력칸으로, 닫혀 있으면(트레이) 빠른 메모 창
 function toggleQuick() {
+  if (quickWindow && quickWindow.isVisible()) { quickWindow.hide(); return; }
+  if (mainWindow && rendererReady && mainWindow.isVisible() && !mainWindow.isMinimized()) {
+    bringToFront();
+    mainWindow.webContents.send('app:focusChat');
+    return;
+  }
   if (!quickWindow) createQuickWindow();
-  if (quickWindow.isVisible()) { quickWindow.hide(); return; }
   // 마우스가 있는 모니터의 위쪽 1/5 지점, 가운데
   const d = screen.getDisplayNearestPoint(screen.getCursorScreenPoint()).workArea;
   const [w] = quickWindow.getSize();
@@ -380,7 +428,7 @@ function trayHintOnce() {
   try { fsSync.writeFileSync(flag, '1'); } catch (_) {}
   tray.displayBalloon({
     iconType: 'info', title: 'Daynote는 트레이에서 계속 실행돼요',
-    content: 'Ctrl+Shift+Space로 어디서든 메모를 던질 수 있어요. 완전히 끄려면 트레이 아이콘 → 끝내기.'
+    content: 'Ctrl+Shift+Space — 창이 닫혀 있으면 빠른 메모, 열려 있으면 채팅 입력칸으로. 완전히 끄려면 트레이 아이콘 → 끝내기.'
   });
 }
 function createTray() {
@@ -409,6 +457,11 @@ app.whenReady().then(() => {
   keystore = keystoreMod.create(app.getPath('userData'), safeStorage);
   if (!CHECK_RUN) ai.setSavedKey(keystore.read());
   auth = authMod.create(Object.assign({ dir: app.getPath('userData'), safeStorage, openExternal: (u) => shell.openExternal(u) }, OAUTH));
+  mdMirror = mdMirrorMod.create({
+    getDir: mdDir,
+    onExternal: (list) => { if (mainWindow) mainWindow.webContents.send('md:external', list); },
+    onConflict: (list) => { if (mainWindow) mainWindow.webContents.send('md:conflict', list); }
+  });
   createWindow();
   // Google 쪽에서 연결을 끊었으면(권한 해제 등) 로그아웃하고 로그인 화면으로
   if (!CHECK_RUN) auth.check().then((r) => { if (r.signedOut && mainWindow) mainWindow.webContents.send('auth:changed'); });

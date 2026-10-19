@@ -303,10 +303,10 @@
       flushPending();
       if (!DN.aiFlow.status().configured) { ui.toast('AI가 연결되어 있지 않아요. 설정에서 연결하면 바로 정리해요.'); return; }
       var key = M.uid('nq');
-      S.mutate('AI로 정리', function (s) {
+      S.mutate(null, function (s) {
         var x = M.byId(s.notes, id);
         x.capture = Object.assign({ created: [] }, x.capture || {}, { status: 'pending', error: null, changedByUser: false, kindByUser: false, at: A.now().toISOString() });
-      }, { source: 'notes', key: key });
+      }, { source: 'notes' });
       ui.toast('정리하는 중…');
       DN.capture.classify(id, { join: key }).then(function (r) {
         if (r && r.reason === 'undone') return;
@@ -314,7 +314,7 @@
         var items = n ? DN.aiProposals.captureItems(S.state, n).filter(function (it) { return it.ref.kind !== 'note'; }) : [];
         var cnt = {}; items.forEach(function (it) { cnt[it.kind] = (cnt[it.kind] || 0) + 1; });
         var parts = [cnt.task ? '할 일 ' + cnt.task + '개' : null, cnt.event ? '일정 ' + cnt.event + '개' : null, cnt.moved ? '날짜 변경 ' + cnt.moved + '개' : null, cnt.done ? '완료 ' + cnt.done + '개' : null].filter(Boolean);
-        ui.undoToast(!r || !r.ok ? '정리하지 못했어요. 메모는 그대로예요.' : parts.length ? parts.join(' · ') + '로 정리했어요. 아래 ‘이 메모에서 만든 항목’에서 볼 수 있어요.' : '메모로 두는 게 맞아 보여요 — 따로 만든 항목은 없어요.');
+        ui.toast(!r || !r.ok ? '정리하지 못했어요. 메모는 그대로예요.' : parts.length ? parts.join(' · ') + '로 정리했어요. 아래 ‘이 메모에서 만든 항목’에서 볼 수 있어요.' : '메모로 두는 게 맞아 보여요 — 따로 만든 항목은 없어요.');
       });
     }
     function organize(force) {

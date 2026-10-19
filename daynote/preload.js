@@ -37,5 +37,15 @@ contextBridge.exposeInMainWorld('daynoteHost', {
     signOut: () => ipcRenderer.invoke('auth:signOut')
   },
   onAuthChanged: (fn) => ipcRenderer.on('auth:changed', () => fn()),
-  reload: () => ipcRenderer.invoke('app:reload')
+  reload: () => ipcRenderer.invoke('app:reload'),
+  md: {
+    status: () => ipcRenderer.invoke('md:status'),
+    open: () => ipcRenderer.invoke('md:open'),
+    choose: () => ipcRenderer.invoke('md:choose'),
+    setEnabled: (on) => ipcRenderer.invoke('md:setEnabled', !!on),
+    syncNow: () => ipcRenderer.invoke('md:syncNow')
+  },
+  onMdExternal: (fn) => ipcRenderer.on('md:external', (_e, list) => fn(Array.isArray(list) ? list : [])),
+  onFocusChat: (fn) => ipcRenderer.on('app:focusChat', () => fn()),
+  onMdConflict: (fn) => ipcRenderer.on('md:conflict', (_e, list) => fn(Array.isArray(list) ? list : []))
 });

@@ -46,6 +46,7 @@ daynote/
 ├─ services/
 │  ├─ ai.js              AI 호출 — 분류는 gemini-3.5-flash-lite, 나머지는 gemini-3.8-flash, 서로 대체 / 키 가림
 │  ├─ keystore.js        .env 읽기, 설정에서 넣은 키를 Windows DPAPI 로 암호화 보관
+│  ├─ mdmirror.js        마크다운 폴더 맞추기 (문서Daynote) — 자기가 쓴 파일만, 밖에서 고친 메모는 앱으로, 양쪽 고침은 따로 남김
 │  └─ auth.js            구글 로그인 (기본 브라우저 + 127.0.0.1 임시 주소 + PKCE), 처음 계정만 허용, 토큰은 DPAPI
 ├─ src/core/             순수 규칙 (DOM 없음, 테스트 대상)
 │  ├─ dates.js           날짜·시각, 남은 시간("3시간 남음"), 월간 달력 칸
@@ -58,6 +59,7 @@ daynote/
 │  ├─ steps.js           세부 할 일 나무 (몇 단계든), 개요 목록 → 할 일 + 세부 할 일
 │  ├─ horizon.js         앞을 보는 계획: 오늘·내일·이번 주·다음 주, 2주 띠, 할 날(planDate), 날짜별 부담
 │  ├─ timesheet.js       쓴 시간: 작업 구간(sessions) → 프로젝트·주별 합계, 예상 대비 실제, CSV
+│  ├─ mdexport.js        마크다운 파일 모양 (프로젝트/메모/*.md · 할 일.md · 미분류 · 주간 보고), 파일에서 고친 메모 읽기
 │  ├─ ics.js             회사 캘린더(ICS) 읽기 — 반복·빠진 날·바뀐 한 번·시간대·종일
 │  ├─ exercises.js       휴식 스트레칭 동작 (단계별 시간)
 │  └─ ai/

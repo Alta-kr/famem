@@ -664,7 +664,7 @@
       var note = M.byId(S.state.notes, id);
       if (!note) return;
       S.mutate('메모 지우기', function (s) { M.deleteNote(s, id, A.now()); });
-      undoToast('‘' + M.noteTitle(note) + '’ 메모를 휴지통에 버렸어요.');
+      undoToast('‘' + M.noteTitle(note) + '’ 메모를 휴지통에 넣었어요 — 보관함 → 휴지통에서 되살리거나 비울 수 있어요.');
     }, { title: '메모 지우기 (Ctrl+Z 로 되돌리기)' }));
     dock = h('div.note-dock', { role: 'region', 'aria-label': '메모 분류 — 폴더나 휴지통에 놓으세요' },
       h('div.dock-hint', '폴더에 놓으면 그 보관함으로 넣고(홈에서 치움), 휴지통에 놓으면 지워요'),
@@ -711,6 +711,45 @@
   });
   // 끌기가 끝나면 닫는다. 놓은 곳이 다시 그려지면 끌던 요소가 사라져 dragend 가 문서까지 오지 않고,
   //   놓는 곳이 drop 을 멈추기도 한다 — 그래서 drop 은 캡처 단계에서 먼저 받고, 그래도 남으면 다음 마우스 움직임에 닫는다
+  // 끄는 동안 스크롤 — 커서 아래의 스크롤 칸을 찾아, 위·아래 가장자리(56px)에 가까우면 가까울수록 빠르게 스크롤
+  //   휠도 그 칸을 스크롤한다 (Windows 의 끌기 중에는 기본 휠 스크롤이 막히는 경우가 있어서)
+  var dragPos = null, dragSeenAt = 0, scrollRaf = null, EDGE = 56;
+  function scrollBoxAt(x, y) {
+    var el = document.elementFromPoint(x, y);
+    while (el && el !== document.body && el !== document.documentElement) {
+      var cs = getComputedStyle(el);
+      if (/(auto|scroll)/.test(cs.overflowY) && el.scrollHeight > el.clientHeight + 2) return el;
+      el = el.parentElement;
+    }
+    return null;
+  }
+  function stopDragScroll() { dragPos = null; if (scrollRaf) cancelAnimationFrame(scrollRaf); scrollRaf = null; }
+  function dragScrollTick() {
+    scrollRaf = null;
+    if (!dragPos || Date.now() - dragSeenAt > 500) { stopDragScroll(); return; }
+    var box = scrollBoxAt(dragPos.x, dragPos.y);
+    if (box) {
+      var r = box.getBoundingClientRect(), dy = 0;
+      var edge = Math.min(EDGE, r.height / 4);
+      if (dragPos.y < r.top + edge) dy = -Math.ceil((r.top + edge - dragPos.y) / edge * 16);
+      else if (dragPos.y > r.bottom - edge) dy = Math.ceil((dragPos.y - (r.bottom - edge)) / edge * 16);
+      if (dy) box.scrollTop += dy;
+    }
+    scrollRaf = requestAnimationFrame(dragScrollTick);
+  }
+  document.addEventListener('dragover', function (e) {
+    dragPos = { x: e.clientX, y: e.clientY }; dragSeenAt = Date.now();
+    if (!scrollRaf) scrollRaf = requestAnimationFrame(dragScrollTick);
+  }, true);
+  document.addEventListener('wheel', function (e) {
+    if (!dragPos || Date.now() - dragSeenAt > 500) return;
+    var box = scrollBoxAt(e.clientX || dragPos.x, e.clientY || dragPos.y);
+    if (!box) return;
+    e.preventDefault();
+    box.scrollTop += e.deltaMode === 1 ? e.deltaY * 32 : e.deltaY;
+  }, { capture: true, passive: false });
+  document.addEventListener('drop', stopDragScroll, true);
+  document.addEventListener('dragend', stopDragScroll, true);
   document.addEventListener('dragend', function () { setTimeout(hideDock, 0); }, true);
   document.addEventListener('drop', function () { setTimeout(hideDock, 0); }, true);
   // 끌기가 끝났는데 drop·dragend 가 오지 않은 경우(창 밖에 놓기 등) — 독이 떠 있을 때만 다음 마우스 움직임에 닫는다
@@ -895,7 +934,8 @@
             if (!v) return;
             setTaskSteps(task.id, function (l) { return ST.add(l, x.id, v); }, '하위 단계 추가');
           } }) : null;
-        return h('li' + (x.done ? '.is-done' : '') + (subs.length ? '.has-sub' : ''),
+        var canDrag = opts.editable && !done;
+        var li = h('li' + (x.done ? '.is-done' : '') + (subs.length ? '.has-sub' : ''), canDrag ? { draggable: 'true', 'data-step-id': x.id, 'data-step-task': task.id, title: '끌어서 날짜에 놓으면 할 일로, 다른 할 일에 놓으면 그 세부 할 일로' } : {},
           h('div.step-row',
             h('label',
               h('input', { type: 'checkbox', checked: !!x.done, onchange: function () { setTaskSteps(task.id, function (l) { return ST.toggle(l, x.id); }, opts.label || '세부 할 일 체크'); } }),
@@ -911,6 +951,18 @@
               } }, icon('x'))) : null),
           subs.length ? rows(subs, depth + 1) : null,
           subInput);
+        // 세부 할 일 끌기 — 날짜 칸에 놓으면 메인 할 일로, 다른 할 일 줄 가운데에 놓으면 그 할 일의 세부 할 일로 (today.js)
+        if (canDrag) {
+          li.addEventListener('dragstart', function (e) {
+            e.stopPropagation();   // 위의 할 일 줄 끌기·순서 바꾸기로 번지지 않게
+            e.dataTransfer.effectAllowed = 'move';
+            e.dataTransfer.setData('application/x-daynote-step', JSON.stringify({ taskId: task.id, stepId: x.id }));
+            e.dataTransfer.setData('text/plain', x.title);
+            li.classList.add('is-dragging');
+          });
+          li.addEventListener('dragend', function (e) { e.stopPropagation(); li.classList.remove('is-dragging'); });
+        }
+        return li;
       }));
     }
     var tree = rows(task.steps || [], 0);

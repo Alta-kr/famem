@@ -25,18 +25,18 @@
   }
 
   // 입력 저장 + 분류 시작. 저장된 메모를 바로 돌려준다 (분류는 뒤에서 진행, 끝나면 onDone(result)).
-  //   opts.join: 채팅의 '보내기' 칸 이름표 — 저장·정리·명령이 그 칸에 합쳐져 Ctrl+Z 한 번에 통째로 되돌아간다
+  //   저장·AI 정리는 되돌리기 칸을 만들지 않는다. opts.join: AI 가 실행한 명령을 묶을 이름표 (명령만 되돌릴 수 있다)
   var joinKey = {};
   function submit(text, projectId, onDone, opts) {
     text = String(text || '').trim();
     if (!text) return null;
     var key = (opts && opts.join) || M.uid('cap');
-    var note = S.mutate('입력 저장', function (s) {
+    var note = S.mutate(null, function (s) {
       return M.addNote(s, {
         title: '', body: text, projectId: projectId || null,
         captureRole: 'memo', capture: { status: 'pending', at: now().toISOString(), entryType: null, created: [] }
       }, now());
-    }, { source: 'capture', key: key, join: key });
+    }, { source: 'capture' });
     joinKey[note.id] = key;
     // 채팅(홈 입력·빠른 메모 창)에서 보낸 글만 명령으로 실행한다. Ctrl+N 메모 창은 늘 메모로 지킨다
     if (onDone) S.mutate(null, function (s) { var n = M.byId(s.notes, note.id); if (n) n.capture.viaChat = true; }, { source: 'capture', silent: true });
@@ -123,14 +123,14 @@
         return { ok: false, reason: 'invalid' };
       }
       var cap, cmds = [];
-      S.mutate('AI 분류', function (s) {
+      S.mutate(null, function (s) {
         var r = M.byId(s.aiRuns, run.id);
         Object.assign(r, { provider: res.provider || r.provider, model: res.model || r.model });
         P.finishRun(s, run.id, { status: 'succeeded', rawOutput: res.raw || JSON.stringify(res.output), usage: res.usage || null, dropped: v.dropped }, t);
         // 채팅 명령 — 근거·대상을 확인한 것만, 채팅에서 보낸 글일 때만 (실행은 아래에서)
         cmds = sent.capture && sent.capture.viaChat ? DN.aiCommands.resolve(s, sent, res.output.commands, focus) : [];
         cap = P.applyCapture(s, { note: sent, run: r, validated: v, output: res.output, commands: cmds }, t);
-      }, { source: 'capture', join: key });
+      }, { source: 'capture' });
       notify();
       if (cmds.length && DN.assistant && DN.assistant.runCommand) S.withJoin(key, function () { cmds.forEach(function (c) { DN.assistant.runCommand(c); }); });
       return { ok: true, capture: cap, commands: cmds };

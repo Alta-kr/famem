@@ -223,7 +223,7 @@
       var skipped = (c.skipped || []).length;
       head = h('div.cap-head', h('span', summary(items, now)),
         skipped ? h('span.cap-head-sub', ' · 비슷한 할 일이 이미 있어서 ' + skipped + '개는 만들지 않았어요') : null);
-      foot = h('div.cap-foot.meta', h('span', c.changedByUser ? '직접 고침' : 'AI가 정리함'), h('span', { 'aria-hidden': 'true' }, ' · '), h('span', h('kbd', 'Ctrl+Z'), '로 되돌리기'));
+      foot = null;
     }
     var rows = h('div.cap-rows', { role: 'list' }, items.map(function (it, i) { return capRow(n, it, i, items, st, now); }));
     return bubble('assistant', h('div.cap', head, rows, foot), 'msg-cap');
