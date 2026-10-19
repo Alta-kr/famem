@@ -739,7 +739,7 @@
     function count(pid) { return all.filter(function (n) { return shelfFolderOf(n) === pid; }).length; }
     function tile(cls, label, iconEl, cnt, open) {
       return h('button.dock-tile.shelf-dock-tile' + cls, { type: 'button', title: '‘' + label + '’ 열기', onclick: function () { closeShelfDock(); open(); } },
-        h('div.dock-icon', iconEl), h('div.dock-name', label), h('div.shelf-dock-count', cnt + '개'));
+        h('div.dock-icon', iconEl), h('div.dock-name', label), h('div.shelf-dock-count', { title: cnt + '개' }, String(cnt)));
     }
     var projects = M.liveProjects(S.state).filter(function (p) { return !p.archivedAt || count(p.id); });
     var tiles = [tile('.is-none', '미분류', ui.folderIcon(ui.UNFILED_COLOR), count(null), function () { shelfPopup({ tab: 'memo', folder: null }); })]

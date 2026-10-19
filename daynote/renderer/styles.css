@@ -1930,9 +1930,16 @@ html.is-resting .toast, html.is-resting .toasts { display: none !important; }   
 .shelf-dock-head { display: flex; align-items: center; gap: 8px; }
 .shelf-dock-head .dock-hint { flex: 1; }
 .shelf-dock-x svg { width: 14px; height: 14px; }
-.shelf-dock-tile { all: unset; box-sizing: border-box; cursor: pointer; }
+.shelf-dock-tile { appearance: none; background: none; font: inherit; color: inherit; cursor: pointer; text-align: center; }   /* 크기·여백은 .dock-tile 그대로 (끌 때 뜨는 폴더 줄과 같게) */
 .shelf-dock-tile.dock-tile * { pointer-events: none; }
 .shelf-dock-tile:hover, .shelf-dock-tile:focus-visible { background: var(--primary-soft); border-color: var(--primary); }
 .shelf-dock-tile.is-trash:hover, .shelf-dock-tile.is-trash:focus-visible { background: rgba(220, 38, 38, .12); border-color: #DC2626; }
 .shelf-dock-count { font-size: 11px; color: var(--text-tertiary); }
 .dock-tile .shelf-done-icon { width: 40px; height: 36px; }
+
+/* 보관함 폴더 줄 — 끌 때 뜨는 폴더 줄과 같은 높이: 개수는 아이콘 귀퉁이 배지, 닫기는 모서리 */
+.shelf-dock .shelf-dock-head { position: relative; display: block; }
+.shelf-dock .shelf-dock-x { position: absolute; right: -8px; top: -8px; width: 24px; height: 24px; }
+.shelf-dock .shelf-dock-tile { position: relative; }
+.shelf-dock .shelf-dock-count { position: absolute; top: 4px; right: 12px; min-width: 18px; height: 18px; padding: 0 5px; box-sizing: border-box; border-radius: 9px;
+  background: var(--surface-raised, var(--surface)); border: 1px solid var(--border-deco); font-size: 11px; line-height: 16px; color: var(--text-secondary); }
