@@ -55,5 +55,5 @@ function pixel(x, y, s) {
 
 const out = path.join(__dirname, '..', 'assets');
 fs.mkdirSync(out, { recursive: true });
-for (const s of [16, 32, 256]) fs.writeFileSync(path.join(out, 'icon-' + s + '.png'), png(s, pixel));
+for (const s of [16, 32, 256, 1024]) fs.writeFileSync(path.join(out, 'icon-' + s + '.png'), png(s, pixel));
 console.log('icons written to ' + out);

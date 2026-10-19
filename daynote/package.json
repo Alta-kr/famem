@@ -11,7 +11,8 @@
     "serve": "node scripts/serve.js",
     "postinstall": "node scripts/fix-electron.js",
     "shots": "electron . --profile=shots --shots",
-    "dist": "node scripts/build-win.js"
+    "dist": "node scripts/build-win.js",
+    "dist:mac": "electron-builder --mac dmg --arm64 --x64 --publish never"
   },
   "devDependencies": {
     "electron": "32.3.3"
@@ -62,6 +63,19 @@
     },
     "portable": {
       "artifactName": "Daynote-${version}-portable.exe"
+    },
+    "mac": {
+      "target": [
+        "dmg"
+      ],
+      "icon": "assets/icon-1024.png",
+      "category": "public.app-category.productivity",
+      "identity": "-",
+      "hardenedRuntime": false,
+      "gatekeeperAssess": false
+    },
+    "dmg": {
+      "artifactName": "Daynote-${version}-${arch}.dmg"
     }
   }
 }

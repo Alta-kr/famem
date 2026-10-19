@@ -452,6 +452,7 @@ else start();
 
 function start() {
 app.on('second-instance', showMain);
+app.on('activate', showMain);   // 맥: Dock 아이콘을 누르면 숨겨 둔 창을 다시
 app.on('before-quit', () => { isQuitting = true; });
 app.whenReady().then(() => {
   keystore = keystoreMod.create(app.getPath('userData'), safeStorage);

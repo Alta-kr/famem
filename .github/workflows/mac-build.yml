@@ -1,0 +1,55 @@
+# 맥용 Daynote (dmg) 만들기 — 손으로 눌러서만 돈다 (Actions → Mac build → Run workflow)
+#   키(.env)는 저장소에 없고 GitHub Secrets 에서 빌드할 때만 꺼내 쓴다:
+#     GEMINI_API_KEY · GOOGLE_OAUTH_CLIENT_ID · GOOGLE_OAUTH_CLIENT_SECRET
+#   만든 dmg 안에 키가 들어 있다 — 저장소가 공개라 결과 파일은 하루만 두고, 받은 뒤에는 실행 기록·Secrets 를 지운다
+name: Mac build
+
+on:
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  mac:
+    runs-on: macos-latest
+    timeout-minutes: 40
+    defaults:
+      run:
+        working-directory: daynote
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 20
+
+      - name: Install
+        run: npm ci --no-audit --no-fund
+
+      - name: Write .env from secrets
+        env:
+          GEMINI_API_KEY: ${{ secrets.GEMINI_API_KEY }}
+          GOOGLE_OAUTH_CLIENT_ID: ${{ secrets.GOOGLE_OAUTH_CLIENT_ID }}
+          GOOGLE_OAUTH_CLIENT_SECRET: ${{ secrets.GOOGLE_OAUTH_CLIENT_SECRET }}
+        run: |
+          if [ -z "$GEMINI_API_KEY" ] || [ -z "$GOOGLE_OAUTH_CLIENT_ID" ] || [ -z "$GOOGLE_OAUTH_CLIENT_SECRET" ]; then
+            echo "Secrets(GEMINI_API_KEY · GOOGLE_OAUTH_CLIENT_ID · GOOGLE_OAUTH_CLIENT_SECRET) 가 비어 있어요."; exit 1
+          fi
+          printf 'GEMINI_API_KEY=%s\nGOOGLE_OAUTH_CLIENT_ID=%s\nGOOGLE_OAUTH_CLIENT_SECRET=%s\n' "$GEMINI_API_KEY" "$GOOGLE_OAUTH_CLIENT_ID" "$GOOGLE_OAUTH_CLIENT_SECRET" > .env
+
+      - name: Build dmg (Apple Silicon · Intel)
+        env:
+          CSC_IDENTITY_AUTO_DISCOVERY: 'false'
+        run: npx --yes electron-builder@25.1.8 --mac dmg --arm64 --x64 --publish never
+
+      - name: Remove .env
+        if: always()
+        run: rm -f .env
+
+      - uses: actions/upload-artifact@v4
+        with:
+          name: Daynote-mac
+          path: daynote/dist/*.dmg
+          retention-days: 1
+          if-no-files-found: error
