@@ -100,8 +100,12 @@
       }));
     }
 
-    function section(iconName, title, body) {
-      return h('section.wk-section', h('h3', ui.icon(iconName), title), body);
+    // 섹션 제목은 아이콘 배지·굵은 글씨·개수로, 내용은 그 아래 들여 쓴 칸으로 — 제목과 항목이 한눈에 갈리게
+    function section(iconName, title, body, count) {
+      return h('section.wk-section',
+        h('div.wk-sec-head', h('span.wk-sec-icon', { 'aria-hidden': 'true' }, ui.icon(iconName)), h('h3', title),
+          count ? h('span.wk-sec-count', count + '개') : null),
+        h('div.wk-sec-body', body));
     }
 
     var completedBody = summary.completed.length
@@ -149,20 +153,20 @@
 
     var nextBody = summary.nextWeek.length
       ? h('ul', summary.nextWeek.map(function (t) {
-        return refItem(t.title, t.taskId, false, h('span.help', '마감 ' + D.shortDay(D.parseYmd(t.dueDate))));
+        return refItem(t.title, t.taskId, false, h('span.help', t.dueDate ? '마감 ' + D.shortDay(D.parseYmd(t.dueDate)) : D.shortDay(D.parseYmd(t.planDate)) + ' 예정'));
       }))
-      : h('div.help', '다음 주 마감인 할 일이 없습니다.');
+      : h('div.help', '다음 주에 마감이거나 하기로 한 일이 없습니다.');
 
     var facts = h('div.card.card-pad',
       h('h2.section-title', { style: { marginBottom: '12px' } }, '사실 확인'),
       h('p.help', { style: { marginTop: 0 } }, '완료·결정·장애물 기록과 할 일에서 모았습니다. 기록에 없는 일은 여기에도, 보고서에도 들어가지 않습니다.'),
-      section('check', '이번 주 완료', completedBody),
-      section('task', '진행 중·남은 일', unfinishedBody),
-      section('flag', '결정 사항', histList(summary.decisions)),
-      section('alert', '이슈·장애물', histList(summary.blockers)),
-      section('star', '성과', histList(summary.achievements)),
-      summary.updates.length ? section('edit', '업데이트', histList(summary.updates)) : null,
-      section('calendar', '다음 주 계획', nextBody),
+      section('check', '이번 주 완료', completedBody, summary.completed.reduce(function (a, g) { return a + g.items.length; }, 0)),
+      section('task', '진행 중·남은 일', unfinishedBody, summary.unfinished.length),
+      section('flag', '결정 사항', histList(summary.decisions), summary.decisions.length),
+      section('alert', '이슈·장애물', histList(summary.blockers), summary.blockers.length),
+      section('star', '성과', histList(summary.achievements), summary.achievements.length),
+      summary.updates.length ? section('edit', '업데이트', histList(summary.updates), summary.updates.length) : null,
+      section('calendar', '다음 주 계획', nextBody, summary.nextWeek.length),
       section('clock', '쓴 시간', timeBody()));
 
     // 쓴 시간 — 프로젝트별, 많이 쓴 할 일 3개씩 (UX 점검 WK-01)

@@ -1831,3 +1831,18 @@ html.is-resting .toast, html.is-resting .toasts { display: none !important; }   
 .login-setup code { font-size: 12px; }
 .login-fine { margin: 18px 0 0; font-size: 12px; color: var(--text-tertiary); line-height: 1.5; }
 .acc-avatar { width: 26px; height: 26px; border-radius: 50%; display: grid; place-items: center; background: var(--primary-soft); color: var(--primary); font-weight: 700; font-size: 13px; flex: none; }
+
+/* 주간 정리 — 제목과 내용 구분: 섹션 제목(아이콘 배지·굵게·개수) / 내용(들여 쓴 칸, 보통 굵기) */
+.wk-section { margin: 0; padding: 18px 0 14px; border-top: 1px solid var(--border-deco); }
+.wk-sec-head { display: flex; align-items: center; gap: 8px; margin-bottom: 10px; }
+.wk-sec-icon { width: 26px; height: 26px; flex: none; border-radius: 8px; display: grid; place-items: center; background: var(--primary-soft); color: var(--primary); }
+.wk-sec-icon svg { width: 15px; height: 15px; }
+.wk-section h3 { font-size: 15px; font-weight: 700; margin: 0; letter-spacing: -0.01em; display: block; }
+.wk-sec-count { font-size: 12px; font-weight: 600; color: var(--primary); background: var(--primary-soft); border-radius: 999px; padding: 1px 8px; }
+.wk-sec-body { padding-left: 34px; }
+.wk-sec-body > .help, .wk-sec-body > div > .help:first-child, .wk-sec-body .wk-hint { font-size: 12px; color: var(--text-tertiary); }
+.wk-section li.wk-item { padding: 9px 12px; border: 0; border-radius: 10px; background: var(--surface-subtle); margin-bottom: 6px; }
+.wk-section li.wk-item:last-child { margin-bottom: 0; }
+.wk-section .wk-title { font-size: 14px; font-weight: 400; }
+.wk-section .wk-proj { margin: 4px 0 6px; }
+.wk-section .report-state { margin-top: 10px; }
