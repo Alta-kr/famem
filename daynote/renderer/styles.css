@@ -1943,3 +1943,22 @@ html.is-resting .toast, html.is-resting .toasts { display: none !important; }   
 .shelf-dock .shelf-dock-tile { position: relative; }
 .shelf-dock .shelf-dock-count { position: absolute; top: 4px; right: 12px; min-width: 18px; height: 18px; padding: 0 5px; box-sizing: border-box; border-radius: 9px;
   background: var(--surface-raised, var(--surface)); border: 1px solid var(--border-deco); font-size: 11px; line-height: 16px; color: var(--text-secondary); }
+
+/* 월간 시간표 — 좌우 두 칸(오전 · 오후) */
+.dp-cols-head { display: grid; grid-template-columns: 1fr 1fr; gap: 10px; margin: 8px 8px 0; padding-left: 36px; font-size: 12px; font-weight: 700; color: var(--text-secondary); }
+.dp-cols-head span + span { padding-left: 36px; }
+.dp-area.is-split { display: grid; grid-template-columns: 1fr 1fr; gap: 10px; margin: 8px 8px 0; }
+.day-picker.is-docked .dp-area.is-split { margin-top: 6px; }
+.dp-col { position: relative; margin-left: 36px; }
+.dp-col .dp-hlabel { left: -38px; width: 32px; }
+.dp-col .dp-block { font-size: 10.5px; }
+/* 놓은 블록 길이 바꾸기 손잡이 (아래 끝) */
+.dp-resize { position: absolute; left: 0; right: 0; bottom: -3px; height: 9px; cursor: ns-resize; }
+.dp-resize::after { content: ''; position: absolute; left: 50%; bottom: 3px; width: 22px; height: 3px; margin-left: -11px; border-radius: 2px; background: rgba(255,255,255,.75); }
+
+/* 주간·일간 블록 — 위·아래 끝을 끌어 길이 바꾸기 */
+.cal-block .cal-resize { position: absolute; left: 0; right: 0; height: 7px; cursor: ns-resize; z-index: 2; }
+.cal-block .cal-resize.is-top { top: -2px; }
+.cal-block .cal-resize.is-bottom { bottom: -2px; }
+.cal-block:hover .cal-resize.is-bottom::after { content: ''; position: absolute; left: 50%; bottom: 2px; width: 20px; height: 3px; margin-left: -10px; border-radius: 2px; background: currentColor; opacity: .5; }
+.cal-resize-tip { position: absolute; right: 4px; bottom: 4px; z-index: 3; font-size: 11px; font-weight: 700; padding: 1px 6px; border-radius: 6px; background: var(--primary); color: #fff; font-variant-numeric: tabular-nums; pointer-events: none; }
