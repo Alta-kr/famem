@@ -98,9 +98,19 @@ ipcMain.handle('store:save', (_e, json) => signedIn() ? saveData(json) : { ok: f
 ipcMain.handle('auth:status', () => LOGIN_BYPASS ? { configured: true, signedIn: true, bypass: true, user: null } : auth.status());
 ipcMain.handle('auth:signIn', async () => {
   const r = await auth.signIn();
-  if (r.ok) showMain();   // 브라우저에서 돌아오면 Daynote 창을 앞으로
+  if (r.ok) bringToFront();   // 브라우저에서 돌아오면 Daynote 창을 브라우저 앞으로
   return r;
 });
+// 화면 다시 열기 (로그인·로그아웃 뒤) — 창 안에서의 이동은 막아 두었으므로(will-navigate) 메인에서 다시 불러온다
+ipcMain.handle('app:reload', () => { if (mainWindow) mainWindow.webContents.reload(); return true; });
+// Windows 는 다른 앱이 앞에 있을 때 창을 앞으로 못 가져오게 막는다 — 잠깐 '항상 위' 로 올렸다 내린다
+function bringToFront() {
+  if (!mainWindow) return;
+  showMain();
+  mainWindow.setAlwaysOnTop(true);
+  mainWindow.focus();
+  setTimeout(() => { if (mainWindow) mainWindow.setAlwaysOnTop(false); }, 300);
+}
 ipcMain.handle('auth:cancel', () => { auth.cancel(); return true; });
 ipcMain.handle('auth:signOut', () => auth.signOut());
 ipcMain.handle('store:path', () => DATA_FILE());

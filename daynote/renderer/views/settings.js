@@ -87,7 +87,7 @@
       box.appendChild(h('div.sug-actions', h('button.btn.btn-sm', { type: 'button', onclick: function () {
         ui.confirm('로그아웃', '로그아웃하면 다시 로그인할 때까지 Daynote를 열 수 없어요. 데이터는 이 컴퓨터에 그대로 있어요.', '로그아웃').then(function (ok) {
           if (!ok) return;
-          Promise.resolve(S.flush()).then(function () { return auth.signOut(); }).then(function () { location.reload(); });
+          Promise.resolve(S.flush()).then(function () { return auth.signOut(); }).then(function () { A().reload(); });
         });
       } }, '로그아웃')));
     });

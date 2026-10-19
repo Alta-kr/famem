@@ -50,11 +50,15 @@ function maskEmail(e) {
 }
 function page(ok, title, msg) {
   const color = ok ? '#2f7d4f' : '#b3261e';
+  // 앱이 연 탭은 브라우저 규칙상 스크립트로 못 닫는 경우가 많다 — 시도해 보고, 안 닫히면 안내만 바꾼다
+  const closer = '<p id="x" style="margin-top:14px;font-size:13px;color:#888">잠시 뒤 이 탭을 닫아요…</p>' +
+    '<script>setTimeout(function(){try{window.open("","_self");window.close();}catch(e){}' +
+    'setTimeout(function(){document.getElementById("x").textContent="이 탭은 닫아도 돼요 — Daynote 로 돌아갔어요.";},400);},1200);</script>';
   return '<!doctype html><html lang="ko"><head><meta charset="utf-8"><title>Daynote 로그인</title>' +
     '<style>body{font-family:"Segoe UI","Malgun Gothic",sans-serif;display:grid;place-items:center;height:100vh;margin:0;background:#f6f6f8;color:#1d1d1f}' +
     '.c{background:#fff;border-radius:14px;padding:32px 40px;box-shadow:0 4px 24px rgba(0,0,0,.08);text-align:center;max-width:420px}' +
     'h1{font-size:19px;margin:0 0 10px;color:' + color + '}p{margin:0;color:#555;line-height:1.6}</style></head>' +
-    '<body><div class="c"><h1>' + title + '</h1><p>' + msg + '</p></div></body></html>';
+    '<body><div class="c"><h1>' + title + '</h1><p>' + msg + '</p>' + closer + '</div></body></html>';
 }
 
 // opts: { dir, safeStorage, clientId, clientSecret, allowed: 'a@x.com,b@y.com', openExternal(url), fetch?, now? }
@@ -133,8 +137,8 @@ function create(opts) {
         }
         exchange(code).then((r) => {
           res.writeHead(200, { 'Content-Type': 'text/html; charset=utf-8' });
-          res.end(r.ok ? page(true, '로그인됐어요', r.user.email + ' 계정으로 로그인했어요.<br>이 창을 닫고 Daynote 로 돌아가세요.')
-            : page(false, '로그인하지 못했어요', r.message + '<br>이 창을 닫고 Daynote 로 돌아가세요.'));
+          res.end(r.ok ? page(true, '로그인됐어요', r.user.email + ' 계정으로 로그인했어요.')
+            : page(false, '로그인하지 못했어요', r.message + '<br>Daynote 에서 다시 시도해 주세요.'));
           finish(r);
         });
       });

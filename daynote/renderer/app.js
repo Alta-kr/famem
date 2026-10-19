@@ -449,14 +449,16 @@
   function start() {
     var auth = S.host.auth;
     if (!auth) { boot(); return; }   // 브라우저 미리보기
-    var again = function () { location.reload(); };
+    // 로그인되면 그 자리에서 바로 앱 화면으로 (다시 불러오지 않는다)
     auth.status().then(function (st) {
-      if (st.signedIn) boot(); else DN.login.show(auth, st, again);
-    }, function () { DN.login.show(auth, { configured: true }, again); });
+      if (st.signedIn) boot(); else DN.login.show(auth, st, boot);
+    }, function () { DN.login.show(auth, { configured: true }, boot); });
   }
+  // 화면 다시 열기 — 데스크톱 앱은 창 안 이동을 막아 두어서 메인 프로세스가 다시 불러온다
+  function reload() { if (S.host.reload) S.host.reload(); else location.reload(); }
   function boot() {
     // Google 쪽에서 연결이 끊기면(권한 해제 등) 로그인 화면으로
-    if (S.host.onAuthChanged) S.host.onAuthChanged(function () { location.reload(); });
+    if (S.host.onAuthChanged) S.host.onAuthChanged(reload);
     buildShell();
     S.load().then(function (res) {
       S.subscribe(onStoreChange);
@@ -479,7 +481,7 @@
   DN.app = {
     now: now, go: go, undo: undo, redo: redo, memoToTask: memoToTask, taskToMemo: taskToMemo, refresh: function () { renderView(); renderNav(); }, openTask: openTask, closeDetail: closeDetail, toggleDone: toggleDone, startTask: startTask, pauseTask: pauseTask, returnToTodo: returnToTodo,
     snoozeMenu: snoozeMenu, taskMenu: taskMenu, deleteTask: deleteTask, scheduleTask: scheduleTask, openRef: openRef, applyPrefs: applyPrefs,
-    quickCapture: quickCapture, saveQuick: saveQuick, loadSample: loadSample, clearSample: clearSample,
+    quickCapture: quickCapture, saveQuick: saveQuick, reload: reload, loadSample: loadSample, clearSample: clearSample,
     current: function () { return cur; }, detailTaskId: function () { return detailTaskId; },
     nav: function () { return NAV.map(function (n) { return Object.assign({}, n); }); }
   };

@@ -36,5 +36,6 @@ contextBridge.exposeInMainWorld('daynoteHost', {
     cancel: () => ipcRenderer.invoke('auth:cancel'),
     signOut: () => ipcRenderer.invoke('auth:signOut')
   },
-  onAuthChanged: (fn) => ipcRenderer.on('auth:changed', () => fn())
+  onAuthChanged: (fn) => ipcRenderer.on('auth:changed', () => fn()),
+  reload: () => ipcRenderer.invoke('app:reload')
 });
