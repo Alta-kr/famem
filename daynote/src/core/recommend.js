@@ -251,6 +251,8 @@
       snoozed: '미뤄 둔 할 일입니다.',
       planned: '앞날에 하기로 한 일입니다 (할 날).'
     };
+    // 앞날에 하기로 한 일(할 날)은 추천만 안 할 뿐, 직접 시작하는 것은 된다 (시작하면 오늘 할 일로 옮겨진다)
+    if (ex === 'planned') ex = null;
     return ex ? { ok: false, reason: msg[ex] } : { ok: true, task: t };
   }
 

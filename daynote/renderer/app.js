@@ -313,8 +313,18 @@
     if (t.status === 'in_progress') return Promise.resolve(true);
     // 여러 일을 함께 진행할 수 있다 — 다른 진행 중 업무는 그대로 둔다
     var resume = t.status === 'paused';
-    S.mutate(resume ? '이어서 하기' : '지금 시작', function (s) { M.startTask(s, id, now()); });
-    ui.undoToast('‘' + t.title + '’' + (resume ? ' 다시 시작했어요.' : ' 시작했어요.'));
+    // 오늘 목록에 없는 일(내일·다른 날·날짜 없음)을 시작하면 오늘 할 일로 — 오늘 목록 맨 끝에 놓는다 (한 번에 되돌리기)
+    var TV = DN.views.today;
+    var n0 = now();
+    var moveToday = TV && TV.todayTaskList && !TV.todayTaskList(S.state, n0).open.some(function (x) { return x.id === id; });
+    S.mutate(resume ? '이어서 하기' : '지금 시작', function (s) {
+      M.startTask(s, id, n0);
+      if (!moveToday) return;
+      M.updateTask(s, id, { planDate: D.ymd(n0) }, n0);
+      var list = TV.todayTaskList(s, n0).open.map(function (x) { return x.id; }).filter(function (x) { return x !== id; }).concat([id]);
+      list.forEach(function (x, i) { var y = M.byId(s.tasks, x); if (y) y.sortOrder = (i + 1) * 10; });
+    });
+    ui.undoToast('‘' + t.title + '’' + (moveToday ? '을(를) 오늘 할 일 맨 끝으로 옮기고 시작했어요.' : resume ? ' 다시 시작했어요.' : ' 시작했어요.'));
     return Promise.resolve(true);
   }
   function pauseTask(id) {
