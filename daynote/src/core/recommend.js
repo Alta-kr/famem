@@ -97,7 +97,7 @@
     if (t.snoozedUntil && new Date(t.snoozedUntil).getTime() > now.getTime()) return 'snoozed';
     // 앞날에 하기로 한 일(할 날)은 그날까지 추천하지 않는다 — 마감이 오늘·지났으면 예외
     var today = D.ymd(now);
-    if (t.planDate && t.planDate > today && !(t.dueDate && t.dueDate <= today)) return 'planned';
+    if (t.planDate && t.planDate > today && t.status !== 'in_progress') return 'planned';
     return null;
   }
 

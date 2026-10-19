@@ -461,6 +461,50 @@
     return menu(anchor, items, { label: '프로젝트' });
   }
 
+  // 메모의 프로젝트 칩 — 할 일과 같은 모양. 바꾸면 그 메모에서 만든 할 일·일정도 함께 (폴더에 끌어 놓을 때와 같다)
+  //   opts.onChange: 바꾼 뒤 부른다 (팝업처럼 다시 그려지지 않는 곳에서 칩을 새로 그리려고)
+  function noteProjectChip(state, note, opts) {
+    opts = opts || {};
+    var p = note.projectId && M.byId(state.projects, note.projectId);
+    if (p && p.deletedAt) p = null;
+    var el = p ? h('span.chip.chip-project.is-editable', { style: { '--pc': p.color } }, p.name) : h('span.chip.chip-add', icon('project'), '+ 프로젝트');
+    el.setAttribute('role', 'button'); el.setAttribute('tabindex', '0'); el.setAttribute('title', '눌러서 메모의 프로젝트 바꾸기');
+    function pick(e) { e.preventDefault(); e.stopPropagation(); noteProjectPicker(el, note.id, opts.onChange); }
+    el.addEventListener('click', pick);
+    el.addEventListener('keydown', function (e) { if (e.key === 'Enter' || e.key === ' ') pick(e); });
+    el.addEventListener('dragstart', function (e) { e.preventDefault(); e.stopPropagation(); });
+    return el;
+  }
+  function noteProjectPicker(anchor, noteId, onChange) {
+    if (justClosed(anchor)) return null;
+    var DN = window.Daynote, S = DN.store, A = DN.app;
+    var n = M.byId(S.state.notes, noteId);
+    if (!n) return null;
+    function done(msg) { undoToast(msg); if (onChange) onChange(); }
+    function set(pid, name) {
+      if ((n.projectId || null) === (pid || null)) return;
+      DN.capture.setProject(noteId, pid);
+      done('‘' + M.noteTitle(n) + '’를 ' + (pid ? '‘' + name + '’ 프로젝트로 옮겼어요.' : '프로젝트에서 뺐어요.'));
+    }
+    var items = [{ label: '프로젝트 없음', checked: !n.projectId, onClick: function () { set(null); } }];
+    M.liveProjects(S.state).filter(function (p) { return !p.archivedAt; }).forEach(function (p) {
+      items.push({ label: p.name, checked: n.projectId === p.id, icon: h('span.proj-dot', { style: { background: p.color } }), onClick: function () { set(p.id, p.name); } });
+    });
+    items.push({ sep: true });
+    items.push({ label: '새 프로젝트…', icon: 'plus', keepOpen: true, onClick: function (pop) {
+      var inp = h('input.input', { placeholder: '프로젝트 이름', 'aria-label': '새 프로젝트 이름' });
+      pop.setContent(h('form.due-editor', { onsubmit: function (e) {
+        e.preventDefault();
+        var name = inp.value.trim();
+        if (!name) { inp.focus(); return; }
+        S.mutate('새 프로젝트', function (s) { var p = M.addProject(s, { name: name.slice(0, 60) }, A.now()); DN.aiProposals.captureSetProject(s, noteId, p.id); }, { source: 'capture' });
+        pop.close(true);
+        done('‘' + name + '’ 프로젝트를 만들고 ‘' + M.noteTitle(n) + '’를 넣었어요.');
+      } }, h('div.menu-label', '새 프로젝트'), inp, h('div.due-actions', h('button.btn.btn-xs.btn-primary', { type: 'submit' }, '만들고 넣기'))), 'dialog');
+    } });
+    return menu(anchor, items, { label: '메모 프로젝트' });
+  }
+
   // ------------------------------------------------------------------ 메모 분류 — 메모를 끌면 프로젝트 폴더·휴지통이 뜬다
   //   폴더에 놓으면 그 프로젝트로 (메모에서 만든 할 일·일정도 함께), 휴지통에 놓으면 메모를 지운다 (Ctrl+Z 로 되돌리기)
   //   메모 요소에 data-note-id 만 있으면 어디서 끌어도 된다 (오늘 메모 · 보관함)
@@ -844,7 +888,7 @@
     h: h, icon: icon, toast: toast, undoToast: undoToast, modal: modal, confirm: confirmDialog, menu: menu, closeMenu: closeMenu, popover: popover,
     kindChip: kindChip, KIND_LABEL: KIND_LABEL, KIND_ICON: KIND_ICON, josa: josa,
     stepsPanel: stepsPanel, stepsToggle: stepsToggle, stepTree: stepTree, dueEditor: dueEditor, projectPicker: projectPicker, projectPickChip: projectPickChip,
-    projectChip: projectChip, dueChip: dueChip, planChip: planChip, osNotify: osNotify, postponeOverdue: postponeOverdue, scheduleChip: scheduleChip, estimateChip: estimateChip,
+    projectChip: projectChip, dueChip: dueChip, planChip: planChip, osNotify: osNotify, noteProjectChip: noteProjectChip, postponeOverdue: postponeOverdue, scheduleChip: scheduleChip, estimateChip: estimateChip,
     statusChips: statusChips, sourceChip: sourceChip, taskRow: taskRow, projectOptions: projectOptions, highlight: highlight
   };
 })();

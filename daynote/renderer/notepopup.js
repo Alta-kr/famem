@@ -37,8 +37,15 @@
     var ta = h('textarea');
     ta.value = n.body || '';
     var page = h('div.np-page', titleEl, ta);
+    var projSlot = h('span.np-proj');
+    function drawProj() {
+      projSlot.textContent = '';
+      var x = M.byId(S.state.notes, noteId);
+      if (x) projSlot.appendChild(ui.noteProjectChip(S.state, x, { onChange: drawProj }));
+    }
+    drawProj();
     var meta = h('div.np-meta',
-      ui.projectChip(S.state, n.projectId) || null,
+      projSlot,
       h('span', '적은 날 ' + D.relDay(D.ymd(n.createdAt), A.now()) + ' ' + D.hm(n.createdAt)),
       n.updatedAt && n.updatedAt !== n.createdAt ? h('span', '· 고친 때 ' + D.relDay(D.ymd(n.updatedAt), A.now()) + ' ' + D.hm(n.updatedAt)) : null,
       status);

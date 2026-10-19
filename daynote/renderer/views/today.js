@@ -63,7 +63,10 @@
     var open = [], done = [];
     M.liveTasks(st).forEach(function (t) {
       if (t.status === 'done') { if (t.completedAt && D.ymd(t.completedAt) === today && !t.homeClearedAt) done.push(t); return; }
-      if (t.status === 'in_progress' || t.status === 'paused' || blockToday[t.id] || (t.dueDate && t.dueDate <= today) || (t.planDate && t.planDate <= today)) { open.push(t); return; }
+      if (t.status === 'in_progress') { open.push(t); return; }
+      // 앞날로 '할 날' 을 정한 일은 마감이 지났어도 그날 칸에서 — 끌어서 내일로 옮긴 일이 오늘에 남지 않게
+      if (t.planDate && t.planDate > today) return;
+      if (t.status === 'paused' || blockToday[t.id] || (t.dueDate && t.dueDate <= today) || (t.planDate && t.planDate <= today)) { open.push(t); return; }
       // 앞날에 자리가 있는 일(할 날 · 작업 시간 · 마감)은 그날 칸에서 — 오늘 만든 일이라도 (결과 카드의 [→ 그날 칸] 과 같게)
       var anchor = DN.horizon ? DN.horizon.anchorDay(st, t, now) : t.planDate;
       if (anchor && anchor > today) return;
@@ -140,7 +143,7 @@
         h('button.btn.btn-ghost.btn-xs', { type: 'button', onclick: function () { A.go('tasks'); } }, '전체 보기'))),
       alertsLine(st, now, tl.open.concat(tmr.tasks)),
       h('div.home-scroll', { 'data-keep-scroll': 'home-tasks' },
-        tl.open.length || tl.done.length ? taskUl : h('div.empty.home-empty' + (tmr.tasks.length ? '.is-compact' : ''), '오늘 할 일이 없어요. 왼쪽에 적으면 할 일은 여기로 들어와요.'),
+        dayZone(h('div.hz-today-zone', tl.open.length || tl.done.length ? taskUl : h('div.empty.home-empty' + (tmr.tasks.length ? '.is-compact' : ''), '오늘 할 일이 없어요. 왼쪽에 적으면 할 일은 여기로 들어와요.')), D.ymd(now)),
         tomorrowGroup(st, now, tmr, sel)));
     var secMemos = h('div.home-sec.home-sec-memos',
       h('div.home-sec-head', h('h2', '메모'), h('span.meta', memos.length ? memos.length + '개' : ''),
@@ -371,38 +374,50 @@
   }
   // [오늘] 아래 '내일' 묶음 — 내일 할 일·일정. 머리에 끌어 놓으면 내일 할 일로
   function tomorrowGroup(st, now, g, sel) {
-    var head = dropDay(h('div.hz-group-head.hz-tomorrow-head',
+    var head = h('div.hz-group-head.hz-tomorrow-head',
       h('b', '내일'), h('span.meta', D.shortDay(D.parseYmd(g.day))),
-      g.tasks.length || g.events.length ? h('span.meta', [g.tasks.length ? '할 일 ' + g.tasks.length : null, g.events.length ? '일정 ' + g.events.length : null].filter(Boolean).join(' · ')) : null), g.day);
+      g.tasks.length || g.events.length ? h('span.meta', [g.tasks.length ? '할 일 ' + g.tasks.length : null, g.events.length ? '일정 ' + g.events.length : null].filter(Boolean).join(' · ')) : null);
     var events = g.events.map(function (b) {
       return h('div.hz-event', h('span.time', D.hm(b.start) + '–' + D.hm(b.end)), h('button.link-btn', { type: 'button', onclick: function () { DN.views.schedule.open({ blockId: b.id }); } }, b.title || '일정'));
     });
-    return h('div.hz-group.hz-tomorrow', head, events,
-      g.tasks.length ? h('ul.home-list', { 'aria-label': '내일 할 일' }, g.tasks.map(function (t) { return taskRow(st, t, now, t.id === sel); }))
-        : h('div.hz-empty.meta', g.events.length ? '' : '비어 있어요 — 할 일이나 메모를 여기로 끌어 놓으면 내일 할 일로'));
+    return dayZone(h('div.hz-group.hz-tomorrow', head, events,
+      g.tasks.length ? h('ul.home-list', { 'aria-label': '내일 할 일 (다른 날로 끌어 옮기기)' }, g.tasks.map(function (t) { return taskRow(st, t, now, t.id === sel); }))
+        : h('div.hz-empty.meta', g.events.length ? '' : '비어 있어요 — 할 일이나 메모를 여기로 끌어 놓으면 내일 할 일로')), g.day);
   }
   // 할 날 정하기 — 끌어 놓기·칩·오른쪽 클릭 메뉴가 함께 쓴다
   function setPlan(taskId, day) {
     var t = M.byId(S.state.tasks, taskId);
     if (!t) return;
     var now = DN.app.now();
+    if (day && t.planDate === day) return;
     S.mutate(day ? '할 날 정하기' : '할 날 지우기', function (s) { M.updateTask(s, taskId, { planDate: day || null }, now); });
-    ui.undoToast(day ? '‘' + t.title + '’ ' + D.relDay(day, now) + '에 할게요 (' + DN.horizon.leftText(day, now) + ').' : '‘' + t.title + '’ 할 날을 지웠어요.');
+    var note = !day ? '' : t.dueDate && day > t.dueDate ? ' — 마감(' + D.relDay(t.dueDate, now) + ')보다 늦어요' : t.status === 'in_progress' ? ' — 진행 중이라 오늘 목록에도 남아요' : '';
+    var rel = D.relDay(day, now), left = day ? DN.horizon.leftText(day, now) : '';
+    ui.undoToast(day ? '‘' + t.title + '’ ' + (rel === '오늘' ? '오늘 할게요' : rel + '에 할게요' + (left && left !== rel ? ' (' + left + ')' : '')) + note + '.' : '‘' + t.title + '’ 할 날을 지웠어요.');
+  }
+  // 날 묶음(오늘 목록 · 내일 · 이번 주의 각 날) — 어느 날에서 끌기 시작했는지 기억해 같은 날에 놓으면 (순서 바꾸기는 그대로) 날짜를 안 바꾼다
+  var dragFromDay = null;
+  function dayZone(el, day) {
+    el.addEventListener('dragstart', function (e) { if (e.target.closest && e.target.closest('[data-task-id]')) dragFromDay = day; }, true);
+    el.addEventListener('dragend', function () { dragFromDay = null; }, true);
+    return dropDay(el, day);
   }
   // 끌어 놓을 수 있는 날 — 할 일을 놓으면 그날을 할 날로, 메모를 놓으면 AI 로 할 일로 정리해 그날 할 일로
   function dropDay(el, day) {
     function has(e, t) { return e.dataTransfer && Array.prototype.indexOf.call(e.dataTransfer.types || [], t) !== -1; }
     function isTask(e) { return has(e, 'application/x-daynote-task'); }
     function isNote(e) { return has(e, 'application/x-daynote-note'); }
+    function same(e) { return isTask(e) && dragFromDay === day; }
     el.addEventListener('dragover', function (e) {
-      if (!isTask(e) && !isNote(e)) return;
+      if ((!isTask(e) && !isNote(e)) || same(e)) return;
       e.preventDefault(); e.dataTransfer.dropEffect = 'move';
       el.classList.add('is-drop'); el.classList.toggle('is-note-drop', isNote(e));
     });
     el.addEventListener('dragleave', function (e) { if (!el.contains(e.relatedTarget)) el.classList.remove('is-drop', 'is-note-drop'); });
     el.addEventListener('drop', function (e) {
-      if (!isTask(e) && !isNote(e)) return;
+      if ((!isTask(e) && !isNote(e)) || same(e)) return;
       e.preventDefault(); e.stopPropagation(); el.classList.remove('is-drop', 'is-note-drop');
+      dragFromDay = null;
       if (isNote(e)) { DN.app.memoToTask(e.dataTransfer.getData('application/x-daynote-note'), { planDate: day }); return; }
       setPlan(e.dataTransfer.getData('application/x-daynote-task'), day);
     });
@@ -448,14 +463,14 @@
     var groups = hz.byDay(st, hz.days(view, now), now);
     var total = groups.reduce(function (a, g) { return a + g.tasks.length; }, 0);
     var body = groups.map(function (g) {
-      var head = dropDay(h('div.hz-group-head',
+      var head = h('div.hz-group-head',
         h('b', D.relDay(g.day, now)), h('span.meta', hz.daysLeft(g.day, now) >= 2 ? hz.leftText(g.day, now) : D.shortDay(D.parseYmd(g.day))),
-        g.tasks.length || g.events.length ? h('span.meta', [g.tasks.length ? '할 일 ' + g.tasks.length : null, g.events.length ? '일정 ' + g.events.length : null].filter(Boolean).join(' · ')) : null), g.day);
+        g.tasks.length || g.events.length ? h('span.meta', [g.tasks.length ? '할 일 ' + g.tasks.length : null, g.events.length ? '일정 ' + g.events.length : null].filter(Boolean).join(' · ')) : null);
       var events = g.events.map(function (b) {
         return h('div.hz-event', h('span.time', D.hm(b.start) + '–' + D.hm(b.end)), h('button.link-btn', { type: 'button', onclick: function () { DN.views.schedule.open({ blockId: b.id }); } }, b.title || '일정'));
       });
       var ul = h('ul.home-list', g.tasks.map(function (t) { return taskRow(st, t, now, false); }));
-      return h('div.hz-group', head, events, g.tasks.length ? ul : h('div.hz-empty.meta', g.events.length ? '' : '비어 있어요 — 할 일을 여기로 끌어 놓으면 이날 할 일로'));
+      return dayZone(h('div.hz-group', head, events, g.tasks.length ? ul : h('div.hz-empty.meta', g.events.length ? '' : '비어 있어요 — 할 일을 여기로 끌어 놓으면 이날 할 일로')), g.day);
     });
     return h('div.home-sec.home-sec-tasks.is-range',
       h('div.home-sec-head', h('h2', '할 일 · 일정'), h('span.meta', total ? total + '개' : ''),
@@ -623,7 +638,7 @@
             onclick: function (e) { e.stopPropagation(); }, onkeydown: function (e) { e.stopPropagation(); } }, ui.icon('link'), link.host) : null,
           h('span.meta', D.hm(c.at || n.createdAt)),
           made ? h('span.chip', '할 일 ' + made + '개') : null,
-          proj ? h('span.chip.chip-project', { style: { '--pc': proj.color } }, proj.name) : null)));
+          ui.noteProjectChip(st, n))));   // 눌러서 프로젝트 고르기 (할 일과 같은 칩)
   }
 
   // ------------------------------------------------------------------ 좌우 비율 (채팅 | 오늘 패널)

@@ -1865,3 +1865,7 @@ html.is-resting .toast, html.is-resting .toasts { display: none !important; }   
 .hz-tomorrow { margin-top: 14px; }
 .hz-tomorrow-head { position: sticky; top: 0; z-index: 1; background: var(--surface); }
 .home-empty.is-compact { padding: 14px 8px; }
+
+/* 날 묶음 전체가 놓는 곳 — 할 일을 다른 날로 끌어 옮기기 */
+.hz-group.is-drop, .hz-today-zone.is-drop { outline: 2px dashed var(--primary); outline-offset: -2px; background: color-mix(in srgb, var(--primary-soft) 60%, transparent); border-radius: 10px; }
+.hz-today-zone { min-height: 40px; border-radius: 10px; }
