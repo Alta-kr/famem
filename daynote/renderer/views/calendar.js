@@ -94,7 +94,13 @@
     if (month) {
       var monthMain = h('section.cal-main.cal-month-main', { 'aria-label': '월간 달력' }, head, monthView(st, now, anchor));
       root.appendChild(h('div.cal-layout', side, monthMain));
-      return { destroy: function () { root.style.overflow = ''; drag = null; if (openPicker) openPicker.close(); }, onTick: function () { if (!drag) A.refresh(); } };
+      return { destroy: function () {
+        root.style.overflow = ''; drag = null;
+        if (!openPicker) return;
+        // 시간표에서 조정 중이면 다시 그릴 때(저장할 때마다)는 그대로 — 캘린더를 떠났을 때만 끝낸다
+        if (openPicker.adjusting()) { setTimeout(function () { if (openPicker && A.current().view !== 'calendar') openPicker.finish(); }, 0); return; }
+        openPicker.close();
+      }, onTick: function () { if (!drag) A.refresh(); } };
     }
 
     var cols = '56px repeat(' + days.length + ', minmax(0, 1fr))';
@@ -384,17 +390,25 @@
   // (시간표 쪽으로 손을 옮기다 다른 칸을 잠깐 지나가도 바뀌지 않게).
   // 시간표 위에서는 놓을 자리를 미리 보여 주고(시각·길이·겹침), 놓으면 그 시각에 배치한다.
   // 칸에 바로 놓으면 예전처럼 그날 빈 시간에 넣는다.
+  // 시간표에 놓으면 닫지 않고 '조정' 으로 — 놓인 블록을 위아래로 끌거나 ↑↓ 로 15분씩 옮기고, Enter·Esc(완료) 로 끝낸다.
+  //   놓기와 조정은 Ctrl+Z 한 번에 되돌아간다 (같은 되돌리기 칸)
   var DWELL = 300, SWITCH = 450, PICK_SNAP = 15;
   var openPicker = null;
   function makeDayPicker(now) {
     var A = DN.app;
-    var state = { ymd: null, cell: null, timer: null, closeTimer: null, el: null, hourPx: 22 };
+    var state = { ymd: null, cell: null, timer: null, closeTimer: null, el: null, hourPx: 22, adjust: null };
     function close() {
       clearTimeout(state.timer); clearTimeout(state.closeTimer);
       if (state.el) state.el.remove();
       if (state.cell) state.cell.classList.remove('is-picking');
-      state.el = null; state.ymd = null; state.cell = null; state.pending = null;
+      state.el = null; state.ymd = null; state.cell = null; state.pending = null; state.adjust = null;
       if (openPicker === api) openPicker = null;
+    }
+    // 끝내기 (Enter·Esc·완료) — 조정 중이었으면 최종 시각을 알려 준다
+    function finish() {
+      var a = state.adjust;
+      close();
+      if (a) a.done();
     }
     function hover(ymd, cell) {
       clearTimeout(state.closeTimer);
@@ -415,9 +429,11 @@
       return Math.max(0, Math.min(24 * 60 - PICK_SNAP, m));
     }
     function open(ymd, cell) {
+      // 조정 중에 다른 날짜를 열면 지금 것은 끝낸 것으로 (알림만)
+      if (state.adjust) { var prev = state.adjust; state.adjust = null; prev.done(); }
       if (state.el) state.el.remove();
       if (state.cell) state.cell.classList.remove('is-picking');
-      if (openPicker && openPicker !== api) openPicker.close();
+      if (openPicker && openPicker !== api) openPicker.finish();
       openPicker = api;
       state.ymd = ymd; state.cell = cell;
       Array.prototype.forEach.call(document.querySelectorAll('.cal-m-cell.is-drop, .cal-m-cell.is-picking'), function (x) { x.classList.remove('is-drop', 'is-picking'); });
@@ -481,32 +497,123 @@
       });
       el.addEventListener('dragleave', function (e) { if (!el.contains(e.relatedTarget)) { ghost.style.display = 'none'; target.className = 'dp-target'; target.textContent = '시간표 위에서 놓을 시각을 고르세요'; } });
       el.addEventListener('drop', function (e) {
-        if (!drag) return;
+        if (!drag || state.adjust) return;
         e.preventDefault();
         var info = drag; drag = null;
         var m = minutesAt(area, e.clientY, 0);
         var st0 = D.addMinutes(day, m), en0 = D.addMinutes(st0, info.minutes);
-        var c = M.conflictsFor(S.state, st0.toISOString(), en0.toISOString(), info.kind === 'block' ? info.id : null);
-        var tail = c.length ? ' 다른 일정과 겹쳐요.' : '';
-        close();
+        var key = M.uid('dp');
+        var blockId, title;
+        // 저장하면 화면이 다시 그려진다 — 그 전에 '조정 중' 으로 표시해 두어야 시간표가 닫히지 않는다
+        state.adjust = { key: function () { return false; }, done: function () {} };
         if (info.kind === 'task') {
           var t = M.byId(S.state.tasks, info.id);
-          S.mutate('일정에 배치', function (s2) { M.addBlock(s2, { taskId: info.id, kind: 'work', start: st0.toISOString(), end: en0.toISOString() }); });
-          ui.undoToast('‘' + t.title + '’ 작업 시간을 ' + D.relDay(ymd, now) + ' ' + D.hm(st0) + '에 배치했어요.' + tail);
+          title = t ? t.title : '작업';
+          blockId = S.mutate('일정에 배치', function (s2) { return M.addBlock(s2, { taskId: info.id, kind: 'work', start: st0.toISOString(), end: en0.toISOString() }).id; }, { key: key });
         } else {
-          S.mutate('일정 옮기기', function (s2) { M.updateBlock(s2, info.id, { start: st0.toISOString(), end: en0.toISOString() }); });
-          ui.undoToast(D.relDay(ymd, now) + ' ' + D.hm(st0) + '로 옮겼어요.' + tail);
+          var bl = M.byId(S.state.blocks, info.id);
+          var bt = bl && bl.taskId && M.byId(S.state.tasks, bl.taskId);
+          title = bt ? bt.title : (bl && bl.title) || '일정';
+          blockId = info.id;
+          S.mutate('일정 옮기기', function (s2) { M.updateBlock(s2, info.id, { start: st0.toISOString(), end: en0.toISOString() }); }, { key: key });
         }
+        startAdjust(blockId, title, m, info.minutes, key, info.kind === 'task');
       });
+
+      // ---- 조정: 놓인 블록을 위아래로 끌어 15분 단위로 시각 고치기 (Enter·Esc 로 끝)
+      function startAdjust(blockId, title, startMin, minutes, key, isNew) {
+        ghost.style.display = 'none';
+        var cur = startMin, shown = startMin, dragging = null;
+        var placed = h('div.dp-placed', { tabindex: '0', role: 'slider', 'aria-label': '‘' + title + '’ 시각 — 위아래 화살표로 15분씩',
+          'aria-valuemin': '0', 'aria-valuemax': String(24 * 60 - minutes) });
+        var label = h('span.dp-placed-time'), name = h('span.dp-placed-name', title);
+        placed.appendChild(label); placed.appendChild(name);
+        area.appendChild(placed);
+        var doneBtn = h('button.btn.btn-primary.btn-xs', { type: 'button', onclick: function () { finish(); } }, '완료 (Enter)');
+        head.textContent = '';
+        head.appendChild(h('b.dp-date', D.longDay(day)));
+        head.appendChild(target);
+        head.appendChild(h('div.dp-adjust-row', h('span.meta', '블록을 위아래로 끌거나 ↑↓ 로 15분씩 · Enter·Esc 로 끝'), doneBtn));
+        el.classList.add('is-adjusting');
+        function clamp(m) { return Math.max(0, Math.min(24 * 60 - Math.max(minutes, PICK_SNAP), m)); }
+        function draw(m) {
+          shown = m;
+          var st0 = D.addMinutes(day, m), en0 = D.addMinutes(st0, minutes);
+          var c = M.conflictsFor(S.state, st0.toISOString(), en0.toISOString(), blockId);
+          placed.style.top = m / 60 * state.hourPx + 'px';
+          placed.style.height = Math.max(minutes / 60 * state.hourPx, 16) + 'px';
+          placed.className = 'dp-placed' + (c.length ? ' is-conflict' : '') + (dragging ? ' is-dragging' : '');
+          label.textContent = D.hm(st0) + '–' + D.hm(en0);
+          placed.setAttribute('aria-valuenow', String(m));
+          placed.setAttribute('aria-valuetext', D.hm(st0) + '부터 ' + D.hm(en0) + '까지');
+          target.className = 'dp-target is-set' + (c.length ? ' is-conflict' : '');
+          target.textContent = (isNew ? '배치 → ' : '옮김 → ') + D.hm(st0) + '–' + D.hm(en0) + (c.length ? ' · 겹침 ' + c.length + '건' : '');
+        }
+        function commit(m) {
+          m = clamp(m);
+          draw(m);
+          if (m === cur) return;
+          cur = m;
+          var st0 = D.addMinutes(day, m), en0 = D.addMinutes(st0, minutes);
+          S.mutate(isNew ? '일정에 배치' : '일정 옮기기', function (s2) { M.updateBlock(s2, blockId, { start: st0.toISOString(), end: en0.toISOString() }); }, { join: key });
+        }
+        placed.addEventListener('pointerdown', function (e) {
+          if (e.button !== 0) return;
+          e.preventDefault(); e.stopPropagation();
+          try { placed.setPointerCapture(e.pointerId); } catch (err) {}
+          dragging = { off: (e.clientY - placed.getBoundingClientRect().top) / state.hourPx * 60 };
+          draw(shown);
+        });
+        placed.addEventListener('pointermove', function (e) {
+          if (!dragging) return;
+          draw(clamp(minutesAt(area, e.clientY, dragging.off)));
+        });
+        function endDrag() { if (!dragging) return; dragging = null; commit(shown); }
+        placed.addEventListener('pointerup', endDrag);
+        placed.addEventListener('pointercancel', endDrag);
+        // 빈 시간표를 누르면 그 시각으로
+        area.addEventListener('pointerdown', function (e) {
+          if (e.target.closest('.dp-placed') || e.button !== 0) return;
+          commit(minutesAt(area, e.clientY, 0));
+        });
+        state.adjust = {
+          key: function (e) {
+            if (e.key === 'Enter' || e.key === 'Escape') { e.preventDefault(); finish(); return true; }
+            if (e.key === 'ArrowUp' || e.key === 'ArrowDown') {
+              e.preventDefault();
+              commit(cur + (e.key === 'ArrowUp' ? -1 : 1) * (e.shiftKey ? 60 : PICK_SNAP));
+              return true;
+            }
+            return false;
+          },
+          done: function () {
+            var st0 = D.addMinutes(day, cur);
+            var c = M.conflictsFor(S.state, st0.toISOString(), D.addMinutes(st0, minutes).toISOString(), blockId);
+            var tail = c.length ? ' 다른 일정과 겹쳐요.' : '';
+            ui.undoToast(isNew ? '‘' + title + '’ 작업 시간을 ' + D.relDay(ymd, now) + ' ' + D.hm(st0) + '에 배치했어요.' + tail : '‘' + title + '’을(를) ' + D.relDay(ymd, now) + ' ' + D.hm(st0) + '로 옮겼어요.' + tail);
+          }
+        };
+        draw(cur);
+        setTimeout(function () { try { placed.focus({ preventScroll: true }); } catch (err) {} }, 0);
+      }
       // 창이 아주 작아 스크롤이 생기면 일하는 시간대(8시)부터 보이게
       if (el.scrollHeight > el.clientHeight) el.scrollTop = Math.max(0, 8 * state.hourPx - 20);
     }
-    var api = { hover: hover, leaveCell: leaveCell, close: close };
+    var api = { hover: hover, leaveCell: leaveCell, close: close, finish: finish, adjusting: function () { return !!state.adjust; }, key: function (e) { return state.adjust ? state.adjust.key(e) : false; } };
     return api;
   }
-  // 끌기가 끝나면(어디에 놓든, 취소하든) 시간표를 닫는다
-  document.addEventListener('dragend', function () { if (openPicker) openPicker.close(); }, true);
-  document.addEventListener('keydown', function (e) { if (e.key === 'Escape' && openPicker) openPicker.close(); });
+  // 끌기가 끝나면(어디에 놓든, 취소하든) 시간표를 닫는다 — 시간표에 놓아 조정 중이면 그대로 (Enter·Esc 로 끝)
+  document.addEventListener('dragend', function () { if (openPicker && !openPicker.adjusting()) openPicker.close(); }, true);
+  document.addEventListener('keydown', function (e) {
+    if (!openPicker) return;
+    if (openPicker.adjusting()) {
+      var tag = e.target && e.target.tagName;
+      if (tag === 'INPUT' || tag === 'TEXTAREA' || (e.target && e.target.isContentEditable)) return;
+      if (openPicker.key(e)) e.stopPropagation();
+      return;
+    }
+    if (e.key === 'Escape') openPicker.close();
+  }, true);
 
   DN.views.calendar = { title: '캘린더', render: render, _mem: mem };
 })();

@@ -83,7 +83,12 @@
       if (map[d]) map[d].events.push(b);
     });
     dayList.forEach(function (d) {
-      map[d].tasks.sort(function (a, b) { return (a.dueTime || a.dueDate || '~').localeCompare(b.dueTime || b.dueDate || '~') || (a.createdAt < b.createdAt ? -1 : 1); });
+      map[d].tasks.sort(function (a, b) {
+        var sa = typeof a.sortOrder === 'number', sb = typeof b.sortOrder === 'number';
+        if (sa && sb) return a.sortOrder - b.sortOrder;
+        if (sa !== sb) return sa ? -1 : 1;
+        return (a.dueTime || a.dueDate || '~').localeCompare(b.dueTime || b.dueDate || '~') || (a.createdAt < b.createdAt ? -1 : 1);
+      });
       map[d].events.sort(function (a, b) { return a.start < b.start ? -1 : 1; });
     });
     return dayList.map(function (d) { return map[d]; });

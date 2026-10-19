@@ -1869,3 +1869,14 @@ html.is-resting .toast, html.is-resting .toasts { display: none !important; }   
 /* 날 묶음 전체가 놓는 곳 — 할 일을 다른 날로 끌어 옮기기 */
 .hz-group.is-drop, .hz-today-zone.is-drop { outline: 2px dashed var(--primary); outline-offset: -2px; background: color-mix(in srgb, var(--primary-soft) 60%, transparent); border-radius: 10px; }
 .hz-today-zone { min-height: 40px; border-radius: 10px; }
+
+/* 월간 시간표 — 놓은 뒤 조정 (위아래로 끌어 15분 단위) */
+.dp-placed { position: absolute; left: 0; right: 0; z-index: 3; border-radius: 6px; padding: 2px 8px; display: flex; gap: 8px; align-items: flex-start; overflow: hidden;
+  background: var(--primary); color: #fff; font-size: 12px; font-weight: 600; cursor: grab; touch-action: none; user-select: none; box-shadow: 0 2px 10px rgba(0,0,0,.25); }
+.dp-placed.is-dragging { cursor: grabbing; box-shadow: 0 6px 18px rgba(0,0,0,.35); }
+.dp-placed.is-conflict { background: var(--warning); color: #1b1b1b; }
+.dp-placed:focus-visible { outline: 2px solid #fff; outline-offset: -3px; }
+.dp-placed-time { flex: none; font-variant-numeric: tabular-nums; }
+.dp-placed-name { min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; font-weight: 500; }
+.day-picker.is-adjusting .dp-area { cursor: pointer; }
+.dp-adjust-row { display: flex; align-items: center; gap: 8px; justify-content: space-between; margin-top: 4px; }
