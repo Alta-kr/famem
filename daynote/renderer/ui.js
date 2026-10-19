@@ -125,8 +125,10 @@
       if (prevFocus && prevFocus.focus) try { prevFocus.focus(); } catch (e) {}
       if (opts.onClose) opts.onClose();
     }
+    // X · Esc · 바깥 누르기 — beforeClose 가 false 를 주면 닫지 않는다 (예: 저장하지 않은 메모를 물어보기)
+    function requestClose() { if (opts.beforeClose && opts.beforeClose(close) === false) return; close(); }
     function onKey(e) {
-      if (e.key === 'Escape') { e.stopPropagation(); close(); }
+      if (e.key === 'Escape') { e.stopPropagation(); requestClose(); }
       if (e.key === 'Tab') {   // 포커스를 대화상자 안에 가둔다
         var f = box.querySelectorAll('button, input, select, textarea, [tabindex]:not([tabindex="-1"])');
         if (!f.length) return;
@@ -136,7 +138,7 @@
       }
     }
     box.appendChild(h('div.modal-head', h('h2', opts.title),
-      h('button.icon-btn', { type: 'button', 'aria-label': '닫기', onclick: close }, icon('x'))));
+      h('button.icon-btn', { type: 'button', 'aria-label': '닫기', onclick: requestClose }, icon('x'))));
     var body = h('div.modal-body');
     append(body, [opts.body]);
     box.appendChild(body);
@@ -149,7 +151,7 @@
     });
     if (opts.actions && opts.actions.length) box.appendChild(foot);
     overlay.appendChild(box);
-    overlay.addEventListener('mousedown', function (e) { if (e.target === overlay) close(); });
+    overlay.addEventListener('mousedown', function (e) { if (e.target === overlay) requestClose(); });
     document.body.appendChild(overlay);
     document.addEventListener('keydown', onKey, true);
     setTimeout(function () {
@@ -246,18 +248,29 @@
   //   checked 를 주면 고를 수 있는 항목(menuitemradio)이 되고, 지금 값에 체크 표시가 붙는다.
   //   keepOpen: 고른 뒤에도 닫지 않는다 (onClick 이 pop.setContent 로 내용을 바꿀 때 — 예: 날짜 고르기)
   // opts: { label, className }
+  //   it.more: '더 보기' 를 누르기 전에는 숨긴다 · it.create(name): 찾기 칸에 적은 이름으로 새로 만들기 (예: 새 프로젝트)
+  //   opts.search: 찾기 칸 (없으면 고를 것이 7개 이상이거나 more·create 가 있을 때 자동) — 열면 바로 타자로 걸러 고른다 (한글 가능, Enter 로 첫 항목)
   function menu(anchor, items, opts) {
     opts = opts || {};
     var box = document.createDocumentFragment();
     var pop;
+    var clickable = items.filter(function (it) { return !it.sep && it.onClick; }).length;
+    var useSearch = opts.search != null ? !!opts.search : (clickable >= 7 || items.some(function (it) { return it.more || it.create; }));
+    var entries = [], expanded = false, moreBtn = null, emptyEl = null;
+    var search = useSearch ? h('input.menu-search', { type: 'text', placeholder: '찾기 — 입력하면 바로 걸러져요', 'aria-label': (opts.label || '메뉴') + '에서 찾기', autocomplete: 'off', spellcheck: 'false' }) : null;
+    if (search) { box.appendChild(search); emptyEl = h('div.menu-empty', { hidden: true }, '찾는 항목이 없어요'); box.appendChild(emptyEl); }
+    var moreCount = items.filter(function (it) { return it.more; }).length, seenMore = 0;
+    function q() { return search ? search.value.trim() : ''; }
     items.forEach(function (it) {
-      if (it.sep) { box.appendChild(h('div.menu-sep', { role: 'separator' })); return; }
-      if (it.label && !it.onClick) { box.appendChild(h('div.menu-label', { role: 'presentation' }, it.label)); return; }
+      if (it.sep) { var sep = h('div.menu-sep', { role: 'separator' }); entries.push({ deco: true, el: sep }); box.appendChild(sep); return; }
+      if (it.label && !it.onClick) { var lab = h('div.menu-label', { role: 'presentation' }, it.label); entries.push({ deco: true, el: lab }); box.appendChild(lab); return; }
       var radio = it.checked !== undefined;
-      box.appendChild(h('button' + (it.kind ? '.kind-' + it.kind : '') + (it.checked ? '.is-checked' : ''), {
+      var textEl = h('span.menu-text', it.label);
+      var btn = h('button' + (it.kind ? '.kind-' + it.kind : '') + (it.checked ? '.is-checked' : ''), {
         type: 'button', role: radio ? 'menuitemradio' : 'menuitem', 'aria-checked': radio ? (it.checked ? 'true' : 'false') : null,
-        disabled: it.disabled, tabindex: '-1',
+        disabled: it.disabled, tabindex: '-1', hidden: it.more ? true : null,
         onclick: function () {
+          if (it.create && q()) { var name = q(); pop.close(true); it.create(name); return; }
           if (it.keepOpen) { it.onClick(pop); return; }
           pop.close(true);
           it.onClick(pop);
@@ -270,29 +283,98 @@
       },
         it.kind && !it.icon ? h('span.kind-dot', { 'aria-hidden': 'true' }) : null,
         it.icon ? (typeof it.icon === 'string' ? icon(it.icon) : it.icon) : null,
-        h('span.menu-text', it.label),
+        textEl,
         it.sub ? h('span.sub', it.sub) : null,
-        radio ? h('span.menu-check', { 'aria-hidden': 'true' }, it.checked ? icon('check') : null) : null));
+        radio ? h('span.menu-check', { 'aria-hidden': 'true' }, it.checked ? icon('check') : null) : null);
+      entries.push({ it: it, el: btn, text: textEl });
+      box.appendChild(btn);
+      // 더 보기 — 숨긴 항목 바로 뒤에
+      if (it.more && ++seenMore === moreCount) {
+        moreBtn = h('button.menu-more', { type: 'button', tabindex: '-1', onclick: function () { expanded = true; apply(); var f = entries.filter(function (x) { return x.it && x.it.more; })[0]; if (f) f.el.focus(); } },
+          icon('chevronDown'), h('span.menu-text', '더 보기 (' + moreCount + '개)'));
+        box.appendChild(moreBtn);
+      }
     });
+    function apply() {
+      var text = q(), lq = text.toLowerCase(), hits = 0;
+      entries.forEach(function (x) {
+        if (x.deco) { x.el.hidden = !!lq; return; }
+        if (x.it.create) { x.text.textContent = text ? '‘' + text + '’ 새로 만들기' : x.it.label; x.el.hidden = false; return; }
+        var match = !lq || String(x.it.label).toLowerCase().indexOf(lq) !== -1 || (x.it.sub && String(x.it.sub).toLowerCase().indexOf(lq) !== -1);
+        x.el.hidden = !match || (!lq && x.it.more && !expanded);
+        if (match && lq) hits++;
+      });
+      if (moreBtn) moreBtn.hidden = !!lq || expanded;
+      if (emptyEl) emptyEl.hidden = !lq || hits > 0 || entries.some(function (x) { return x.it && x.it.create; });
+      if (pop) pop.place();
+    }
     pop = popover(anchor, box, { role: 'menu', label: opts.label, className: opts.className });
     var el = pop.el;
-    function buttons() { return Array.prototype.slice.call(el.querySelectorAll('button:not([disabled])')); }
-    var bs = buttons();
-    var start = el.querySelector('button.is-checked:not([disabled])') || bs[0];
-    if (start) start.focus();
+    function buttons() { return Array.prototype.slice.call(el.querySelectorAll('button:not([disabled]):not([hidden])')); }
+    if (search) {
+      search.addEventListener('input', apply);
+      search.addEventListener('keydown', function (e) {
+        if (e.isComposing) return;
+        if (e.key === 'Enter') {
+          e.preventDefault();
+          var list = buttons().filter(function (b) { return b !== moreBtn; });
+          var hit = list.filter(function (b) { var x = entries.filter(function (y) { return y.el === b; })[0]; return x && !x.it.create; })[0] || list[0];
+          if (hit) hit.click();
+        } else if (e.key === 'ArrowDown') {
+          e.preventDefault();
+          var first = buttons()[0]; if (first) first.focus();
+        }
+      });
+      setTimeout(function () { search.focus(); }, 0);
+    } else {
+      var bs = buttons();
+      var start = el.querySelector('button.is-checked:not([disabled])') || bs[0];
+      if (start) start.focus();
+    }
     el.addEventListener('keydown', function (e) {
-      if (el.getAttribute('role') !== 'menu') return;
+      if (el.getAttribute('role') !== 'menu' || e.target === search) return;
       var list = buttons();
       if (!list.length) return;
       var i = list.indexOf(document.activeElement);
       var next = null;
       if (e.key === 'ArrowDown') next = list[(i + 1) % list.length];
-      else if (e.key === 'ArrowUp') next = list[(i - 1 + list.length) % list.length];
+      else if (e.key === 'ArrowUp') { if (i <= 0 && search) { e.preventDefault(); search.focus(); return; } next = list[(i - 1 + list.length) % list.length]; }
       else if (e.key === 'Home') next = list[0];
       else if (e.key === 'End') next = list[list.length - 1];
+      else if (search && e.key.length === 1 && !e.ctrlKey && !e.metaKey && !e.altKey) { search.focus(); return; }   // 바로 타자 치면 찾기 칸으로
       if (next) { e.preventDefault(); next.focus(); }
     });
     return el;
+  }
+
+  // 프로젝트를 최근에 쓴 순으로 — 직접 고른 때(lastUsedAt) · 그 프로젝트의 할 일·메모를 고친 때 중 가장 늦은 것
+  function projectsByRecent(state) {
+    var last = {};
+    function bump(pid, at) { if (pid && at && (!last[pid] || at > last[pid])) last[pid] = at; }
+    state.projects.forEach(function (p) { bump(p.id, p.lastUsedAt); bump(p.id, p.createdAt); });
+    state.tasks.forEach(function (t) { if (!t.deletedAt) bump(t.projectId, t.updatedAt || t.createdAt); });
+    state.notes.forEach(function (n) { if (!n.deletedAt) bump(n.projectId, n.updatedAt || n.createdAt); });
+    return M.liveProjects(state).filter(function (p) { return !p.archivedAt; })
+      .sort(function (a, b) { return (last[b.id] || '').localeCompare(last[a.id] || ''); });
+  }
+  // 프로젝트 고르기 메뉴 항목 — 최근 5개 + 더 보기 (지금 고른 프로젝트는 늘 보이게)
+  var PROJECT_SHOW = 5;
+  function projectMenuItems(state, curId, pick) {
+    var list = projectsByRecent(state);
+    var shown = list.slice(0, PROJECT_SHOW);
+    if (curId && !shown.some(function (p) { return p.id === curId; })) {
+      var c = list.filter(function (p) { return p.id === curId; })[0];
+      if (c) shown.push(c);
+    }
+    return list.map(function (p) {
+      return { label: p.name, checked: curId === p.id, icon: h('span.proj-dot', { style: { background: p.color } }), more: shown.indexOf(p) === -1,
+        onClick: function () { pick(p.id, p.name); } };
+    }).sort(function (a, b) { return (a.more ? 1 : 0) - (b.more ? 1 : 0); });
+  }
+  function touchProject(pid) {
+    if (!pid) return;
+    var S = window.Daynote.store, A = window.Daynote.app;
+    S.mutate(null, function (s) { var p = M.byId(s.projects, pid); if (p) p.lastUsedAt = A.now().toISOString(); }, { silent: true });
   }
 
   // ------------------------------------------------------------------ 종류 칩 (할 일 · 일정 · 메모 · 아이디어 · 링크)
@@ -438,15 +520,16 @@
     var t = M.byId(S.state.tasks, taskId);
     if (!t) return null;
     function set(pid, name) {
-      S.mutate('프로젝트 바꾸기', function (s) { M.updateTask(s, taskId, { projectId: pid || null }, A.now()); });
+      S.mutate('프로젝트 바꾸기', function (s) { M.updateTask(s, taskId, { projectId: pid || null }, A.now()); var p = pid && M.byId(s.projects, pid); if (p) p.lastUsedAt = A.now().toISOString(); });
       undoToast(pid ? '‘' + t.title + '’를 ‘' + name + '’ 프로젝트로 옮겼어요.' : '‘' + t.title + '’를 프로젝트에서 뺐어요.');
     }
-    var items = [{ label: '프로젝트 없음', checked: !t.projectId, onClick: function () { set(null); } }];
-    M.liveProjects(S.state).forEach(function (p) {
-      items.push({ label: p.name, checked: t.projectId === p.id, icon: h('span.proj-dot', { style: { background: p.color } }), onClick: function () { set(p.id, p.name); } });
-    });
+    function createNamed(name) {
+      S.mutate('새 프로젝트', function (s) { var p = M.addProject(s, { name: name.slice(0, 60) }, A.now()); p.lastUsedAt = A.now().toISOString(); M.updateTask(s, taskId, { projectId: p.id }, A.now()); });
+      undoToast('‘' + name + '’ 프로젝트를 만들고 ‘' + t.title + '’를 넣었어요.');
+    }
+    var items = [{ label: '프로젝트 없음', checked: !t.projectId, onClick: function () { set(null); } }].concat(projectMenuItems(S.state, t.projectId, set));
     items.push({ sep: true });
-    items.push({ label: '새 프로젝트…', icon: 'plus', keepOpen: true, onClick: function (pop) {
+    items.push({ label: '새 프로젝트…', icon: 'plus', keepOpen: true, create: createNamed, onClick: function (pop) {
       var inp = h('input.input', { placeholder: '프로젝트 이름', 'aria-label': '새 프로젝트 이름' });
       pop.setContent(h('form.due-editor', { onsubmit: function (e) {
         e.preventDefault();
@@ -484,14 +567,16 @@
     function set(pid, name) {
       if ((n.projectId || null) === (pid || null)) return;
       DN.capture.setProject(noteId, pid);
+      touchProject(pid);
       done('‘' + M.noteTitle(n) + '’를 ' + (pid ? '‘' + name + '’ 프로젝트로 옮겼어요.' : '프로젝트에서 뺐어요.'));
     }
-    var items = [{ label: '프로젝트 없음', checked: !n.projectId, onClick: function () { set(null); } }];
-    M.liveProjects(S.state).filter(function (p) { return !p.archivedAt; }).forEach(function (p) {
-      items.push({ label: p.name, checked: n.projectId === p.id, icon: h('span.proj-dot', { style: { background: p.color } }), onClick: function () { set(p.id, p.name); } });
-    });
+    function createNamed(name) {
+      S.mutate('새 프로젝트', function (s) { var p = M.addProject(s, { name: name.slice(0, 60) }, A.now()); p.lastUsedAt = A.now().toISOString(); DN.aiProposals.captureSetProject(s, noteId, p.id); }, { source: 'capture' });
+      done('‘' + name + '’ 프로젝트를 만들고 ‘' + M.noteTitle(n) + '’를 넣었어요.');
+    }
+    var items = [{ label: '프로젝트 없음', checked: !n.projectId, onClick: function () { set(null); } }].concat(projectMenuItems(S.state, n.projectId, set));
     items.push({ sep: true });
-    items.push({ label: '새 프로젝트…', icon: 'plus', keepOpen: true, onClick: function (pop) {
+    items.push({ label: '새 프로젝트…', icon: 'plus', keepOpen: true, create: createNamed, onClick: function (pop) {
       var inp = h('input.input', { placeholder: '프로젝트 이름', 'aria-label': '새 프로젝트 이름' });
       pop.setContent(h('form.due-editor', { onsubmit: function (e) {
         e.preventDefault();
@@ -509,6 +594,27 @@
   //   폴더에 놓으면 그 프로젝트로 (메모에서 만든 할 일·일정도 함께), 휴지통에 놓으면 메모를 지운다 (Ctrl+Z 로 되돌리기)
   //   메모 요소에 data-note-id 만 있으면 어디서 끌어도 된다 (오늘 메모 · 보관함)
   var NOTE_T = 'application/x-daynote-note';
+  var UNFILED_COLOR = '#8892A8';   // '미분류' 폴더 — 프로젝트에 넣지 않을 메모
+  function folderIcon(color) {
+    var svg = document.createElementNS('http://www.w3.org/2000/svg', 'svg');
+    svg.setAttribute('viewBox', '0 0 48 40'); svg.setAttribute('aria-hidden', 'true');
+    svg.innerHTML = '<path d="M2 8a4 4 0 0 1 4-4h12l4 4h20a4 4 0 0 1 4 4v22a4 4 0 0 1-4 4H6a4 4 0 0 1-4-4z" fill="' + color + '" opacity=".35"/>' +
+      '<path d="M2 14a4 4 0 0 1 4-4h36a4 4 0 0 1 4 4v20a4 4 0 0 1-4 4H6a4 4 0 0 1-4-4z" fill="' + color + '"/>';
+    return svg;
+  }
+  // 메모를 폴더에 넣기 — 그 프로젝트(또는 미분류)로 정하고 홈에서는 치운다 (보관함의 그 폴더로). Ctrl+Z 한 번
+  function fileNote(noteId, pid) {
+    var DN = window.Daynote, S = DN.store, A = DN.app;
+    var n = M.byId(S.state.notes, noteId);
+    if (!n) return;
+    var p = pid && M.byId(S.state.projects, pid);
+    S.mutate('메모 분류', function (s) {
+      if ((n.projectId || null) !== (pid || null)) DN.aiProposals.captureSetProject(s, noteId, pid || null);
+      var x = M.byId(s.notes, noteId);
+      if (x) { x.homeHiddenAt = A.now().toISOString(); x.homePinnedAt = null; }
+    }, { source: 'capture' });
+    undoToast('‘' + M.noteTitle(n) + '’를 ' + (p ? '‘' + p.name + '’' : '‘미분류’') + ' 폴더에 넣었어요. 홈에서는 안 보이고 보관함에 있어요.');
+  }
   var dock = null;
   function hideDock() { if (dock) { dock.remove(); dock = null; } document.documentElement.classList.remove('is-note-dragging'); }
   function showDock(noteId) {
@@ -529,27 +635,14 @@
       });
       return el;
     }
-    function folder(color) {
-      var svg = document.createElementNS('http://www.w3.org/2000/svg', 'svg');
-      svg.setAttribute('viewBox', '0 0 48 40'); svg.setAttribute('aria-hidden', 'true');
-      svg.innerHTML = '<path d="M2 8a4 4 0 0 1 4-4h12l4 4h20a4 4 0 0 1 4 4v22a4 4 0 0 1-4 4H6a4 4 0 0 1-4-4z" fill="' + color + '" opacity=".35"/>' +
-        '<path d="M2 14a4 4 0 0 1 4-4h36a4 4 0 0 1 4 4v20a4 4 0 0 1-4 4H6a4 4 0 0 1-4-4z" fill="' + color + '"/>';
-      return svg;
-    }
-    function moveTo(pid, name) {
-      return function (id) {
-        var note = M.byId(S.state.notes, id);
-        if (!note) return;
-        if ((note.projectId || null) === (pid || null)) { toast(pid ? '이미 ‘' + name + '’에 있어요.' : '이미 프로젝트 밖에 있어요.'); return; }
-        window.Daynote.capture.setProject(id, pid);
-        undoToast('‘' + M.noteTitle(note) + '’를 ' + (pid ? '‘' + name + '’ 프로젝트로 옮겼어요.' : '프로젝트에서 뺐어요.'));
-      };
-    }
+    var folder = folderIcon;
+    function moveTo(pid) { return function (id) { fileNote(id, pid); }; }
     var projects = M.liveProjects(S.state).filter(function (p) { return !p.archivedAt; });
     var tiles = projects.map(function (p) {
-      return tile(n.projectId === p.id ? '.is-current' : '', p.name, folder(p.color), moveTo(p.id, p.name), { title: n.projectId === p.id ? '지금 이 프로젝트에 있어요' : '‘' + p.name + '’에 넣기' });
+      return tile('', p.name, folder(p.color), moveTo(p.id), { title: '‘' + p.name + '’ 폴더에 넣기 — 홈에서는 치워요' });
     });
-    if (n.projectId) tiles.unshift(tile('.is-none', '프로젝트 없음', folder('#8892A8'), moveTo(null)));
+    // 미분류 — 프로젝트에 넣지 않을 메모도 홈에서 치워 둘 곳 (늘 맨 앞)
+    tiles.unshift(tile('.is-none', '미분류', folder(UNFILED_COLOR), moveTo(null), { title: '‘미분류’ 폴더에 넣기 — 프로젝트 없이 보관해요' }));
     tiles.push(tile('.is-new', '새 프로젝트', h('span.dock-plus', icon('plus')), function (id) {
       var inp = h('input.input', { placeholder: '프로젝트 이름', 'aria-label': '새 프로젝트 이름', autofocus: true });
       var m = modal({ title: '새 프로젝트에 넣기', body: inp, actions: [
@@ -557,8 +650,13 @@
         { label: '만들고 넣기', primary: true, onClick: function () {
           var name = inp.value.trim();
           if (!name) { inp.focus(); return false; }
-          S.mutate('새 프로젝트에 넣기', function (s) { var created = M.addProject(s, { name: name.slice(0, 60) }, A.now()); window.Daynote.aiProposals.captureSetProject(s, id, created.id); });
-          undoToast('‘' + name + '’ 프로젝트를 만들고 메모를 넣었어요.');
+          S.mutate('새 프로젝트에 넣기', function (s) {
+            var created = M.addProject(s, { name: name.slice(0, 60) }, A.now());
+            window.Daynote.aiProposals.captureSetProject(s, id, created.id);
+            var x = M.byId(s.notes, id);
+            if (x) { x.homeHiddenAt = A.now().toISOString(); x.homePinnedAt = null; }
+          });
+          undoToast('‘' + name + '’ 프로젝트를 만들고 메모를 넣었어요. 홈에서는 안 보이고 보관함에 있어요.');
         } }] });
       inp.addEventListener('keydown', function (e) { if (e.key === 'Enter' && !e.isComposing) { e.preventDefault(); m.foot.querySelector('.btn-primary').click(); } });
     }));
@@ -569,7 +667,7 @@
       undoToast('‘' + M.noteTitle(note) + '’ 메모를 휴지통에 버렸어요.');
     }, { title: '메모 지우기 (Ctrl+Z 로 되돌리기)' }));
     dock = h('div.note-dock', { role: 'region', 'aria-label': '메모 분류 — 폴더나 휴지통에 놓으세요' },
-      h('div.dock-hint', '프로젝트 폴더에 놓으면 옮기고, 휴지통에 놓으면 지워요'),
+      h('div.dock-hint', '폴더에 놓으면 그 보관함으로 넣고(홈에서 치움), 휴지통에 놓으면 지워요'),
       h('div.dock-row', tiles));
     document.body.appendChild(dock);
     watchDock();
@@ -888,7 +986,8 @@
     h: h, icon: icon, toast: toast, undoToast: undoToast, modal: modal, confirm: confirmDialog, menu: menu, closeMenu: closeMenu, popover: popover,
     kindChip: kindChip, KIND_LABEL: KIND_LABEL, KIND_ICON: KIND_ICON, josa: josa,
     stepsPanel: stepsPanel, stepsToggle: stepsToggle, stepTree: stepTree, dueEditor: dueEditor, projectPicker: projectPicker, projectPickChip: projectPickChip,
-    projectChip: projectChip, dueChip: dueChip, planChip: planChip, osNotify: osNotify, noteProjectChip: noteProjectChip, postponeOverdue: postponeOverdue, scheduleChip: scheduleChip, estimateChip: estimateChip,
+    projectChip: projectChip, dueChip: dueChip, planChip: planChip, osNotify: osNotify, noteProjectChip: noteProjectChip, folderIcon: folderIcon, fileNote: fileNote, UNFILED_COLOR: UNFILED_COLOR,
+    projectsByRecent: projectsByRecent, projectMenuItems: projectMenuItems, touchProject: touchProject, postponeOverdue: postponeOverdue, scheduleChip: scheduleChip, estimateChip: estimateChip,
     statusChips: statusChips, sourceChip: sourceChip, taskRow: taskRow, projectOptions: projectOptions, highlight: highlight
   };
 })();

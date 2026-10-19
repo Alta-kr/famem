@@ -1880,3 +1880,29 @@ html.is-resting .toast, html.is-resting .toasts { display: none !important; }   
 .dp-placed-name { min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; font-weight: 500; }
 .day-picker.is-adjusting .dp-area { cursor: pointer; }
 .dp-adjust-row { display: flex; align-items: center; gap: 8px; justify-content: space-between; margin-top: 4px; }
+
+/* 보관함 — 폴더 창 */
+.shelf-folders { display: grid; grid-template-columns: repeat(auto-fill, minmax(120px, 1fr)); gap: 8px; }
+.shelf-folder { all: unset; box-sizing: border-box; cursor: pointer; display: flex; flex-direction: column; align-items: center; gap: 4px; padding: 14px 6px 10px; border-radius: 12px; border: 1px solid transparent; text-align: center; }
+.shelf-folder:hover { background: var(--surface-subtle); border-color: var(--border-deco); }
+.shelf-folder:focus-visible { outline: 2px solid var(--primary); }
+.shelf-folder-icon { width: 56px; height: 46px; display: grid; place-items: center; }
+.shelf-folder-icon svg { width: 56px; height: 46px; }
+.shelf-folder-name { font-size: 13px; font-weight: 600; max-width: 100%; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.shelf-folder-count { font-size: 12px; }
+.shelf-done-icon { width: 44px; height: 44px; border-radius: 12px; display: grid; place-items: center; background: var(--success-soft); color: var(--success); }
+.shelf-done-icon svg { width: 22px; height: 22px; }
+.shelf-back svg { width: 14px; height: 14px; }
+
+/* 메뉴 찾기 칸 · 더 보기 */
+.menu .menu-search { width: calc(100% - 8px); margin: 4px 4px 6px; height: 30px; padding: 0 10px; border-radius: 8px; border: 1px solid var(--border-strong); background: var(--surface); color: var(--text-primary); font-size: 13px; outline: none; box-sizing: border-box; }
+.menu .menu-search:focus { border-color: var(--primary); box-shadow: 0 0 0 2px var(--primary-soft); }
+.menu .menu-empty { font-size: 12px; color: var(--text-tertiary); padding: 6px 10px; }
+.menu .menu-empty[hidden], .menu button[hidden], .menu .menu-sep[hidden], .menu .menu-label[hidden] { display: none; }
+.menu button.menu-more { color: var(--primary); font-size: 12px; }
+.menu button.menu-more svg { color: var(--primary); }
+
+/* 항목이 많으면 메뉴 안에서 스크롤 */
+.menu[role=menu] { max-height: min(70vh, 520px); overflow-y: auto; }
+
+.np-status.is-dirty { color: var(--warning-ink, var(--warning)); }

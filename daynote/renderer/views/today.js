@@ -598,15 +598,37 @@
     var onHome = {};
     todayMemoList(st, now).forEach(function (n) { onHome[n.id] = true; });
     var q = '';
-    var tab = 'memo';
+    var tab = 'folders';     // 'folders' 폴더 고르기 · 'memo' 한 폴더의 메모 · 'done' 비운 완료 할 일
+    var folder = null;       // 고른 폴더: 프로젝트 id · null(미분류)
     var listBox = h('div.shelf-list');
     var search = h('input.input.shelf-search', { type: 'search', placeholder: '찾기', 'aria-label': '보관함에서 찾기',
       oninput: function () { q = search.value.trim().toLowerCase(); draw(); } });
     var tabs = h('div.shelf-tabs', { role: 'tablist' });
+    function folderOf(n) { var p = n.projectId && M.byId(S.state.projects, n.projectId); return p && !p.deletedAt ? p.id : null; }
+    function archived() { return M.liveNotes(S.state).filter(function (n) { return n.captureRole !== 'task_source' && !onHome[n.id]; }); }
     function memos() {
-      return M.liveNotes(S.state).filter(function (n) { return n.captureRole !== 'task_source' && !onHome[n.id]; })
+      return archived().filter(function (n) { return folderOf(n) === folder; })
         .filter(function (n) { return !q || ((n.title || '') + ' ' + (n.body || '')).toLowerCase().indexOf(q) !== -1; })
         .sort(function (a, b) { var x = a.homeHiddenAt || a.createdAt, y = b.homeHiddenAt || b.createdAt; return x < y ? 1 : -1; }).slice(0, 80);
+    }
+    function setTitle(text) { var t = m && m.box.querySelector('.modal-head h2'); if (t) t.textContent = text; }
+    // 폴더 창 — 미분류 · 프로젝트(보관한 메모 수) · 비운 완료 할 일
+    function drawFolders() {
+      setTitle('보관함');
+      tabs.textContent = ''; search.hidden = true;
+      listBox.textContent = '';
+      var all = archived();
+      function count(pid) { return all.filter(function (n) { return folderOf(n) === pid; }).length; }
+      function tileEl(label, iconEl, cnt, onClick, cls) {
+        return h('button.shelf-folder' + (cls || ''), { type: 'button', onclick: onClick, title: '‘' + label + '’ 열기' },
+          h('span.shelf-folder-icon', iconEl), h('span.shelf-folder-name', label), h('span.shelf-folder-count.meta', cnt + '개'));
+      }
+      var projects = M.liveProjects(S.state).filter(function (p) { return !p.archivedAt || count(p.id); });
+      var tiles = [tileEl('미분류', ui.folderIcon(ui.UNFILED_COLOR), count(null), function () { folder = null; tab = 'memo'; q = ''; search.value = ''; draw(); }, '.is-unfiled')]
+        .concat(projects.map(function (p) { return tileEl(p.name, ui.folderIcon(p.color), count(p.id), function () { folder = p.id; tab = 'memo'; q = ''; search.value = ''; draw(); }); }));
+      tiles.push(tileEl('비운 완료 할 일', h('span.shelf-done-icon', ui.icon('check')), cleared().length, function () { tab = 'done'; q = ''; search.value = ''; draw(); }, '.is-done'));
+      listBox.appendChild(h('p.help', { style: { margin: '0 0 10px' } }, '폴더를 누르면 그 안의 메모를 봐요. 홈의 메모를 끌어 폴더에 던져 넣으면 여기로 들어와요.'));
+      listBox.appendChild(h('div.shelf-folders', tiles));
     }
     function cleared() {
       return M.liveTasks(S.state).filter(function (t) { return t.status === 'done' && t.homeClearedAt; })
@@ -614,15 +636,16 @@
         .sort(function (a, b) { return a.homeClearedAt < b.homeClearedAt ? 1 : -1; }).slice(0, 80);
     }
     function draw() {
+      if (tab === 'folders') { drawFolders(); return; }
+      var fp = folder && M.byId(S.state.projects, folder);
+      setTitle(tab === 'done' ? '보관함 · 비운 완료 할 일' : '보관함 · ' + (fp ? fp.name : '미분류'));
+      search.hidden = false;
       tabs.textContent = '';
-      [['memo', '메모'], ['done', '비운 완료 할 일']].forEach(function (t) {
-        tabs.appendChild(h('button.shelf-tab' + (tab === t[0] ? '.is-on' : ''), { type: 'button', role: 'tab', 'aria-selected': String(tab === t[0]),
-          onclick: function () { tab = t[0]; draw(); } }, t[1]));
-      });
+      tabs.appendChild(h('button.btn.btn-ghost.btn-xs.shelf-back', { type: 'button', onclick: function () { tab = 'folders'; draw(); } }, ui.icon('chevronLeft'), '폴더'));
       listBox.textContent = '';
       if (tab === 'memo') {
         var list = memos();
-        if (!list.length) { listBox.appendChild(h('div.empty', q ? '찾는 메모가 없어요.' : '보관함이 비어 있어요.')); return; }
+        if (!list.length) { listBox.appendChild(h('div.empty', q ? '찾는 메모가 없어요.' : '이 폴더는 비어 있어요.')); return; }
         list.forEach(function (n) {
           var body = (n.body || '').replace(/\s+/g, ' ').trim();
           var proj = n.projectId && M.byId(S.state.projects, n.projectId);
@@ -654,8 +677,9 @@
         });
       }
     }
+    var m = null;
     draw();
-    var m = ui.modal({ title: '보관함', wide: true,
+    m = ui.modal({ title: '보관함', wide: true,
       body: h('div.shelf', h('div.shelf-top', tabs, search), listBox),
       footLeft: h('button.btn.btn-ghost.btn-sm', { type: 'button', onclick: function () { m.close(); DN.app.go('archive'); } }, '보관함 화면에서 보기'),
       actions: [{ label: '닫기', primary: true }] });

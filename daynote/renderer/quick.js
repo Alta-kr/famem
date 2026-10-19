@@ -31,7 +31,14 @@
       sending = false;
       if (r && r.login) { document.getElementById('sent-text').textContent = 'Daynote에 먼저 로그인해 주세요 — 로그인 창을 열었어요.'; }
       else if (!r || !r.ok) { document.getElementById('sent-text').textContent = '보내지 못했어요. Daynote 창에서 다시 시도해 주세요.'; }
-      else { document.getElementById('sent-text').textContent = '보냈어요 — 정리하는 중…'; ta.value = ''; }
+      else {
+        // 보냈으면 바로 사라진다 — 정리는 Daynote 가 뒤에서 하고 결과는 오늘 화면 채팅에 남는다
+        ta.value = ''; fit();
+        document.body.classList.remove('is-sent');
+        clearTimeout(hideTimer);
+        Q.hide();
+        return;
+      }
       document.body.classList.add('is-sent');
       Q.resize(Math.ceil(panel.getBoundingClientRect().height) + 44);
       clearTimeout(hideTimer);

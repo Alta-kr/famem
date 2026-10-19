@@ -521,10 +521,7 @@
   // ------------------------------------------------------------------ 프로젝트 바꾸기 (적은 글 전체)
   function projectMenu(anchor, n, cur) {
     var st = S.state;
-    var items = [{ label: '프로젝트 (이 글 전체에 적용)' }];
-    M.liveProjects(st).forEach(function (p) {
-      items.push({ label: p.name, icon: h('span.cap-proj-dot', { style: { background: p.color }, 'aria-hidden': 'true' }), checked: p.id === cur, onClick: function () { DN.capture.setProject(n.id, p.id); } });
-    });
+    var items = [{ label: '프로젝트 (이 글 전체에 적용)' }].concat(ui.projectMenuItems(st, cur, function (pid) { DN.capture.setProject(n.id, pid); ui.touchProject(pid); }));
     items.push({ label: '없음', checked: !cur, onClick: function () { DN.capture.setProject(n.id, null); } });
     ui.menu(anchor, items, { label: '프로젝트 바꾸기', className: 'cap-menu' });
   }
