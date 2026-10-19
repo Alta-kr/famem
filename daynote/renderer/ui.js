@@ -102,7 +102,8 @@
     // 같은 종류 알림은 새 것으로 바꾼다 (쌓이지 않게)
     while (toastWrap.children.length >= 2) toastWrap.firstChild.remove();
     toastWrap.appendChild(el);
-    timer = setTimeout(close, opts.duration || (opts.action ? 7000 : 3500));
+    // 알림은 짧게 — 예전 시간의 절반 (버튼 있는 알림 3.5초 · 그냥 알림 1.75초, 따로 정한 시간도 절반)
+    timer = setTimeout(close, (opts.duration || (opts.action ? 7000 : 3500)) / 2);
     close.el = el;   // 부르는 쪽이 모양을 더할 수 있게 (예: 완료 축하)
     return close;
   }
