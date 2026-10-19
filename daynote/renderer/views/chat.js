@@ -157,7 +157,7 @@
     var s = DN.aiFlow.status();
     if (s.provider === 'fake') return h('span.chip.chip-guess', { title: '실제 AI가 아니라 규칙으로 나누는 데모입니다' }, '데모 모드');
     if (!s.configured) return h('span.chip', { title: s.reason || '' }, 'AI 미연결 · 메모로만 저장');
-    return h('span.chip', { title: s.notice || '' }, s.provider === 'gemini' ? 'Gemini 3.8 Flash' : 'Claude Opus 5.5');
+    return h('span.chip', { title: s.notice || '' }, s.provider === 'gemini' ? 'Gemini 3.5 Flash-Lite' : 'Claude Opus 5.5');
   }
 
   function bubble(role, content, extraClass) {

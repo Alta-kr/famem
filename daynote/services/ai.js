@@ -10,8 +10,9 @@
 //   ANTHROPIC_API_KEY                 → Claude Opus 5.5
 //
 // Gemini 는 두 모델을 나눠 쓴다 (실측: Flash-Lite 3~6초, 3.8 Flash 4~70초로 들쭉날쭉)
-//   던진 글 분류(capture) → gemini-3.5-flash-lite (thinking minimal) — 빨라야 한다
-//   나머지(정리·작게 나누기·구체화) → gemini-3.8-flash (thinking low)
+//   모든 작업(분류·정리·작게 나누기·구체화) → gemini-3.5-flash-lite (thinking minimal) 먼저 — 보통 1~3초
+//   막히면 gemini-3.8-flash (thinking low) 로 대신. 무료 등급의 3.8 Flash 는 하루 20번이라 기본으로 쓰지 않는다
+//   SDK 자체 재시도는 끈다 (한도 초과 오류 하나에 30초 넘게 기다렸다). 하루 한도에 걸린 모델은 풀릴 때까지 건너뛴다
 //   한쪽이 일시 오류(한도·서버·연결)면 다른 쪽으로 한 번 더 — 끊기지 않게
 //
 // 두 제공자 모두 같은 프롬프트(organizeNote.SYSTEM)와 같은 JSON 스키마를 쓴다.
@@ -39,6 +40,10 @@ const fake = require('../src/core/ai/fake');
 const MODELS = { claude: 'claude-opus-5-5', gemini: 'gemini-3.8-flash', geminiFast: 'gemini-3.5-flash-lite' };
 const THINKING = { 'gemini-3.8-flash': 'low', 'gemini-3.5-flash-lite': 'minimal' };
 let retryDelayMs = null;      // 테스트에서만 바꾼다
+const blockedUntil = {};      // 하루 한도에 걸린 모델 → 풀리는 시각(ms)
+// 같은 요청도 서버 쪽에서 가끔 20~50초 걸린다(대부분 1~3초) — 8초 안에 답이 없으면 한 번 더 보내 먼저 온 답을 쓴다
+const HEDGE_MS = 8000;
+let hedgeMs = null;           // 테스트에서만 바꾼다
 const inflight = new Set();   // 같은 메모를 동시에 두 번 정리하지 않는다
 
 // 키는 이 모듈 안에만 둔다.
@@ -88,7 +93,8 @@ function status() {
   const m = mode();
   if (m === 'fake') return { configured: true, provider: 'fake', model: '가짜 AI(테스트)' };
   if (m === 'gemini') return {
-    configured: true, provider: 'gemini', model: MODELS.gemini, fastModel: MODELS.geminiFast, vendor: 'Google', keySource: keySource(),
+    configured: true, provider: 'gemini', model: MODELS.geminiFast, fastModel: MODELS.geminiFast, backupModel: MODELS.gemini, vendor: 'Google', keySource: keySource(),
+    limited: Object.keys(blockedUntil).filter((k) => blockedUntil[k] > Date.now()),
     notice: 'Gemini API 무료 등급에서는 보낸 내용이 Google 제품 개선에 쓰일 수 있습니다. 결제를 연결한 유료 등급에서는 쓰이지 않습니다.'
   };
   if (m === 'claude') return { configured: true, provider: 'claude', model: MODELS.claude, vendor: 'Anthropic' };
@@ -172,7 +178,7 @@ function gemini() {
 function classifyGemini(e) {
   const status = e && typeof e.status === 'number' ? e.status : null;
   if (status === 401 || status === 403) return { type: 'auth', message: 'Gemini API 키가 올바르지 않거나 권한이 없습니다. GEMINI_API_KEY 를 확인해 주세요.', retryable: false };
-  if (status === 429) return { type: 'rate_limit', message: 'Gemini 사용 한도에 걸렸습니다(무료 등급은 분당·하루 요청 수가 정해져 있습니다). 조금 뒤 다시 시도해 주세요.', retryable: true };
+  if (status === 429) return Object.assign({ type: 'rate_limit', message: 'Gemini 사용 한도에 걸렸습니다(무료 등급은 분당·하루 요청 수가 정해져 있습니다). 조금 뒤 다시 시도해 주세요.', retryable: true }, limitInfo(e));
   // 키가 틀리면 Gemini 는 400 + API_KEY_INVALID 를 준다
   if (status === 400 && /API[_ ]?key/i.test(e.message || '')) return { type: 'auth', message: 'Gemini API 키가 올바르지 않아요. 설정에서 키를 확인해 주세요.', retryable: false };
   if (status === 400) return { type: 'bad_request', message: 'Gemini가 요청을 처리하지 못했습니다: ' + redact(e.message || ''), retryable: false };
@@ -181,7 +187,22 @@ function classifyGemini(e) {
   return { type: 'network', message: 'Gemini 서버에 연결하지 못했습니다. 인터넷 연결을 확인해 주세요. (' + redact(e && e.message ? e.message : e) + ')', retryable: true };
 }
 
-async function callGemini(input, model) {
+// 429 내용에서 하루 한도인지, 몇 뒤에 풀리는지 ("Please retry in 16h2m21s")
+function limitInfo(e) {
+  const msg = String(e && e.message || '');
+  const m = /retry in\s*(?:(\d+)h)?\s*(?:(\d+)m(?!s))?\s*(?:([\d.]+)s)?/i.exec(msg);
+  const ms = m && (m[1] || m[2] || m[3]) ? ((+m[1] || 0) * 3600 + (+m[2] || 0) * 60 + (+m[3] || 0)) * 1000 : null;
+  return { daily: /per\s*day|PerDay|daily/i.test(msg) || (ms != null && ms > 15 * 60000), retryAfterMs: ms };
+}
+function dailyLimitError() {
+  const until = Math.min.apply(null, [MODELS.geminiFast, MODELS.gemini].map((k) => blockedUntil[k] || Infinity));
+  const h = isFinite(until) ? Math.max(1, Math.round((until - Date.now()) / 3600000)) : null;
+  return { type: 'rate_limit', daily: true, retryable: false,
+    message: 'Gemini 무료 한도를 오늘 다 썼어요' + (h ? ' (약 ' + h + '시간 뒤에 풀려요)' : '') + '. 결제를 연결한 유료 등급이면 한도가 크게 늘어요.' };
+}
+const sleep = (ms) => new Promise((r) => setTimeout(r, retryDelayMs != null ? retryDelayMs : ms));
+
+async function callGemini(input, model, signal) {
   const def = requestDef(input);
   model = model || MODELS.gemini;
   const res = await gemini().interactions.create({
@@ -194,7 +215,7 @@ async function callGemini(input, model) {
     response_format: { type: 'text', mime_type: 'application/json', schema: def.SCHEMA },
     // 요청·응답을 Google 쪽에 보관하지 않는다
     store: false
-  });
+  }, { maxRetries: 0, fetchOptions: signal ? { signal } : undefined });   // 재시도는 아래 callGeminiTiered 가 (다른 모델로 바로)
   if (res.status && res.status !== 'completed') {
     const truncated = res.status === 'incomplete' || res.status === 'budget_exceeded';
     return { ok: false, error: {
@@ -209,23 +230,69 @@ async function callGemini(input, model) {
   });
 }
 
-// 분류는 빠른 모델 먼저, 그 밖은 3.8 Flash 먼저. 일시 오류(또는 모델 없음 404)면 다른 모델로 한 번 더.
+// 늦는 요청 대비 — 첫 요청이 HEDGE_MS 안에 안 끝나면 같은 요청을 하나 더. 먼저 온 성공을 쓰고 나머지는 끊는다
+//   (금방 실패하면 기다리지 않고 바로 실패를 돌려준다 → 다른 모델로)
+function callGeminiHedged(input, model) {
+  const ms = hedgeMs != null ? hedgeMs : HEDGE_MS;
+  return new Promise((resolve, reject) => {
+    const ctrls = [];
+    let settled = false, inFlight = 0, timer = null;
+    const finish = (fn, v) => {
+      if (settled) return;
+      settled = true; clearTimeout(timer);
+      ctrls.forEach((c) => { try { c.abort(); } catch (e) {} });
+      fn(v);
+    };
+    function launch() {
+      const c = new AbortController();
+      ctrls.push(c); inFlight++;
+      callGemini(input, model, c.signal).then((r) => {
+        inFlight--;
+        // 성공이거나 다시 해도 소용없는 실패면 바로. 다시 할 만한 실패인데 다른 요청이 아직 가는 중이면 그쪽을 기다린다
+        if (r.ok || !r.error || !r.error.retryable || inFlight === 0) finish(resolve, r);
+      }, (e) => {
+        inFlight--;
+        if (inFlight === 0) finish(reject, e);
+      });
+    }
+    launch();
+    if (ms > 0) timer = setTimeout(() => { if (!settled) launch(); }, ms);
+  });
+}
+
+// 빠른 모델(3.5 Flash-Lite) 먼저, 막히면 3.8 Flash. 하루 한도에 걸린 모델은 건너뛴다.
+//   둘 다 잠깐 막혔으면(서버 오류·분당 한도) 조금 쉬었다가 빠른 모델로 한 번 더
 async function callGeminiTiered(input) {
-  const order = input && input.purpose === 'capture' ? [MODELS.geminiFast, MODELS.gemini] : [MODELS.gemini, MODELS.geminiFast];
-  let first;
-  try {
-    first = await callGemini(input, order[0]);
-    // 예외 없이 '끝내지 못함(incomplete·failed)' 을 돌려줘도 다시 할 만한 실패면 다른 모델로
-    if (first.ok || !first.error || !first.error.retryable || first.error.type === 'invalid_json') return first;   // JSON 을 못 읽은 건 organize 가 한 번 더 부른다
-  } catch (e) {
-    const c = classifyGemini(e);
-    if (!c.retryable && e.status !== 404) throw Object.assign(e, { _classified: c });
-    first = { ok: false, error: c };
+  const order = [MODELS.geminiFast, MODELS.gemini].filter((k) => !(blockedUntil[k] > Date.now()));
+  if (!order.length) return { ok: false, error: dailyLimitError() };
+  async function attempt(model) {
+    try {
+      const r = await callGeminiHedged(input, model);
+      // 예외 없이 '끝내지 못함(incomplete·failed)' 을 돌려줘도 다시 할 만한 실패면 다음으로 (JSON 을 못 읽은 건 organize 가 한 번 더)
+      return { done: r.ok || !r.error || !r.error.retryable || r.error.type === 'invalid_json', res: r };
+    } catch (e) {
+      const c = classifyGemini(e);
+      if (c.type === 'rate_limit' && c.daily) blockedUntil[model] = Date.now() + Math.min(Math.max(c.retryAfterMs || 0, 15 * 60000), 24 * 3600000);
+      if (!c.retryable && e.status !== 404) throw Object.assign(e, { _classified: c });
+      return { done: false, res: { ok: false, error: c } };
+    }
   }
-  // 잠깐 끊긴 연결이면 바로 다시 해도 실패하니 조금 쉬었다가 (한도 초과는 다른 모델이라 짧게)
-  await new Promise((r) => setTimeout(r, retryDelayMs != null ? retryDelayMs : first.error.type === 'rate_limit' ? 300 : 1200));
-  try { return await callGemini(input, order[1]); }
-  catch (e2) { throw Object.assign(e2, { _classified: classifyGemini(e2) }); }
+  let last = null;
+  const errs = {};
+  for (let i = 0; i < order.length; i++) {
+    const a = await attempt(order[i]);
+    if (a.done) return a.res;
+    last = errs[order[i]] = a.res;
+    if (i < order.length - 1) await sleep(last.error.type === 'rate_limit' ? 150 : 600);
+  }
+  // 하루 한도로 다 막혔으면 기다리지 않고 알린다
+  const left = order.filter((k) => !(blockedUntil[k] > Date.now()));
+  if (!left.length) return { ok: false, error: dailyLimitError() };
+  const e0 = errs[left[0]].error;   // 다시 해 볼 모델이 낸 오류 기준으로 기다린다
+  const wait = e0.retryAfterMs != null ? e0.retryAfterMs : 1500;
+  if (wait > 8000) return errs[left[0]];
+  await sleep(wait);
+  return (await attempt(left[0])).res;
 }
 
 async function organize(input) {
@@ -255,6 +322,6 @@ async function organize(input) {
 }
 
 // 테스트용: 실제 네트워크 없이 클라이언트를 바꿔 끼운다
-function _setClients(c) { if (c.gemini) geminiClient = c.gemini; if (c.claude) claudeClient = c.claude; if ('retryDelayMs' in c) retryDelayMs = c.retryDelayMs; }
+function _setClients(c) { if (c.gemini) geminiClient = c.gemini; if (c.claude) claudeClient = c.claude; if ('retryDelayMs' in c) retryDelayMs = c.retryDelayMs; if ('hedgeMs' in c) hedgeMs = c.hedgeMs; }
 
 module.exports = { status, organize, MODELS, setSavedKey, captureEnvKeys, redact, _setClients };

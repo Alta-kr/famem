@@ -206,8 +206,8 @@
 
     var models = aiSt.provider === 'gemini'
       ? h('ul.help', { style: { margin: '6px 0 0', paddingLeft: '18px', lineHeight: 1.7 } },
-          h('li', '적은 글 나누기: ', h('b', aiSt.fastModel || 'gemini-3.5-flash-lite'), ' — 빠른 모델 (보통 2~5초)'),
-          h('li', '작게 나누기·메모 정리: ', h('b', aiSt.model), ' — 더 꼼꼼한 모델'),
+          h('li', '모든 AI 작업: ', h('b', aiSt.fastModel || 'gemini-3.5-flash-lite'), ' — 빠른 모델 (보통 1~3초)'),
+          h('li', '막히면 대신: ', h('b', aiSt.backupModel || 'gemini-3.8-flash'), (aiSt.limited && aiSt.limited.length ? ' — 지금 하루 한도에 걸려 쉬는 중: ' + aiSt.limited.join(', ') : '')),
           h('li', '한쪽이 바쁘거나 한도에 걸리면 다른 모델이 대신해요.'))
       : null;
 

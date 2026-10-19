@@ -66,7 +66,7 @@
     var head = h('div.review-head',
       h('div.review-title', ui.icon('spark'), h('span', 'AI 정리'),
         aiStatus.provider === 'fake' ? h('span.chip.chip-guess', { title: '실제 AI가 아니라 규칙으로 만든 시험용 결과입니다' }, '데모 모드 · 실제 AI 아님')
-          : aiStatus.provider ? h('span.chip', { title: aiStatus.notice || '' }, aiStatus.provider === 'gemini' ? 'Gemini 3.8 Flash' : 'Claude Opus 5.5') : null),
+          : aiStatus.provider ? h('span.chip', { title: aiStatus.notice || '' }, aiStatus.provider === 'gemini' ? 'Gemini 3.5 Flash-Lite' : 'Claude Opus 5.5') : null),
       h('button.icon-btn', { type: 'button', 'aria-label': '검토 패널 닫기', onclick: function () { ctx.close(); } }, ui.icon('x')));
 
     var statusLine = h('div.review-status', { role: 'status', 'aria-live': 'polite' });

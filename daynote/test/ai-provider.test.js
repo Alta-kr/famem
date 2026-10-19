@@ -28,11 +28,12 @@ const INPUT = O.buildInput({ id: 'n1', title: '회의', body: '- [ ] 금요일�
   { today: '2026-10-05 (월)', projects: [], openTasks: [] });
 const OUTPUT = { summary: '요약', sections: [], tasks: [], events: [], open_questions: [] };
 
-test('제공자 선택: Gemini 키가 있으면 Gemini 3.8 Flash 가 기본, 강제 지정과 키 없음 처리', () => {
+test('제공자 선택: Gemini 키가 있으면 Gemini 3.5 Flash-Lite 가 기본(막히면 3.8 Flash), 강제 지정과 키 없음 처리', () => {
   withEnv({ GEMINI_API_KEY: 'g', ANTHROPIC_API_KEY: 'a' }, () => {
     const s = freshAi().status();
     assert.strictEqual(s.provider, 'gemini');
-    assert.strictEqual(s.model, 'gemini-3.8-flash');
+    assert.strictEqual(s.model, 'gemini-3.5-flash-lite');
+    assert.strictEqual(s.backupModel, 'gemini-3.8-flash');
     assert.match(s.notice, /무료 등급/);
   });
   withEnv({ GEMINI_API_KEY: 'g', ANTHROPIC_API_KEY: 'a', DAYNOTE_AI_PROVIDER: 'claude' }, () => {
@@ -57,7 +58,7 @@ test('Gemini 호출: 같은 프롬프트·스키마로 요청하고, 요청을 �
     assert.ok(r.ok, JSON.stringify(r.error));
     assert.deepStrictEqual(r.output, OUTPUT);
     assert.strictEqual(r.provider, 'gemini');
-    assert.strictEqual(sent.model, 'gemini-3.8-flash');
+    assert.strictEqual(sent.model, 'gemini-3.5-flash-lite');
     assert.strictEqual(sent.system_instruction, O.SYSTEM);
     assert.strictEqual(sent.response_format.schema, O.SCHEMA);
     assert.strictEqual(sent.response_format.mime_type, 'application/json');
@@ -92,5 +93,67 @@ test('Gemini 오류: 한도 초과(429)는 한 번 더 시도하고, 키 오류(
     const r4 = await ai.organize(INPUT);
     assert.ok(r4.ok);
     assert.strictEqual(r4.attempts, 2);
+  });
+});
+
+test('늦는 요청: 첫 요청이 늦으면 한 번 더 보내 먼저 온 답을 쓰고, 늦은 쪽은 끊는다', async () => {
+  await withEnv({ GEMINI_API_KEY: 'g' }, async () => {
+    const ai = freshAi();
+    ai._setClients({ retryDelayMs: 0, hedgeMs: 30 });
+    let n = 0, aborted = false;
+    ai._setClients({ gemini: { interactions: { create: (req, opts) => new Promise((resolve) => {
+      const me = ++n;
+      if (me === 1) {   // 첫 요청은 아주 늦다
+        const t = setTimeout(() => resolve({ status: 'completed', output_text: JSON.stringify(OUTPUT) }), 2000);
+        opts.fetchOptions.signal.addEventListener('abort', () => { aborted = true; clearTimeout(t); });
+      } else resolve({ status: 'completed', output_text: JSON.stringify(OUTPUT) });
+    }) } } });
+    const t0 = Date.now();
+    const r = await ai.organize(Object.assign({}, INPUT, { noteId: 'h1' }));
+    assert.ok(r.ok);
+    assert.strictEqual(n, 2);
+    assert.ok(Date.now() - t0 < 1000, '늦은 첫 요청을 기다리지 않는다');
+    assert.ok(aborted, '늦은 쪽은 끊는다');
+    // 금방 끝나면 하나만
+    n = 0;
+    ai._setClients({ hedgeMs: 500, gemini: { interactions: { create: async () => { n++; return { status: 'completed', output_text: JSON.stringify(OUTPUT) }; } } } });
+    assert.ok((await ai.organize(Object.assign({}, INPUT, { noteId: 'h2' }))).ok);
+    assert.strictEqual(n, 1);
+  });
+});
+
+test('Gemini 하루 한도: SDK 재시도를 끄고, 한도에 걸린 모델은 건너뛰고, 둘 다 막히면 바로 알린다', async () => {
+  await withEnv({ GEMINI_API_KEY: 'g' }, async () => {
+    const ai = freshAi();
+    ai._setClients({ retryDelayMs: 0 });
+    const seen = [];
+    const daily = (m) => Object.assign(new Error('429 Rate limit exceeded for model ' + m + ' (limit: 20 requests per day on Free Tier). Please retry in 16h2m21s'), { status: 429 });
+    ai._setClients({ gemini: { interactions: { create: async (req, opts) => {
+      seen.push(req.model + ':' + (opts && opts.maxRetries));
+      if (req.model === 'gemini-3.8-flash') throw daily(req.model);
+      return { status: 'completed', output_text: JSON.stringify(OUTPUT) };
+    } } } });
+    assert.ok((await ai.organize(INPUT)).ok);
+    assert.deepStrictEqual(seen, ['gemini-3.5-flash-lite:0']);
+    // 빠른 모델이 잠깐 막히면 3.8 로 → 하루 한도 → 그 뒤로는 3.8 을 부르지 않는다
+    seen.length = 0;
+    let liteFails = 1;
+    ai._setClients({ gemini: { interactions: { create: async (req) => {
+      seen.push(req.model);
+      if (req.model === 'gemini-3.8-flash') throw daily(req.model);
+      if (liteFails-- > 0) throw Object.assign(new Error('503 overloaded'), { status: 503 });
+      return { status: 'completed', output_text: JSON.stringify(OUTPUT) };
+    } } } });
+    assert.ok((await ai.organize(Object.assign({}, INPUT, { noteId: 'n2' }))).ok);
+    assert.deepStrictEqual(seen, ['gemini-3.5-flash-lite', 'gemini-3.8-flash', 'gemini-3.5-flash-lite']);
+    assert.deepStrictEqual(ai.status().limited, ['gemini-3.8-flash']);
+    seen.length = 0;
+    assert.ok((await ai.organize(Object.assign({}, INPUT, { noteId: 'n3' }))).ok);
+    assert.deepStrictEqual(seen, ['gemini-3.5-flash-lite']);
+    // 둘 다 하루 한도 → 기다리지 않고 '오늘 다 썼어요'
+    ai._setClients({ gemini: { interactions: { create: async (req) => { throw daily(req.model); } } } });
+    const r = await ai.organize(Object.assign({}, INPUT, { noteId: 'n4' }));
+    assert.strictEqual(r.ok, false);
+    assert.match(r.error.message, /오늘 다 썼어요/);
   });
 });

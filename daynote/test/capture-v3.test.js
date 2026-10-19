@@ -197,7 +197,7 @@ function capInput(id) {
   return C.buildInput({ id: id, title: '', body: 'x', updatedAt: NOW.toISOString() }, { today: '2026-10-09', projects: [], openTasks: [] });
 }
 
-test('분류는 Flash-Lite(minimal) 먼저, 정리는 3.8 Flash(low) 먼저', async () => {
+test('분류도 정리도 Flash-Lite(minimal) 먼저 — 무료 등급 3.8 Flash 는 하루 20번이라 대신용', async () => {
   await withEnv({ GEMINI_API_KEY: 'g' }, async () => {
     const ai = freshAi();
     const sent = [];
@@ -208,8 +208,8 @@ test('분류는 Flash-Lite(minimal) 먼저, 정리는 3.8 Flash(low) 먼저', as
     assert.strictEqual(sent[0].generation_config.thinking_level, 'minimal');
     assert.strictEqual(r.model, 'gemini-3.5-flash-lite');
     await ai.organize(Object.assign({}, capInput('b'), { purpose: undefined }));
-    assert.strictEqual(sent[1].model, 'gemini-3.8-flash');
-    assert.strictEqual(sent[1].generation_config.thinking_level, 'low');
+    assert.strictEqual(sent[1].model, 'gemini-3.5-flash-lite');
+    assert.strictEqual(sent[1].generation_config.thinking_level, 'minimal');
   });
 });
 
@@ -314,7 +314,7 @@ test('키 가림: 오류 메시지 속 키는 가리고, 공백·줄바꿈이 �
     const r = await ai.organize(capInput('leak'));
     assert.strictEqual(r.ok, false);
     assert.ok(!JSON.stringify(r).includes('LEAKY'));
-    assert.strictEqual(sent, 2);
+    assert.strictEqual(sent, 3);   // 두 모델 + 연결 오류라 빠른 모델로 한 번 더
   });
   await withEnv({ GEMINI_API_KEY: 'AIzaBAD\n000000000000000000' }, async () => {
     const s = freshAi().status();
