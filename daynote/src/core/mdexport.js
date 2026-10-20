@@ -70,7 +70,7 @@
     var out = [indent + '- [' + (t.status === 'done' ? 'x' : ' ') + '] ' + (t.title || '(제목 없음)') + (bits.length ? ' — ' + bits.join(' · ') : '')];
     (function walk(list, ind) {
       (list || []).forEach(function (s) {
-        out.push(ind + '- [' + (s.done ? 'x' : ' ') + '] ' + (s.title || ''));
+        out.push(ind + '- [' + (s.done ? 'x' : ' ') + '] ' + (s.prep ? '(준비) ' : '') + (s.title || ''));
         if (s.steps && s.steps.length) walk(s.steps, ind + '  ');
       });
     })(t.steps, indent + '  ');

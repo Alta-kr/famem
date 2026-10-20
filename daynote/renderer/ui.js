@@ -819,6 +819,13 @@
     return out;
   }
 
+  // 아직 안 끝낸 준비가 있으면 '준비 2' — 남는 시간에 추천된다는 표시
+  function prepChip(task) {
+    if (task.status === 'done') return null;
+    var n = window.Daynote.steps.prepLeaves(task.steps).length;
+    return n ? h('span.chip.chip-prep', { title: '미리 해 둘 준비 ' + n + '개 — 남는 시간에 먼저 추천돼요' }, '준비 ' + n) : null;
+  }
+
   function sourceChip(state, task) {
     var s = task.sources && task.sources[0];
     if (!s) return null;
@@ -846,6 +853,7 @@
       planChip(task, now),
       opts.compact ? null : scheduleChip(state, task, now),
       opts.compact ? null : estimateChip(task),
+      prepChip(task),
       opts.hideProject ? null : projectChip(state, task.projectId),
       opts.compact ? null : sourceChip(state, task),
       task.sample ? h('span.chip.chip-sample', '샘플') : null
@@ -907,6 +915,7 @@
   var expanded = {};
   var refocusAdd = null;
   var addingUnder = {};   // taskId → 하위 단계를 적는 중인 단계 id
+  var addPrep = {};       // taskId → 새로 적는 세부 할 일을 '준비' 로 넣는 중
   function setTaskSteps(taskId, fn, label) {
     var S = window.Daynote.store, A = window.Daynote.app;
     S.mutate(label, function (s) {
@@ -940,10 +949,16 @@
           h('div.step-row',
             h('label',
               h('input', { type: 'checkbox', checked: !!x.done, onchange: function () { setTaskSteps(task.id, function (l) { return ST.toggle(l, x.id); }, opts.label || '세부 할 일 체크'); } }),
+              x.prep ? h('span.chip.chip-prep.step-prep', { title: '미리 해 둘 준비 — 남는 시간에 먼저 추천돼요' }, '준비') : null,
               h('span.task-step-title', x.title),
               x.estimateMinutes ? h('span.meta', x.estimateMinutes + '분') : null,
               subs.length ? h('span.meta.step-sub-count', ST.count(subs).done + '/' + ST.count(subs).total) : null),
             opts.editable && !done ? h('span.step-tools',
+              h('button.step-tool.step-prep-tool' + (x.prep ? '.is-on' : ''), { type: 'button', 'aria-pressed': x.prep ? 'true' : 'false',
+                title: x.prep ? '준비 표시 끄기' : '미리 해 둘 준비로 표시 — 할 일 날이 멀어도 남는 시간에 먼저 추천돼요',
+                'aria-label': '‘' + x.title + '’ ' + (x.prep ? '준비 표시 끄기' : '준비로 표시'), onclick: function (e) {
+                  e.stopPropagation(); setTaskSteps(task.id, function (l) { return ST.setPrep(l, x.id, !x.prep); }, x.prep ? '준비 표시 끄기' : '준비로 표시');
+                } }, '준비'),
               h('button.step-tool', { type: 'button', title: '아래에 하위 단계 추가', 'aria-label': '‘' + x.title + '’ 아래에 하위 단계 추가', onclick: function (e) {
                 e.stopPropagation(); addingUnder[task.id] = x.id; setTaskSteps(task.id, function (l) { return l; }, null);
               } }, '+ 하위'),
@@ -975,8 +990,9 @@
     var steps = task.steps || [];
     var stop = function (e) { e.stopPropagation(); };
     function setSteps(fn, label) { setTaskSteps(task.id, function (l) { return fn(l.slice()); }, label); }
+    function addHint() { return addPrep[task.id] ? '+ 미리 해 둘 준비 추가 (Enter)' : '+ 세부 할 일 추가 (Enter)'; }
     var add = h('input.input.task-step-add', {
-      placeholder: '+ 세부 할 일 추가 (Enter)', 'aria-label': '‘' + task.title + '’ 세부 할 일 추가',
+      placeholder: addHint(), 'aria-label': '‘' + task.title + '’ 세부 할 일 추가',
       onclick: stop,
       onkeydown: function (e) {
         e.stopPropagation();
@@ -985,9 +1001,22 @@
         var v = add.value.trim();
         if (!v) return;
         refocusAdd = task.id;
-        setSteps(function (list) { return list.concat({ id: M.uid('step'), title: v.slice(0, 120), done: false, estimateMinutes: null }); }, '세부 할 일 추가');
+        // '준비: 자료 조사' 처럼 앞에 붙여 적거나 [준비] 를 켜 두면 미리 해 둘 준비로
+        setSteps(function (list) { return ST.add(list, null, v, null, { prep: !!addPrep[task.id] }); }, addPrep[task.id] || ST.parsePrep(v).prep ? '준비 추가' : '세부 할 일 추가');
       }
     });
+    var prepBtn = h('button.step-prep-toggle' + (addPrep[task.id] ? '.is-on' : ''), {
+      type: 'button', 'aria-pressed': addPrep[task.id] ? 'true' : 'false',
+      title: '켜 두면 새로 적는 세부 할 일이 ‘준비’가 돼요 — 할 일 날이 멀어도 남는 시간에 먼저 추천돼요',
+      onclick: function (e) {
+        e.stopPropagation();
+        addPrep[task.id] = !addPrep[task.id];
+        prepBtn.classList.toggle('is-on', !!addPrep[task.id]);
+        prepBtn.setAttribute('aria-pressed', addPrep[task.id] ? 'true' : 'false');
+        add.placeholder = addHint();
+        add.focus();
+      }
+    }, '준비');
     var cnt = ST.count(steps);
     var panel = h('div.task-steps', { onclick: stop, onkeydown: stop },
       steps.length ? h('div.task-steps-head.meta', '세부 할 일 ' + cnt.done + '/' + cnt.total) : null,
@@ -997,7 +1026,7 @@
           if (A.current().view !== 'today') A.go('today');
           window.Daynote.assistant.breakdown(task.id, null, { force: true });
         } }, icon('task'), '작업 작게 나누기')),
-      task.status === 'done' ? null : add);
+      task.status === 'done' ? null : h('div.task-step-addrow', add, prepBtn));
     if (refocusAdd === task.id) { refocusAdd = null; setTimeout(function () { var x = document.querySelector('[data-steps-for="' + task.id + '"] .task-step-add'); if (x) x.focus(); }, 0); }
     panel.setAttribute('data-steps-for', task.id);
     return panel;
@@ -1041,6 +1070,6 @@
     stepsPanel: stepsPanel, stepsToggle: stepsToggle, stepTree: stepTree, dueEditor: dueEditor, projectPicker: projectPicker, projectPickChip: projectPickChip,
     projectChip: projectChip, dueChip: dueChip, planChip: planChip, osNotify: osNotify, noteProjectChip: noteProjectChip, folderIcon: folderIcon, fileNote: fileNote, UNFILED_COLOR: UNFILED_COLOR,
     projectsByRecent: projectsByRecent, projectMenuItems: projectMenuItems, touchProject: touchProject, postponeOverdue: postponeOverdue, scheduleChip: scheduleChip, estimateChip: estimateChip,
-    statusChips: statusChips, sourceChip: sourceChip, taskRow: taskRow, projectOptions: projectOptions, highlight: highlight
+    statusChips: statusChips, sourceChip: sourceChip, prepChip: prepChip, taskRow: taskRow, projectOptions: projectOptions, highlight: highlight
   };
 })();

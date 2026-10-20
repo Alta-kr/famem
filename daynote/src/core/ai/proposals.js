@@ -415,6 +415,32 @@
       t.breakdown = { status: 'pending', steps: ex.breakdown, source: 'capture', createdAt: iso(now), shownAt: null };
       large.push(t.id);
     });
+    // 준비할 일 ("그 전에 자료 조사랑 템플릿 받기") — 사용자가 직접 적은 것이라 바로 '준비' 세부 할 일로 (목록으로 이미 들어간 건 빼고)
+    var prepTitle = {};
+    if (res.ok) ids.forEach(function (pid) {
+      var p = M.byId(state.proposals, pid);
+      var ex = p && p.payload.extra;
+      if (!ex || !ex.prep || !p.resultRef || p.resultRef.kind !== 'task') return;
+      var t = M.byId(state.tasks, p.resultRef.id);
+      if (!t) return;
+      var have = {};
+      ST.walk(t.steps, function (s) { have[nospace(s.title)] = true; });
+      var add = ex.prep.filter(function (title) { return !have[nospace(title)]; })
+        .map(function (title) { return { id: M.uid('step'), title: title, done: false, estimateMinutes: null, prep: true }; });
+      if (add.length) t.steps = (t.steps || []).concat(add);
+      ex.prep.forEach(function (title) { prepTitle[nospace(title)] = t.id; });
+    });
+    // AI 가 준비할 일을 따로 할 일로도 만들었으면 그 할 일은 뺀다 (준비 세부 할 일로 들어갔으니)
+    var prepDup = {};
+    created.forEach(function (c) {
+      var t = c.kind === 'task' && M.byId(state.tasks, c.id);
+      if (t && prepTitle[nospace(t.title)] && prepTitle[nospace(t.title)] !== t.id) prepDup[t.id] = true;
+    });
+    if (Object.keys(prepDup).length) {
+      state.tasks = state.tasks.filter(function (t) { return !prepDup[t.id]; });
+      state.blocks = state.blocks.filter(function (b) { return !prepDup[b.taskId]; });
+      created = created.filter(function (c) { return !prepDup[c.id]; });
+    }
 
     // 완료 보고 ("샤워 완료") — 근거 문장이 원문에 있고, 지금 열린 할 일과 맞을 때만 완료로 표시한다
     var completed = completeReported(state, note, out.done_tasks, created, now);

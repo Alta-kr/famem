@@ -1,7 +1,11 @@
 'use strict';
 
 // 세부 할 일 — 할 일 하나를 작게 나눈 단계. 단계도 아래에 단계를 가질 수 있다 (몇 단계든).
-//   step = { id, title, done, estimateMinutes, steps?: [step…] }
+//   step = { id, title, done, estimateMinutes, prep?: true, steps?: [step…] }
+//
+//   준비(prep)  : 그 일을 하기 전에 틈틈이 해 둘 일 — 할 일의 날이 아직 멀어도 남는 시간에 먼저 추천된다 (recommend.js)
+//                 위 단계에 붙이면 아래 단계도 모두 준비. 적을 때 '준비: 자료 조사' 처럼 앞에 붙이거나,
+//                 목록에서 '준비' · '준비할 것' · '미리 할 일' 줄 아래에 적으면 그 항목들이 준비가 된다
 //
 //   parseOutline : 들여쓰기·번호로 적은 글을 나무 모양으로 ("인공조류 보드 디버깅\n 1. 전원 디버깅\n 2. 클럭 확인")
 //   toggle       : 체크하면 아래 단계도 같이, 아래 단계를 모두 끝내면 위 단계도 끝 (아래를 하나라도 풀면 위도 풀림)
@@ -55,10 +59,54 @@
   function make(title, est) {
     return { id: M.uid('step'), title: String(title || '').trim().slice(0, MAX_TITLE), done: false, estimateMinutes: est > 0 ? est : null };
   }
-  // parentId 가 없으면 맨 위 단계로. 아래에 새 일이 생기면 위 단계는 아직 안 끝난 것
-  function add(steps, parentId, title, est) {
+
+  // ---------------------------------------------------------------- 준비
+  //   '준비: 자료 조사' · '[준비] 자료 조사' · '(준비) 자료 조사' · '미리: 자료 조사' → { prep: true, title: '자료 조사' }
+  var PREP_PREFIX_RE = /^(?:\[\s*준비\s*\]|\(\s*준비\s*\)|준비\s*[:：]|미리\s*[:：])\s*/;
+  //   목록의 머리 줄 — 이 줄 아래 항목들이 준비
+  var PREP_HEAD_RE = /^(?:사전\s*)?(?:준비(?:물|\s*사항|할\s*(?:것|거|일)(?:들)?|해\s*(?:둘|놓을)\s*(?:것|거|일))?|미리\s*(?:할|해\s*(?:둘|놓을))\s*(?:것|거|일)(?:들)?|그\s*전에(?:\s*(?:할|해\s*둘)\s*(?:것|거|일))?)\s*[:：]?$/;
+  function parsePrep(title) {
+    var t = String(title || '').trim();
+    var m = t.match(PREP_PREFIX_RE);
+    return m && t.slice(m[0].length).trim() ? { prep: true, title: t.slice(m[0].length).trim() } : { prep: false, title: t };
+  }
+  function isPrepHead(title) { return PREP_HEAD_RE.test(String(title || '').trim()); }
+  // 준비 표시 켜기·끄기 (그 단계에만 — 아래 단계는 따라서 준비로 본다)
+  function setPrep(steps, id, on) {
     var next = clone(steps);
-    var item = make(title, est);
+    var s = find(next, id);
+    if (!s) return next;
+    if (on) s.prep = true; else delete s.prep;
+    return next;
+  }
+  // 이 단계가 준비인가 (위 단계가 준비여도)
+  function isPrep(steps, id) {
+    var hit = false;
+    (function go(list, inherited) {
+      (list || []).forEach(function (s) { var p = inherited || !!s.prep; if (s.id === id && p) hit = true; go(kids(s), p); });
+    })(steps, false);
+    return hit;
+  }
+  // 아직 안 끝낸 준비 — 아래 단계가 없는 것만, 적힌 순서대로 [{ step, index }]
+  function prepLeaves(steps) {
+    var out = [], i = 0;
+    (function go(list, inherited) {
+      (list || []).forEach(function (s) {
+        var p = inherited || !!s.prep;
+        if (kids(s).length) go(s.steps, p);
+        else { if (p && !s.done) out.push({ step: s, index: i }); i++; }
+      });
+    })(steps, false);
+    return out;
+  }
+
+  // parentId 가 없으면 맨 위 단계로. 아래에 새 일이 생기면 위 단계는 아직 안 끝난 것
+  //   opts.prep: 준비로 넣기 ('준비: …' 처럼 앞에 붙여 적어도 준비)
+  function add(steps, parentId, title, est, opts) {
+    var next = clone(steps);
+    var pp = parsePrep(title);
+    var item = make(pp.title, est);
+    if (pp.prep || (opts && opts.prep)) item.prep = true;
     if (!item.title) return next;
     var p = parentId ? find(next, parentId) : null;
     if (parentId && !p) return next;
@@ -105,13 +153,19 @@
     });
     return roots;
   }
-  function stepsFromNodes(nodes) {
-    return settle(nodes.map(function (n) {
-      var s = make(n.text);
+  // '준비' · '준비할 것' 머리 줄은 단계로 남기지 않고, 그 아래 항목들을 준비로 그 자리에 둔다
+  function stepsFromNodes(nodes, inPrep) {
+    var out = [];
+    nodes.forEach(function (n) {
+      if (n.children.length && isPrepHead(n.text)) { out = out.concat(stepsFromNodes(n.children, true)); return; }
+      var pp = parsePrep(n.text);
+      var s = make(pp.title);
       s.done = !!n.done;
+      if (inPrep || pp.prep) s.prep = true;
       if (n.children.length) s.steps = stepsFromNodes(n.children);
-      return s;
-    }));
+      out.push(s);
+    });
+    return settle(out);
   }
   // 글 하나를 할 일 하나로: 첫 줄(맨 위 항목)이 제목, 그 아래 항목들이 세부 할 일
   //   맨 위 항목이 여러 개면 둘째부터도 세부 할 일로 (메모를 할 일로 끌어 놓을 때)
@@ -146,6 +200,7 @@
 
   return {
     fromTask: fromTask, toTaskFields: toTaskFields, append: append,
+    parsePrep: parsePrep, isPrepHead: isPrepHead, setPrep: setPrep, isPrep: isPrep, prepLeaves: prepLeaves,
     walk: walk, flat: flat, count: count, leaves: leaves, find: find, toggle: toggle, add: add, remove: remove, settle: settle,
     parseOutline: parseOutline, stepsFromNodes: stepsFromNodes, taskFromText: taskFromText, outlineGroups: outlineGroups
   };

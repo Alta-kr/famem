@@ -101,12 +101,13 @@
     // 작은 단계 — 긴 업무를 나눠 두면 '지금 할 일 추천'이 단계 단위로 제안할 수 있다
     // 홈과 같은 나무 모양 (아래 단계까지 보이고, + 하위·× 도 같다)
     var steps = (t.steps || []).length ? ui.stepTree(t, { editable: true }) : h('div.help', '아직 단계가 없어요.');
-    var stepTitle = h('input.input', { placeholder: '단계 추가 (예: 개요 잡기)', 'aria-label': '새 단계 이름' });
+    var stepTitle = h('input.input', { placeholder: '단계 추가 (예: 개요 잡기 · 준비: 자료 조사)', 'aria-label': '새 단계 이름' });
     var stepEst = h('input.input.est', { type: 'number', min: '1', placeholder: '분', 'aria-label': '새 단계 예상 시간(분)' });
     function addStep() {
       var v = stepTitle.value.trim();
       if (!v) return;
-      save({ steps: (t.steps || []).concat({ id: M.uid('step'), title: v, done: false, estimateMinutes: stepEst.value ? Number(stepEst.value) : null }) }, '단계 추가');
+      // '준비: 자료 조사' 처럼 적으면 미리 해 둘 준비로
+      save({ steps: DN.steps.add(t.steps || [], null, v, stepEst.value ? Number(stepEst.value) : null) }, '단계 추가');
       renderAgain();
     }
     stepTitle.addEventListener('keydown', function (e) { if (e.key === 'Enter') addStep(); });

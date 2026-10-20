@@ -56,7 +56,7 @@ daynote/
 │  ├─ weekly.js          주간 정리·보고서 초안
 │  ├─ split.js           홈 세 칸 비율, 좌우 비율, 단계 시간 눈금
 │  ├─ habits.js          연구 기반 도움 (계획 오류 보정, 50분 휴식, 하루 마무리, 새 주 목표 …)
-│  ├─ steps.js           세부 할 일 나무 (몇 단계든), 개요 목록 → 할 일 + 세부 할 일
+│  ├─ steps.js           세부 할 일 나무 (몇 단계든), 개요 목록 → 할 일 + 세부 할 일, 준비(prep) 표시
 │  ├─ horizon.js         앞을 보는 계획: 오늘·내일·이번 주·다음 주, 2주 띠, 할 날(planDate), 날짜별 부담
 │  ├─ timesheet.js       쓴 시간: 작업 구간(sessions) → 프로젝트·주별 합계, 예상 대비 실제, CSV
 │  ├─ mdexport.js        마크다운 파일 모양 (프로젝트/메모/*.md · 할 일.md · 미분류 · 주간 보고), 파일에서 고친 메모 읽기
@@ -173,7 +173,7 @@ erDiagram
     string planDate "할 날 (이날 하기)"
     number workedMs "한 시간"
     array sessions "작업 구간 (쓴 시간·CSV)"
-    array steps "세부 할 일"
+    array steps "세부 할 일 (prep: 미리 해 둘 준비)"
     string resumeNote "이어서 할 첫 행동"
     string weekGoal "이번 주 목표"
   }

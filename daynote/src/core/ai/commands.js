@@ -32,7 +32,7 @@
 
   var PROMPT = [
     'L. 명령: 글이 기록·할 일이 아니라 Daynote 에게 무엇을 해 달라는 요청이면 commands 에 넣습니다. (해당 없으면 빈 배열)',
-    '   recommend(할 일 추천·뭐부터 할지) · breakdown(작게 나누기) · start(시작) · pause(일시 정지·멈춤) · complete(완료 처리 요청) · return_todo(할 일로 되돌리기) · work(작업 공간·채팅에 올리기)',
+    '   recommend(할 일 추천·뭐부터 할지·"30분 남는데 뭐 하지" 처럼 시간이 남았다는 말) · breakdown(작게 나누기) · start(시작) · pause(일시 정지·멈춤) · complete(완료 처리 요청) · return_todo(할 일로 되돌리기) · work(작업 공간·채팅에 올리기)',
     '   day_close(하루 마무리·퇴근·오늘은 여기까지) · rest(휴식·쉬기) · list_today(오늘 할 일·일정 알려 주기) · open(화면 열기: view 에 today/archive/tasks/calendar/projects/weekly/settings) · search(찾기: query 에 찾을 말) · schedule(일정에 배치) · delete(할 일 지우기)',
     '   target 은 대상 할 일 제목(목록 글자 그대로). 대상을 말하지 않았으면 null (앱이 작업 공간의 할 일을 쓴다). 명령만 있는 글이면 entry_type "command".',
     '   명령을 새 할 일로 만들지 마세요. 예) "할 일 추천해줘" → recommend / "견적서 작게 나눠줘" → breakdown, target "견적서 보내기" / "캘린더 보여줘" → open, view "calendar" / "회의록 메모 찾아줘" → search, query "회의록"',
@@ -65,10 +65,33 @@
   var VIEW_WORDS = [[/캘린더|달력|일정표/, 'calendar'], [/보관함/, 'archive'], [/할\s*일\s*(목록|화면|전체)/, 'tasks'], [/주간\s*(정리|보고)|이번\s*주\s*정리/, 'weekly'],
     [/프로젝트/, 'projects'], [/설정/, 'settings'], [/^(홈|오늘\s*화면)/, 'today']];
   var VERB_DONE_RE = /(보여\s*줘|보여줄래|열어\s*줘|열어|켜\s*줘|띄워\s*줘|가자|보자|로\s*가)/;
+
+  // 남는 시간 — "30분 남았어", "한 시간 비는데", "시간 좀 남네", "짬 났어" → 그 시간(분, 모르면 null)
+  var KNUM = { '한': 1, '두': 2, '세': 3, '네': 4, '반': 0.5 };
+  function freeMinutes(text) {
+    var s = String(text || '');
+    var m = s.match(/(\d+|한|두|세|네)\s*시간(\s*반)?|(\d+)\s*분|(반)\s*시간/);
+    if (!m) return null;
+    if (m[4]) return 30;
+    if (m[3]) return Math.min(480, parseInt(m[3], 10)) || null;
+    var h = /\d/.test(m[1]) ? parseInt(m[1], 10) : KNUM[m[1]];
+    return Math.min(480, Math.round((h + (m[2] ? 0.5 : 0)) * 60)) || null;
+  }
+  var FREE_RE = /(시간|짬|틈|여유)\s*(이|가|좀|이\s*좀|가\s*좀)?\s*(남|났|나네|생겼|생김|있|비|되)|(\d+\s*분|(?:\d+|한|두|세|네|반)\s*시간(?:\s*반)?)\s*(정도|쯤|가량)?\s*(이|가|은|는|좀)?\s*(남|비|여유|떠|뜨|있)/;
+  function freeTime(s) {
+    if (!FREE_RE.test(s)) return null;
+    // "마감 30분 남았어" 는 남는 시간이 아니다 · "회의 시간 있어?" 같은 질문·할 일은 AI 로
+    if (/마감|남았(나|니|어\?)|있(나|니|어\?)|[가-힣]기$|까지\s*(해|하|보내|끝)/.test(s)) return null;
+    return { action: 'recommend', free: true, minutes: freeMinutes(s) };
+  }
+
   function matchLocal(state, text, focus) {
     var s = String(text || '').trim().replace(/[.!~]+$/, '');
     if (!s || s.length > 40 || /\n/.test(s)) return null;
     var m;
+    // 남는 시간 — 그 시간 안에 할 일 (준비할 일 위주)
+    var ft = freeTime(s);
+    if (ft) return ft;
     // 추천
     if (/(할\s*일|할일|작업|일)\s*(좀\s*)?추천|추천\s*(좀\s*)?해\s*(줘|주세요|줄래)$|^(이제\s*|지금\s*)?(뭐|뭘|무엇)\s*(부터|먼저)?\s*(하지|할까|해야\s*(돼|해|할까|하지)|하면\s*(좋|돼))|다음\s*(에\s*)?(할\s*일|뭐\s*(하지|할까))/.test(s)) return { action: 'recommend' };
     // 하루 마무리 — "오늘 마무리", "퇴근할게", "오늘은 여기까지"
@@ -125,6 +148,8 @@
       }
       if (c.action === 'open') { if (VIEWS.indexOf(c.view) === -1) return; cmd.view = c.view; }
       if (c.action === 'search') { var qq = String(c.query || '').trim().slice(0, 60); if (!qq) return; cmd.query = qq; }
+      // "회의 전까지 40분 비는데 뭐 하면 좋을까" — 근거 문장에서 남는 시간을 앱이 읽는다
+      if (c.action === 'recommend' && FREE_RE.test(q)) { cmd.free = true; cmd.minutes = freeMinutes(q); }
       if (out.some(function (o) { return o.action === cmd.action && o.taskId === cmd.taskId && o.view === cmd.view; })) return;
       out.push(cmd);
     });
@@ -148,5 +173,5 @@
   }
 
   return { ACTIONS: ACTIONS, VIEWS: VIEWS, NEEDS_TASK: NEEDS_TASK, SCHEMA_PART: SCHEMA_PART, PROMPT: PROMPT,
-    matchLocal: matchLocal, resolve: resolve, findTask: findTask, todayTasks: todayTasks };
+    matchLocal: matchLocal, resolve: resolve, findTask: findTask, todayTasks: todayTasks, freeMinutes: freeMinutes };
 });

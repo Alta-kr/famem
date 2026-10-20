@@ -573,10 +573,12 @@
     var A = DN.app, AS = DN.assistant;
     var t = M.byId(st.tasks, m.taskId);
     if (!t) return null;
+    if (m.prep) return prepCard(m, st, t, now);
     var done = t.status === 'done' || t.deletedAt;
     var hasDraft = t.breakdown && (t.breakdown.status === 'pending' || t.breakdown.status === 'later');
     return bubble('assistant', h('div',
-      h('div.meta', '지금 하기 좋은 일'),
+      m.intro ? h('div.msg-text.next-intro', m.intro) : null,
+      h('div.meta', m.minutes ? D.duration(m.minutes) + ' 안에 하기 좋은 일' : '지금 하기 좋은 일'),
       h('div.next-title' + (done ? '.is-done' : ''), t.title),
       m.step ? h('div.meta', '먼저 이 단계부터: ' + m.step) : null,
       h('ul.next-reasons', (m.reasons || []).slice(0, 2).map(function (r) { return h('li', r); })),
@@ -584,8 +586,32 @@
         t.status === 'in_progress'
           ? h('button.btn.btn-primary.btn-xs', { type: 'button', onclick: function () { AS.work(t.id); } }, '작업 공간에서 보기')
           : h('button.btn.btn-primary.btn-xs', { type: 'button', onclick: function () { A.startTask(t.id); AS.work(t.id); } }, ui.icon('play'), '지금 시작'),
-        h('button.btn.btn-xs', { type: 'button', onclick: function () { AS.next((m.skip || []).concat(t.id)); } }, '다른 추천'),
+        h('button.btn.btn-xs', { type: 'button', onclick: function () { AS.next((m.skip || []).concat(t.id), { minutes: m.minutes, free: m.free }); } }, '다른 추천'),
         !(t.steps || []).length ? h('button.btn.btn-xs', { type: 'button', onclick: function () { AS.breakdown(t.id, null, { force: true }); } }, hasDraft ? '나눠 둔 단계 보기' : '작업 작게 나누기') : null)));
+  }
+
+  // 준비할 일 추천 — 할 일 자체가 아니라 그 일을 하기 전에 해 둘 세부 할 일 하나 ('해 뒀어요' 를 누르면 체크)
+  //   카드는 할 일의 지금 상태로 그린다 (다른 곳에서 체크해도 맞게)
+  function prepCard(m, st, t, now) {
+    var AS = DN.assistant;
+    var step = DN.steps.find(t.steps || [], m.stepId);
+    var done = !step || step.done || t.status === 'done' || !!t.deletedAt;
+    var left = t.status === 'done' || t.deletedAt ? 0 : DN.steps.prepLeaves(t.steps).length;
+    return bubble('assistant', h('div',
+      m.intro ? h('div.msg-text.next-intro', m.intro) : null,
+      h('div.meta', '틈틈이 해 둘 준비' + (m.minutes ? ' · ' + D.duration(m.minutes) + ' 안에' : '')),
+      h('div.next-title' + (done ? '.is-done' : ''), m.step),
+      h('div.next-for',
+        h('span.chip.chip-prep', '준비'),
+        h('button.link-btn', { type: 'button', title: '이 할 일 자세히 보기', onclick: function () { DN.app.openTask(t.id); } }, t.title)),
+      done ? null : h('ul.next-reasons', (m.reasons || []).slice(1, 3).map(function (r) { return h('li', r); })),
+      done
+        ? h('div.msg-actions',
+            h('span.meta', !step ? '지워진 준비예요.' : left ? '해 뒀어요. ‘' + t.title + '’ 준비가 ' + left + '개 더 있어요.' : '해 뒀어요.'),
+            h('button.btn.btn-xs', { type: 'button', onclick: function () { AS.next(null, { minutes: m.minutes, free: m.free }); } }, '다음 할 일'))
+        : h('div.msg-actions',
+            h('button.btn.btn-primary.btn-xs', { type: 'button', onclick: function () { AS.donePrep(t.id, m.stepId); } }, ui.icon('check'), '해 뒀어요'),
+            h('button.btn.btn-xs', { type: 'button', onclick: function () { AS.next((m.skip || []).concat(m.key), { minutes: m.minutes, free: m.free }); } }, '다른 추천'))));
   }
 
   // ------------------------------------------------------------------ 단계 시간 — 숫자를 잡고 위아래로 끌어 맞추기

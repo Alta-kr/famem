@@ -15,7 +15,7 @@
   if (node) module.exports = api;
   if (typeof window !== 'undefined') { window.Daynote = window.Daynote || {}; window.Daynote.aiCapture = api; }
 })(function (O, CMD) {
-  var PROMPT_VERSION = 'capture.v11';   // v2: 큰 할 일 감지 + 단계 초안(보관만) · v3: 메모 종류(메모/아이디어/링크) · v4: 시간 정한 할 일(do_at) · v5: 완료 보고(done_tasks) · v6: 날짜 바꾸기(updated_tasks) · v7: 채팅 명령(commands) · v8: 작업 공간 할 일이 있어도 묶음 말은 묶음으로 · v9: 프로젝트 묶음 · 날 단위로 미루기 · v10: 목록은 할 일 하나 + 세부 할 일 · v11: 걸리는 시간 짐작(typical_minutes)
+  var PROMPT_VERSION = 'capture.v12';   // v2: 큰 할 일 감지 + 단계 초안(보관만) · v3: 메모 종류(메모/아이디어/링크) · v4: 시간 정한 할 일(do_at) · v5: 완료 보고(done_tasks) · v6: 날짜 바꾸기(updated_tasks) · v7: 채팅 명령(commands) · v8: 작업 공간 할 일이 있어도 묶음 말은 묶음으로 · v9: 프로젝트 묶음 · 날 단위로 미루기 · v10: 목록은 할 일 하나 + 세부 할 일 · v11: 걸리는 시간 짐작(typical_minutes) · v12: 준비할 일(prep_steps)
   var ENTRY_TYPES = ['memo', 'task', 'mixed', 'done', 'update', 'command'];
   var NOTE_KINDS = ['memo', 'idea', 'link'];
 
@@ -58,6 +58,9 @@
     '   예) 치과 60 · 병원 진료 60 · 점심 약속 60 · 회의 60 · 1:1 30 · 통화 15 · 샤워 20 · 운동 60 · 영화 130 · 견적서 보내기 20 · 보고서 작성 120. 길이가 글에 있으면 typical_minutes 는 null 입니다.',
     'L. 목록으로 적은 할 일: 한 줄 아래에 들여쓰기나 번호·기호(1. 2. / - / •)로 적은 항목들은 위 줄의 세부 할 일입니다.',
     '   예) "인공조류 보드 디버깅\n 1. 전원 디버깅\n 2. 클럭 확인" → tasks 에는 "인공조류 보드 디버깅" 하나만 넣습니다. 아래 항목을 따로 tasks 로 만들지 마세요 (앱이 세부 할 일로 넣습니다).',
+    'N. 준비할 일: 할 일과 함께 "그 전에", "미리", "준비로", "준비할 것" 처럼 그 일을 하기 전에 틈틈이 해 둘 일을 적으면, 그 일들은 따로 tasks 로 만들지 말고 그 할 일의 prep_steps 에 짧은 제목으로 넣습니다.',
+    '   글에 적힌 것만 넣고 지어내지 마세요. 없으면 빈 배열입니다 (breakdown 과 다름 — 사용자가 직접 말한 준비라 바로 세부 할 일로 들어갑니다).',
+    '   예) "다음 주 금요일 워크숍 발표. 그 전에 자료 조사랑 슬라이드 템플릿 받아 두기" → tasks: "워크숍 발표"(due 다음 주 금요일), prep_steps ["자료 조사", "슬라이드 템플릿 받기"]',
     'J. 작업 공간의 할 일: <context> 에 "작업 공간에 올려 둔 할 일" 이 있으면, 사용자가 대상을 말하지 않고 "마감 두 시간 후로 미뤄줘", "이거 끝났어", "이거 내일로" 처럼 쓴 글은 그 할 일 이야기입니다.',
     '   이때 done_tasks·updated_tasks 의 title 은 그 할 일 제목을 그대로 씁니다. 다른 할 일 이름이 분명히 적혀 있으면 그쪽입니다. 이런 지시를 새 할 일로 만들지 마세요.',
     '   단, "마감 지난 것들은 2시간 뒤로", "밀린 거 내일로" 처럼 묶음을 말하면 작업 공간의 할 일이 아니라 K(bulk_updates) 입니다 (전부·모두 가 없어도).',
@@ -74,6 +77,8 @@
   SCHEMA.properties.tasks.items.properties.do_at = clone(SCHEMA.properties.tasks.items.properties.due);
   // 길이를 말하지 않았을 때 그런 일이 보통 걸리는 시간 (AI 추정, 분) — 앱은 '추정' 으로 표시한다
   SCHEMA.properties.tasks.items.properties.typical_minutes = { anyOf: [{ type: 'integer' }, { type: 'null' }] };
+  // 그 일을 하기 전에 미리 해 둘 일 (사용자가 적은 것만) — 바로 '준비' 세부 할 일로 들어간다
+  SCHEMA.properties.tasks.items.properties.prep_steps = { type: 'array', items: { type: 'string' } };
   SCHEMA.properties.events.items.properties.typical_minutes = { anyOf: [{ type: 'integer' }, { type: 'null' }] };
   SCHEMA.properties.events.items.required = Object.keys(SCHEMA.properties.events.items.properties);
   SCHEMA.properties.tasks.items.required = Object.keys(SCHEMA.properties.tasks.items.properties);

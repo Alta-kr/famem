@@ -210,6 +210,23 @@
       t.size = large ? 'large' : 'small';
       t.breakdown = large ? genericSteps(t.title) : [];
     });
+    // 준비할 일: "… 발표. 그 전에 자료 조사랑 템플릿 받아 두기" — 그 말은 할 일로 만들지 않고 앞 할 일의 prep_steps 로
+    var PREP_RE = /(?:^|[.,]\s*|\s)(그\s*전에|그전에|미리|준비로|준비할\s*(?:것|거|일)\s*[:：]?)\s+(.+)$/;
+    var prepAt = null;
+    body.forEach(function (l) { var pm = !prepAt && l.match(PREP_RE); if (pm) prepAt = { line: l, at: pm.index, items: pm[2] }; });
+    if (prepAt) {
+      var items = prepAt.items.split(/\s*(?:,|·|그리고)\s*|랑\s+|하고\s+/).map(function (x) {
+        return x.replace(/\s*(?:두기|놓기|둬야\s*(?:함|해)|해야\s*(?:함|해|돼))$/, '').replace(/아$/, '기').trim();
+      }).filter(Boolean);
+      var marker = prepAt.line.slice(prepAt.at).replace(/^[.,\s]+/, '');
+      for (var ti = tasks.length - 1; ti >= 0; ti--) {
+        var tt = tasks[ti], cut = tt.title.indexOf(marker.split(/\s+/)[0]);
+        if (tt.title.replace(/\s/g, '') && cut === 0) tasks.splice(ti, 1);   // 준비 말만으로 만든 할 일
+        else if (cut > 0) tt.title = tt.title.slice(0, cut).replace(/[.,\s]+$/, '');
+      }
+      if (tasks[0]) tasks[0].prep_steps = items;
+    }
+    tasks.forEach(function (t) { if (!t.prep_steps) t.prep_steps = []; });
     // 완료 보고: "샤워 완료", "견적서 보냈음" — 열린 할 일 제목과 핵심 낱말(2자 이상)이 겹치면 그 일
     var DONE_RE = /(완료|끝냈|끝났|끝남|다 했|다했|했음|마쳤|보냈음|보냈다|제출함)/;
     var done = [];

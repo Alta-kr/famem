@@ -272,6 +272,31 @@
     return out.length >= 2 ? out : [];
   }
 
+  // 할 일에 딸린 것 — 큰 일의 단계 초안 · AI 가 짐작한 걸리는 시간 · 준비할 일 (없으면 null)
+  function taskExtra(steps, typical, prep) {
+    var ex = {};
+    if (steps.length) { ex.size = 'large'; ex.breakdown = steps; }
+    if (typical) ex.typicalMinutes = typical;
+    if (prep.length) ex.prep = prep;
+    return Object.keys(ex).length ? ex : null;
+  }
+  // 준비할 일 (prep_steps) — 사용자가 글에 적은 것만: 낱말(2자 이상) 하나는 원문에 있어야 한다
+  function sanitizePrep(list, fullNorm) {
+    if (!Array.isArray(list)) return [];
+    var out = [];
+    list.forEach(function (x) {
+      if (typeof x !== 'string') return;
+      var t = x.trim().replace(/\s+/g, ' ');
+      if (!t) return;
+      if (t.length > 80) t = t.slice(0, 79) + '…';
+      var words = t.split(' ').map(function (w) { return w.replace(/(을|를|은|는|이|가|도|랑|하고|와|과|하기|기)$/, ''); }).filter(function (w) { return w.length >= 2; });
+      if (!words.some(function (w) { return fullNorm.indexOf(norm(w)) !== -1; })) return;
+      if (out.some(function (o) { return norm(o) === norm(t); })) return;
+      out.push(t);
+    });
+    return out.slice(0, 8);
+  }
+
   // ------------------------------------------------------------------ 본체
   // ctx: { note, state, now }
   function validateOrganizeNote(out, ctx) {
@@ -328,7 +353,7 @@
         fields: fields,
         duplicateOf: dup ? { kind: 'task', id: dup.id, label: dup.title } : null,
         // 큰 할 일의 단계 초안 — 바로 적용하지 않고 할 일에 보관했다가 나중에 제안한다 · AI 가 짐작한 걸리는 시간
-        extra: steps.length || typicalMinutes(raw.typical_minutes) ? Object.assign(steps.length ? { size: 'large', breakdown: steps } : {}, typicalMinutes(raw.typical_minutes) ? { typicalMinutes: raw.typical_minutes } : {}) : null
+        extra: taskExtra(steps, typicalMinutes(raw.typical_minutes), sanitizePrep(raw.prep_steps, c.fullNorm))
       }));
     });
 

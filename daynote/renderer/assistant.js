@@ -3,7 +3,8 @@
 // 홈 채팅 도우미 — 채팅 기록과 버튼 동작, "잠깐 여유 있을 때" 제안.
 //
 //   보내기     : 적은 글을 메모로 저장하고 AI 가 메모/할 일로 나눈다(capture.js). 큰 일은 단계 초안을 보관만 한다.
-//   다음 할 일 : 규칙 기반 추천(recommend.js) — AI·인터넷 없이 바로
+//   다음 할 일 : 규칙 기반 추천(recommend.js) — AI·인터넷 없이 바로. 세부 할 일 중 '준비' 는 남는 시간에 먼저
+//               ("30분 남았어" 처럼 남는 시간을 말하면 그 시간 안에 할 것으로)
 //   작게 나누기: 나눠 둔 초안이 있으면 그걸, 없으면 AI 에게 나눠 달라고 한 뒤 고칠 수 있는 카드로
 //   휴식       : 스트레칭 3가지 + 5분 타이머
 //   자동 제안  : 할 일을 끝낸 직후 / 한동안 입력이 없을 때 / 앱을 열었을 때 — 20분에 한 번 이하
@@ -77,12 +78,18 @@
   }
 
   // ------------------------------------------------------------------ 다음 할 일
-  function next(skip) {
-    var r = R.recommend(S.state, { now: now(), skipIds: skip || [], workHours: S.state.prefs.workHours });
-    if (r.primary) {
-      post({ kind: 'next', taskId: r.primary.taskId, step: r.primary.step ? r.primary.step.title : null, reasons: r.primary.reasons, skip: skip || [] });
+  // opts: { minutes: 남는 시간(분), free: 남는 시간을 말했다, prepOnly: 준비할 일만 (자동 제안), intro }
+  function next(skip, opts) {
+    opts = opts || {};
+    var r = R.recommend(S.state, { now: now(), skipIds: skip || [], workHours: S.state.prefs.workHours, availableMinutes: opts.minutes || null });
+    var pick = opts.prepOnly ? r.prep[0] : r.primary;
+    if (pick) {
+      post({ kind: 'next', taskId: pick.taskId, step: pick.step ? pick.step.title : null, reasons: pick.reasons, skip: skip || [],
+        prep: !!pick.prep, stepId: pick.prep ? pick.step.id : null, key: pick.key, prepLeft: r.prep.length,
+        minutes: opts.minutes || null, free: !!opts.free, intro: opts.intro || null });
       return r;
     }
+    if (opts.prepOnly) return r;   // 자동 제안 — 준비할 일이 없으면 조용히
     if (r.empty === 'all_skipped') { post({ kind: 'text', text: '추천할 후보를 모두 보여 드렸어요. 넘긴 할 일도 그대로 남아 있어요.' }); return r; }
     if (r.empty === 'time_short') { post({ kind: 'text', text: '남은 시간 안에 끝낼 수 있는 할 일이 없어요. 큰 일을 작게 나눠 볼까요?' }); breakdown(); return r; }
     // 지금 할 만한 일이 없어 보이면 — 자세히 적어 두면 좋을 할 일을 찾는다
@@ -122,7 +129,7 @@
       return;
     }
     switch (c.action) {
-      case 'recommend': next(); break;
+      case 'recommend': next(null, { minutes: c.minutes || null, free: !!c.free }); break;
       case 'breakdown': breakdown(t ? t.id : null, null, { force: !!t }); break;
       case 'rest': rest(); break;
       case 'work': work(t.id); break;
@@ -222,6 +229,17 @@
       S.mutate(null, function (s) { AS.storeBreakdown(s, t.id, v, 'button', now()); AS.markShown(s, t.id, now()); }, { source: 'chat' });
       update(wait.id, { kind: 'breakdown', taskId: t.id, intro: intro || null, reason: v.reason, draft: v.steps });
     });
+  }
+
+  // 준비 하나 해 뒀어요 — 그 세부 할 일을 체크 (카드는 할 일의 지금 상태로 다시 그려진다)
+  function donePrep(taskId, stepId) {
+    var t = M.byId(S.state.tasks, taskId);
+    var st = t && DN.steps.find(t.steps || [], stepId);
+    if (!st || st.done) return;
+    S.mutate('준비 해 둠', function (s) {
+      var tt = M.byId(s.tasks, taskId);
+      if (tt) M.updateTask(s, taskId, { steps: DN.steps.toggle(tt.steps || [], stepId) }, now());
+    }, { source: 'chat' });
   }
 
   function applyBreakdown(msgId, taskId, steps) {
@@ -442,11 +460,14 @@
       post({ kind: 'text', text: '하루를 마무리할 시간이에요. 남은 일에 다음 시각을 정해 두면 마음 편히 쉴 수 있어요.' });
       dayClose(); return;
     }
-    var n = AS.nextNudge(S.state, { now: now(), reason: reason, lastNudgeAt: S.state.meta.lastNudgeAt, lastCaptureAt: lastCaptureAt });
+    // 최근 채팅에 이미 띄운 준비 카드는 다시 권하지 않는다
+    var shownPrep = (S.state.chat || []).slice(-30).filter(function (m) { return m.kind === 'next' && m.prep && m.key; }).map(function (m) { return m.key; });
+    var n = AS.nextNudge(S.state, { now: now(), reason: reason, lastNudgeAt: S.state.meta.lastNudgeAt, lastNudgeType: S.state.meta.lastNudgeType, lastCaptureAt: lastCaptureAt, workHours: S.state.prefs.workHours, shownPrep: shownPrep });
     if (!n) return;
-    S.mutate(null, function (s) { s.meta.lastNudgeAt = now().toISOString(); }, { source: 'chat', silent: true });
+    S.mutate(null, function (s) { s.meta.lastNudgeAt = now().toISOString(); s.meta.lastNudgeType = n.type; }, { source: 'chat', silent: true });
     var intro = reason === 'completed' ? '하나 끝내셨네요. 한숨 돌리는 김에 —' : reason === 'idle' ? '잠깐 여유가 있어 보여서요 —' : '다시 오셨네요 —';
-    if (n.type === 'breakdown') breakdown(n.taskId, intro + ' 아까 큰 일로 보여서 나눠 둔 단계가 있어요. 이렇게 세분화해 보면 어떨까요?');
+    if (n.type === 'prep') next(shownPrep, { prepOnly: true, intro: intro + ' 미리 해 두면 좋은 준비가 있어요.' });
+    else if (n.type === 'breakdown') breakdown(n.taskId, intro + ' 아까 큰 일로 보여서 나눠 둔 단계가 있어요. 이렇게 세분화해 보면 어떨까요?');
     else elaborate(n.candidates, intro + ' 할 일 중에 조금 더 자세히 적어 두면 시작하기 쉬운 게 있어요.');
   }
 
@@ -537,7 +558,7 @@
   });
 
   DN.assistant = {
-    send: send, next: next, breakdown: breakdown, applyBreakdown: applyBreakdown, deferBreakdown: deferBreakdown,
+    send: send, next: next, donePrep: donePrep, breakdown: breakdown, applyBreakdown: applyBreakdown, deferBreakdown: deferBreakdown,
     elaborate: elaborate, saveElaboration: saveElaboration, skipElaboration: skipElaboration,
     rest: rest, startTimer: startTimer, tryNudge: tryNudge, update: update, post: post, work: work, returnWork: returnWork, focusTask: focusTask, runCommand: runCommand,
     rested: rested, startFocus: startFocus, stopFocus: stopFocus, dayClose: dayClose, overdueOffer: overdueOffer, replan: replan, weekStart: weekStart, planAt: planAt, checkLongFocus: checkLongFocus,

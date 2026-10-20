@@ -29,15 +29,22 @@
 //   5. 마감 시각         : 이른 순, 마감 없음은 뒤
 //   6. 시간 활용         : T 를 알면 남는 시간이 적은 순, 모르면 짧은 순 (미정은 뒤)
 //   7. 동률              : 먼저 만든 업무 → id 사전순 (항상 같은 순서가 나오도록)
+//
+// ── 준비할 일 (세부 할 일 중 '준비' 표시) ─────────────────────────────
+//   그 일을 하기 전에 틈틈이 해 둘 일 — 할 일 자체는 앞날(할 날)이거나 대기·선행 업무 때문에 추천하지 않아도,
+//   준비는 따로 후보가 된다 (끝냄·삭제·보관·미루기·진행 중·일시 정지인 할 일의 준비는 빼고).
+//   남는 시간에 이것들 위주로 — 기한이 지났거나 오늘 마감인 할 일 바로 다음, 나머지 할 일보다 앞에 둔다.
+//   준비끼리는: 시간 적합 → 그 일의 날(할 날·작업 시간·마감 중 이른 날)이 가까운 순 → 사용자 순서 → 적힌 순서
+//   후보 열쇠(key)는 '할 일 id:단계 id' — '다른 추천' 으로 넘기면 그 준비 하나만 넘어간다
 
 (function (factory) {
   var deps = (typeof module !== 'undefined' && module.exports)
-    ? { dates: require('./dates'), model: require('./model') }
-    : { dates: window.Daynote.dates, model: window.Daynote.model };
-  var api = factory(deps.dates, deps.model);
+    ? { dates: require('./dates'), model: require('./model'), steps: require('./steps') }
+    : { dates: window.Daynote.dates, model: window.Daynote.model, steps: window.Daynote.steps };
+  var api = factory(deps.dates, deps.model, deps.steps);
   if (typeof module !== 'undefined' && module.exports) module.exports = api;
   if (typeof window !== 'undefined') { window.Daynote = window.Daynote || {}; window.Daynote.recommend = api; }
-})(function (D, M) {
+})(function (D, M, ST) {
   var PRIORITY_RANK = { high: 0, normal: 1, low: 2 };
   var MAX_ALTERNATIVES = 2;
 
@@ -117,16 +124,20 @@
     return { fit: 'too_long', used: est };
   }
 
+  function timeLeadOf(state, ctx, cal) {
+    var T = ctx.availableMinutes;
+    var nextName = cal.next ? '‘' + blockTitle(state, cal.next) + '’' : '';
+    return ctx.source === 'user'
+      ? '지금 쓸 수 있는 시간이 ' + D.duration(T) + '이고'
+      : ctx.source === 'calendar' && ctx.until === 'work_end' ? '근무 종료(' + ctx.workHours.end + ')까지 ' + D.duration(T) + '이 있고'
+      : ctx.source === 'calendar' ? '다음 일정 ' + nextName + '까지 ' + D.duration(T) + '이 있고' : '';
+  }
   // 실제 입력만으로 이유를 만든다 (백분율·점수 없음)
   function reasonsFor(state, t, fit, due, ctx, cal, now) {
     var r = [];
     var T = ctx.availableMinutes;
     var est = t.estimateMinutes;
-    var nextName = cal.next ? '‘' + blockTitle(state, cal.next) + '’' : '';
-    var timeLead = ctx.source === 'user'
-      ? '지금 쓸 수 있는 시간이 ' + D.duration(T) + '이고'
-      : ctx.source === 'calendar' && ctx.until === 'work_end' ? '근무 종료(' + ctx.workHours.end + ')까지 ' + D.duration(T) + '이 있고'
-      : ctx.source === 'calendar' ? '다음 일정 ' + nextName + '까지 ' + D.duration(T) + '이 있고' : '';
+    var timeLead = timeLeadOf(state, ctx, cal);
 
     if (fit.fit === 'fits') {
       r.push(timeLead + ', 이 업무는 ' + estLabel(est, t.estimateSource) + '입니다.');
@@ -145,6 +156,60 @@
     else if (cal.workingNow.indexOf(t.id) !== -1) r.push('지금 이 업무의 작업 시간이 잡혀 있습니다.');
     if (t.priority === 'high') r.push('우선순위가 높음입니다.');
     return r;
+  }
+
+  // ---------------------------------------------------------------- 준비할 일
+  // 준비를 마쳐야 하는 날 — 할 날 · 앞으로 잡힌 작업 시간 · 마감 중 가장 이른 날
+  function prepBy(state, t, now) {
+    var nowIso = now.toISOString();
+    var days = [t.planDate, t.dueDate];
+    state.blocks.forEach(function (b) { if (b.taskId === t.id && b.end > nowIso) days.push(D.ymd(b.start)); });
+    return days.filter(Boolean).sort()[0] || null;
+  }
+  function prepWhen(title, day, now) {
+    if (!day) return '';
+    var diff = D.dayDiff(now, D.parseYmd(day));
+    return diff < 0 ? title + ' 날이 ' + (-diff) + '일 지났습니다.'
+      : diff === 0 ? title + ' 날이 오늘입니다.' : diff === 1 ? title + ' 날이 내일입니다.'
+      : title + '까지 ' + diff + '일 남았습니다 (' + D.relDay(day, now) + ').';
+  }
+  function prepItems(state, t, ctx, cal, now) {
+    if (t.deletedAt || t.archivedAt || t.status === 'done' || t.status === 'in_progress' || t.status === 'paused') return [];
+    if (t.snoozedUntil && new Date(t.snoozedUntil).getTime() > now.getTime()) return [];
+    var leaves = ST.prepLeaves(t.steps);
+    if (!leaves.length) return [];
+    var by = prepBy(state, t, now);
+    var T = ctx.availableMinutes;
+    return leaves.map(function (x, n) {
+      var s = x.step, est = s.estimateMinutes;
+      var fit = T == null ? 'open' : est == null ? 'unknown' : est <= T ? 'fits' : 'too_long';
+      var name = '‘' + t.title + '’';
+      var r = [name + ' 전에 미리 해 둘 준비입니다.'];
+      if (by) r.push(prepWhen(name, by, now));
+      if (fit === 'fits') r.push(timeLeadOf(state, ctx, cal) + ', 이 준비는 ' + estLabel(est) + '입니다.');
+      else if (fit === 'unknown') r.push('걸리는 시간이 정해지지 않았지만 짧게 끝낼 수 있으면 지금 해 두면 좋습니다.');
+      else if (fit === 'open' && est != null) r.push('이 준비는 ' + estLabel(est) + '입니다.');
+      if (leaves.length > 1) r.push('남은 준비 ' + leaves.length + '개 중 ' + (n + 1) + '번째입니다.');
+      return {
+        key: t.id + ':' + s.id, taskId: t.id, prep: true, fit: fit,
+        step: { id: s.id, title: s.title, estimateMinutes: est == null ? null : est },
+        prepBy: by, fitGroup: fit === 'unknown' ? 1 : 0,
+        byKey: by || '9999-99-99',
+        manual: typeof t.sortOrder === 'number' ? t.sortOrder : Number.MAX_SAFE_INTEGER,
+        createdAt: t.createdAt || '', order: x.index,
+        urgency: 4, slack: T != null && est != null ? T - est : Infinity,
+        estimateUnknown: est == null, estimateIsGuess: false,
+        reasons: r
+      };
+    });
+  }
+  function comparePrep(a, b) {
+    if (a.fitGroup !== b.fitGroup) return a.fitGroup - b.fitGroup;
+    if (a.byKey !== b.byKey) return a.byKey < b.byKey ? -1 : 1;
+    if (a.manual !== b.manual) return a.manual - b.manual;
+    if (a.createdAt !== b.createdAt) return a.createdAt < b.createdAt ? -1 : 1;
+    if (a.taskId !== b.taskId) return a.taskId < b.taskId ? -1 : 1;
+    return a.order - b.order;
   }
 
   function compare(a, b) {
@@ -186,10 +251,11 @@
     ctx.minutesToNext = cal.minutesToNext;
 
     var excluded = { done: 0, waiting: 0, blocked: 0, snoozed: 0, planned: 0 };
-    var ranked = [], tooLong = [];
+    var ranked = [], tooLong = [], preps = [];
     var openCount = 0;
 
     state.tasks.forEach(function (t) {
+      prepItems(state, t, ctx, cal, now).forEach(function (p) { if (p.fit === 'too_long') tooLong.push(p); else preps.push(p); });
       var ex = exclusionOf(state, t, now);
       if (ex === 'removed') return;
       if (ex) { excluded[ex]++; if (ex !== 'done') openCount++; return; }
@@ -197,7 +263,7 @@
       var fit = fitOf(t, ctx.availableMinutes);
       var due = dueInfo(t, now);
       var item = {
-        taskId: t.id, fit: fit.fit, step: fit.step || null,
+        key: t.id, taskId: t.id, fit: fit.fit, step: fit.step || null,
         fitGroup: fit.fit === 'unknown' ? 1 : 0,
         urgency: due.bucket,
         cont: (t.status === 'in_progress' || t.status === 'paused' || cal.workingNow.indexOf(t.id) !== -1) ? 0 : 1,
@@ -216,10 +282,17 @@
     });
 
     ranked.sort(compare);
-    tooLong.sort(function (a, b) { return a.urgency - b.urgency || a.prio - b.prio || a.slack - b.slack; });
+    preps.sort(comparePrep);
+    // 준비는 기한이 지났거나 오늘 마감인 할 일 바로 다음에 (그 밖의 할 일보다 앞)
+    var cut = 0;
+    while (cut < ranked.length && ranked[cut].urgency <= 1) cut++;
+    ranked = ranked.slice(0, cut).concat(preps, ranked.slice(cut));
+    tooLong.sort(function (a, b) { return a.urgency - b.urgency || (a.prio != null ? a.prio : 1) - (b.prio != null ? b.prio : 1) || a.slack - b.slack; });
 
+    // 넘긴 후보 — 할 일 id 로 넘기면 그 일과 그 일의 준비를 모두, '할 일 id:단계 id' 면 그 준비 하나만
     var skip = opts.skipIds || [];
-    var visible = ranked.filter(function (i) { return skip.indexOf(i.taskId) === -1; });
+    function hidden(i) { return skip.indexOf(i.key) !== -1 || skip.indexOf(i.taskId) !== -1; }
+    var visible = ranked.filter(function (i) { return !hidden(i); });
 
     var empty = null;
     if (!ranked.length) {
@@ -234,6 +307,7 @@
       primary: visible[0] || null,
       alternatives: visible.slice(1, 1 + MAX_ALTERNATIVES),
       ranked: ranked,
+      prep: visible.filter(function (i) { return i.prep; }),
       tooLong: tooLong,
       excluded: excluded,
       empty: empty
@@ -256,12 +330,15 @@
     return ex ? { ok: false, reason: msg[ex] } : { ok: true, task: t };
   }
 
+  function stepSig(list) {
+    return (list || []).map(function (s) { return (s.done ? 1 : 0) + ':' + (s.estimateMinutes || '') + (s.prep ? 'p' : '') + (s.steps && s.steps.length ? '(' + stepSig(s.steps) + ')' : ''); }).join(',');
+  }
   // 추천 결과에 영향을 주는 데이터의 지문. 화면은 이 값이 바뀌면 "정보가 바뀌었습니다" 를 띄운다.
   function signature(state) {
     var parts = [];
     state.tasks.forEach(function (t) {
       parts.push([t.id, t.status, t.priority, t.sortOrder, t.dueDate, t.dueTime, t.estimateMinutes, (t.blockedBy || []).join('+'),
-        t.snoozedUntil, t.deletedAt, t.archivedAt, leafSteps(t.steps).map(function (s) { return (s.done ? 1 : 0) + ':' + (s.estimateMinutes || ''); }).join(','), t.planDate].join('|'));
+        t.snoozedUntil, t.deletedAt, t.archivedAt, stepSig(t.steps), t.planDate].join('|'));
     });
     state.blocks.forEach(function (b) { parts.push([b.id, b.start, b.end, b.taskId].join('|')); });
     return parts.sort().join('\n');

@@ -183,6 +183,10 @@
     // 방금 무언가를 적었으면(10분 안) 먼저 묻지 않는다 — 적은 걸 바로 되묻는 건 흐름을 끊는다
     if (ctx.reason !== 'button' && ctx.lastCaptureAt && (now - new Date(ctx.lastCaptureAt)) < 10 * 60000) return null;
     var pend = pendingBreakdowns(state, now);
+    // 준비할 일 — 남는 시간에 먼저 (지난번에도 준비를 권했고 나눠 둔 단계가 기다리면 이번엔 그쪽)
+    var r = R.recommend(state, { now: now, workHours: ctx.workHours, skipIds: ctx.shownPrep || [] });   // 방금 보여 준 준비는 또 권하지 않는다
+    var prep = r.context.busyWith ? null : r.prep[0];
+    if (prep && !(pend.length && ctx.lastNudgeType === 'prep')) return { type: 'prep', key: prep.key, taskId: prep.taskId };
     if (pend.length) return { type: 'breakdown', taskId: pend[0].id };
     if (ctx.reason === 'idle' || ctx.reason === 'button' || looksIdle(state, now)) {
       var c = elaborateCandidates(state, now);
