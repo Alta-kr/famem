@@ -126,8 +126,11 @@ test('검증: 오전/오후가 없는 시각은 확정하지 않는다', () => {
 test('검증: 형식이 틀린 응답은 전체를 쓰지 않는다', () => {
   const { st, note } = setup();
   const bad = goodOutput();
-  delete bad.events;
+  bad.tasks[0].evidence = null;   // 빠진 목록·요약은 빈 값으로 채우지만(capture.v14 짧은 답), 근거 없는 항목은 받지 않는다
   assert.strictEqual(V.validateOrganizeNote(bad, { note, state: st, now: NOW }).ok, false);
+  const short = goodOutput();
+  delete short.events; delete short.summary; delete short.sections;
+  assert.strictEqual(V.validateOrganizeNote(short, { note, state: st, now: NOW }).ok, true);
   const bad2 = goodOutput();
   bad2.tasks[0].due = '금요일';
   const v2 = V.validateOrganizeNote(bad2, { note, state: st, now: NOW });

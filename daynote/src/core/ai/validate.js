@@ -335,7 +335,34 @@
 
   // ------------------------------------------------------------------ 본체
   // ctx: { note, state, now }
-  function validateOrganizeNote(out, ctx) {
+  // 짧은 답 받기 — capture.v14 는 요약·섹션(할 일만 있는 글)과 선택 칸을 빼고 답한다. 빠진 것은 빈 값으로 채운다
+  //   그리고 "건강검진 10시에 예약됨" 처럼 이미 잡힌 약속을 할 일(할 시각)로 적었으면 일정으로 옮긴다 ("건강검진 예약" 은 예약하는 행동이라 할 일 그대로)
+  var BOOKED_RE = /(예약\s*(됨|돼\s*있|되어\s*있|되었|됐|했|해\s*(놨|뒀|두었|놓았))|잡혀\s*있|잡았|잡힘)/;
+  function withDefaults(out) {
+    if (!out || typeof out !== 'object') return out;
+    var o = Object.assign({ summary: '', sections: [], open_questions: [], tasks: [], events: [] }, out);
+    if (typeof o.summary !== 'string') o.summary = '';
+    ['sections', 'open_questions', 'tasks', 'events'].forEach(function (k) { if (!Array.isArray(o[k])) o[k] = []; });
+    var none = { text: null, date: null, time: null };
+    var events = o.events.slice();
+    var tasks = [];
+    o.tasks.forEach(function (t) {
+      if (!t || typeof t !== 'object') return;
+      t = Object.assign({ project_hint: null, basis: 'explicit', due: none, prep_steps: [], breakdown: [] }, t);
+      var q = (t.evidence && t.evidence.quote) || '';
+      if (t.do_at && t.do_at.time && BOOKED_RE.test(q)) {
+        events.push({ title: t.title, evidence: t.evidence, start: t.do_at, duration_minutes: null, location: null, basis: t.basis, typical_minutes: t.typical_minutes == null ? null : t.typical_minutes });
+        return;
+      }
+      tasks.push(t);
+    });
+    o.tasks = tasks;
+    o.events = events.map(function (e) { return e && typeof e === 'object' ? Object.assign({ duration_minutes: null, location: null, basis: 'explicit' }, e) : e; });
+    return o;
+  }
+
+  function validateOrganizeNote(out0, ctx) {
+    var out = withDefaults(out0);
     var errs = shapeErrors(out);
     if (errs.length) return { ok: false, errors: errs, items: [], dropped: [], digest: null };
 

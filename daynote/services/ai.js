@@ -213,7 +213,8 @@ async function callGemini(input, model, signal) {
     system_instruction: def.SYSTEM,
     input: def.userText(input),
     // 정리·추출은 깊은 추론보다 정확한 읽기 — 낮은 thinking
-    generation_config: { thinking_level: THINKING[model] || 'low' },
+    // 답 길이 상한 — 드물게 요약을 끝없이 되풀이하는 일이 있었다(실측 21,632 토큰). 닿으면 '끊김'으로 다시 시도
+    generation_config: { thinking_level: THINKING[model] || 'low', max_output_tokens: def.MAX_OUTPUT_TOKENS || 4096 },
     // Claude 와 같은 JSON 스키마로 구조를 고정한다
     response_format: { type: 'text', mime_type: 'application/json', schema: def.SCHEMA },
     // 요청·응답을 Google 쪽에 보관하지 않는다

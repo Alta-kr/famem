@@ -113,8 +113,19 @@ test('채팅: "아니 오후야" 는 앱이 바로 알아듣는다', () => {
 });
 
 test('프롬프트: 고치는 말·오전/오후 규칙', () => {
-  assert.strictEqual(C.PROMPT_VERSION, 'capture.v13');
-  assert.ok(C.SYSTEM.indexOf('고치는 말') !== -1 && C.SYSTEM.indexOf('오전/오후') !== -1);
+  assert.strictEqual(C.PROMPT_VERSION, 'capture.v14');
+  assert.ok(C.SYSTEM.indexOf('방금 정리한 것 정정') !== -1 && C.SYSTEM.indexOf('오전/오후가 없으면') !== -1);
+  // 예약: 하는 것은 할 일, 이미 잡힌 것은 일정
+  assert.ok(C.SYSTEM.indexOf('예약됨') !== -1);
+  const V = require('../src/core/ai/validate');
+  const st = M.emptyState(), t0 = new Date(2026, 9, 24, 10, 0);
+  const mk = (body, time) => {
+    const note = M.addNote(st, { title: '', body }, t0); note.updatedAt = t0.toISOString();
+    const task = { title: '정기 건강검진', evidence: { quote: body, line: 1 }, due: EMPTY, do_at: { text: '2027년 6월 15일 오전 10시', date: '2027-06-15', time }, size: 'small', basis: 'explicit' };
+    return V.validateOrganizeNote({ entry_type: 'task', note_kind: 'memo', note_title: 'x', note_project_hint: null, tasks: [task], events: [], done_tasks: [], updated_tasks: [], bulk_updates: [], commands: [] }, { note, state: st, now: t0 }).items.map((i) => i.kind);
+  };
+  assert.deepStrictEqual(mk('2027년 6월 15일 오전 10시 정기 건강검진 예약', '10:00'), ['task']);
+  assert.deepStrictEqual(mk('2027년 6월 15일 오전 10시에 정기 건강검진 예약됨', '10:00'), ['event']);
 });
 
 test('시각 없이 때만 말한 약속은 일정으로 — "점심식사" 12:00, "저녁 약속" 19:00 (AI 시각이 그 때 안이면 그대로)', () => {

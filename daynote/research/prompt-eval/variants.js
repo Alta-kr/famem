@@ -29,14 +29,32 @@ function v0(c) {
   const input = C.buildInput(note, {
     today: ymd(ref) + ' (' + WD[ref.getDay()] + ')', timezone: c.timezone,
     projects: json(c.projects_json, []), openTasks: json(c.existing_tasks_json, []).map((t) => t.title),
-    focusTask: ws ? ws.title : null, recent: recentFromLast(json(c.last_result_json, null))
+    openTaskInfo: json(c.existing_tasks_json, []).map((t) => ({ title: t.title, dueDate: t.due && t.due.date || null, dueTime: t.due && t.due.time || null, state: t.state || null, project: t.project || null })),
+    focusTask: ws ? ws.title : null, focusInfo: ws ? { title: ws.title, dueDate: ws.due && ws.due.date || null, dueTime: ws.due && ws.due.time || null, state: ws.state || null } : null,
+    recent: recentFromLast(json(c.last_result_json, null))
   });
-  return { system: C.SYSTEM, user: C.userText(input), schema: C.SCHEMA };
+  return { system: C.SYSTEM, user: C.userText(input), schema: C.SCHEMA, maxOut: C.MAX_OUTPUT_TOKENS };
 }
 
 // ---------------------------------------------------------------- v1 — Codex 압축안
 const V1_SYSTEM = fs.readFileSync(path.join(__dirname, 'variants/v1-codex-system.txt'), 'utf8');
-function v1(c) { return { system: V1_SYSTEM, user: c.user_prompt, schema: C.SCHEMA }; }
+function v1(c) { return { system: V1_SYSTEM, user: c.user_prompt, schema: V13.schema }; }
+
+// v13 — 바꾸기 전 앱 (capture.v13): 저장한 지시·답 형식 + 그때 보낸 글 형식(organizeNote 형식 + 덧붙임)
+const O = require(path.join(ROOT, 'src/core/ai/organizeNote'));
+function v13(c) {
+  const ref = refDate(c);
+  const ws = json(c.workspace_task_json, null);
+  const input = O.buildInput({ id: 'case-' + c.id, title: '', body: c.memo, updatedAt: ref.toISOString() }, {
+    today: ymd(ref) + ' (' + WD[ref.getDay()] + ')', timezone: c.timezone, projects: json(c.projects_json, []), openTasks: json(c.existing_tasks_json, []).map((t) => t.title) });
+  if (ws && input.openTasks.indexOf(ws.title) === -1) input.openTasks.unshift(ws.title);
+  const recent = recentFromLast(json(c.last_result_json, null));
+  let t = O.userText(input), extra = '';
+  if (ws) extra += '작업 공간에 올려 둔 할 일: ' + ws.title + '\n';
+  if (recent.length) extra += '방금 정리한 것 (고치는 말이면 이것을 고친다): ' + recent.join(' · ') + '\n';
+  if (extra) t = t.replace('</context>', extra + '</context>');
+  return { system: V13.system, user: t, schema: V13.schema };
+}
 
 // ---------------------------------------------------------------- v2 — 달력 줄 + 가벼운 답 형식
 const V2_SYSTEM = fs.readFileSync(path.join(__dirname, 'variants/v2-system.txt'), 'utf8');
@@ -55,7 +73,9 @@ function v2User(c) {
 }
 // 답 형식: 분류 먼저, 빈 목록·요약은 빼도 되게 (required 를 줄인다), 순서를 바꾼다
 function clone(o) { return JSON.parse(JSON.stringify(o)); }
-const S0 = clone(C.SCHEMA);
+// v1~v5 는 v13 답 형식에서 만들었다 — 앱이 바뀌어도 같게 저장해 둔 v13 을 쓴다
+const V13 = JSON.parse(fs.readFileSync(path.join(__dirname, 'variants/v0-capture.v13.json'), 'utf8'));
+const S0 = clone(V13.schema);
 function slim(item, keep) {
   const o = clone(item);
   o.required = keep.filter((k) => o.properties[k]);
@@ -123,4 +143,4 @@ function v42(c) { return { system: V42_SYSTEM, user: v2User(c), schema: V4_SCHEM
 const VF_SYSTEM = fs.readFileSync(path.join(__dirname, 'variants/vF-system.txt'), 'utf8');
 function vF(c) { return { system: VF_SYSTEM, user: v2User(c), schema: V4_SCHEMA, maxOut: 2048 }; }
 
-module.exports = { vF, v42, v0, v1, v2, v3, v4, v5, v41, calendarLine, calendarLine41, V2_SCHEMA, V3_SCHEMA, V4_SCHEMA, V5_SCHEMA };
+module.exports = { v13, vF, v42, v0, v1, v2, v3, v4, v5, v41, calendarLine, calendarLine41, V2_SCHEMA, V3_SCHEMA, V4_SCHEMA, V5_SCHEMA };

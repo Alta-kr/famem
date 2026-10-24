@@ -34,7 +34,7 @@ function submit(st, text, output) {
 
 test('스키마: capture 스키마는 메모 정리 스키마 + 분류 항목이며 구조화 출력 조건을 지킨다', () => {
   assert.deepStrictEqual(C.SCHEMA.properties.entry_type.enum, ['memo', 'task', 'mixed', 'done', 'update', 'command']);
-  assert.deepStrictEqual(C.SCHEMA.required.slice().sort(), Object.keys(C.SCHEMA.properties).sort());
+  C.SCHEMA.required.forEach((k) => assert.ok(k in C.SCHEMA.properties, k));
   assert.strictEqual(C.SCHEMA.additionalProperties, false);
   assert.match(C.SYSTEM, /entry_type/);
 });
