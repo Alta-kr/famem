@@ -209,6 +209,11 @@
     var running = CP.isRunning(n.id) || c.status === 'pending';
 
     if (n.deletedAt && c.entryType === 'command') return null;   // 명령은 결과 카드 대신 그 명령의 답이 뜬다
+    // 고치는 말이었는데 이미 그 값 — "‘기도회’는 이미 내일(일) 20:00이에요"
+    if (c.entryType === 'unchanged') {
+      var u0 = (c.unchanged || [])[0] || {}, p0 = String(u0.at || '').split(' ');
+      return bubble('assistant', h('div.cap', h('div.cap-head', h('span', '‘' + (u0.title || '') + '’는 이미 ' + dayLabel(p0[0], now) + (p0[1] ? ' ' + p0[1] : '') + '이에요'), h('span.cap-head-sub', ' · 바꿀 게 없었어요'))), 'msg-cap');
+    }
     if (n.deletedAt) return bubble('assistant', h('div.cap', h('div.cap-head.meta', '이 글은 메모에서 지웠어요.')), 'msg-cap');
     if (running) {
       return bubble('assistant', h('div.cap.is-pending', { 'aria-busy': 'true' },
@@ -258,7 +263,8 @@
       }
       if (moved.length) {
         var m0 = moved[0], mt = m0.item.title, to = m0.change.to || {};
-        parts.push(moved.length > 1 ? '할 일 ' + moved.length + '개의 날짜를 바꿨어요'
+        parts.push(moved.length > 1 ? moved.length + '개의 날짜·시각을 고쳤어요'
+          : m0.change.kind === 'block' ? '‘' + mt + '’ 일정 시각을 고쳤어요 → ' + movedText(m0.change, now).replace(/에 하기$/, '')
           : to.at ? '‘' + mt + '’' + ui.josa(mt, '를/을').slice(mt.length) + ' ' + movedText(m0.change, now).replace(/에 하기$/, '에 하기로 했어요')
           : '‘' + mt + '’ 마감을 옮겼어요 → ' + dayLabel(to.dueDate, now) + (to.dueTime ? ' ' + to.dueTime : ''));
       }
@@ -290,8 +296,10 @@
     if (it.kind === 'moved') {
       return h('div.cap-row.is-moved', { role: 'listitem', 'data-kind': 'moved' },
         h('span.chip.chip-kind.kind-moved', ui.icon('calendar'), '날짜 변경'),
-        h('button.cap-title', { type: 'button', title: '작업 공간에서 보기 (세부 할 일)', onclick: function () { DN.assistant.work(item.id); } }, title),
-        h('span.chip.cap-date.chip-today', '→ ' + movedText(it.change, now)),
+        it.change.kind === 'block'
+          ? h('button.cap-title', { type: 'button', title: '일정 자세히', onclick: function () { DN.views.schedule.open({ blockId: item.id }); } }, title)
+          : h('button.cap-title', { type: 'button', title: '작업 공간에서 보기 (세부 할 일)', onclick: function () { DN.assistant.work(item.id); } }, title),
+        h('span.chip.cap-date.chip-today', '→ ' + movedText(it.change, now).replace(it.change.kind === 'block' ? /에 하기$/ : /$^/, '')),
         h('button.icon-btn.cap-x', {
           type: 'button', title: '원래 날짜로 되돌리기', 'aria-label': '‘' + title + '’ 날짜 변경 되돌리기',
           onclick: function () {

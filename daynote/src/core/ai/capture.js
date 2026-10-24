@@ -15,7 +15,7 @@
   if (node) module.exports = api;
   if (typeof window !== 'undefined') { window.Daynote = window.Daynote || {}; window.Daynote.aiCapture = api; }
 })(function (O, CMD) {
-  var PROMPT_VERSION = 'capture.v12';   // v2: 큰 할 일 감지 + 단계 초안(보관만) · v3: 메모 종류(메모/아이디어/링크) · v4: 시간 정한 할 일(do_at) · v5: 완료 보고(done_tasks) · v6: 날짜 바꾸기(updated_tasks) · v7: 채팅 명령(commands) · v8: 작업 공간 할 일이 있어도 묶음 말은 묶음으로 · v9: 프로젝트 묶음 · 날 단위로 미루기 · v10: 목록은 할 일 하나 + 세부 할 일 · v11: 걸리는 시간 짐작(typical_minutes) · v12: 준비할 일(prep_steps)
+  var PROMPT_VERSION = 'capture.v13';   // v2: 큰 할 일 감지 + 단계 초안(보관만) · v3: 메모 종류(메모/아이디어/링크) · v4: 시간 정한 할 일(do_at) · v5: 완료 보고(done_tasks) · v6: 날짜 바꾸기(updated_tasks) · v7: 채팅 명령(commands) · v8: 작업 공간 할 일이 있어도 묶음 말은 묶음으로 · v9: 프로젝트 묶음 · 날 단위로 미루기 · v10: 목록은 할 일 하나 + 세부 할 일 · v11: 걸리는 시간 짐작(typical_minutes) · v12: 준비할 일(prep_steps) · v13: 고치는 말 · 오전/오후 짐작
   var ENTRY_TYPES = ['memo', 'task', 'mixed', 'done', 'update', 'command'];
   var NOTE_KINDS = ['memo', 'idea', 'link'];
 
@@ -61,6 +61,11 @@
     'N. 준비할 일: 할 일과 함께 "그 전에", "미리", "준비로", "준비할 것" 처럼 그 일을 하기 전에 틈틈이 해 둘 일을 적으면, 그 일들은 따로 tasks 로 만들지 말고 그 할 일의 prep_steps 에 짧은 제목으로 넣습니다.',
     '   글에 적힌 것만 넣고 지어내지 마세요. 없으면 빈 배열입니다 (breakdown 과 다름 — 사용자가 직접 말한 준비라 바로 세부 할 일로 들어갑니다).',
     '   예) "다음 주 금요일 워크숍 발표. 그 전에 자료 조사랑 슬라이드 템플릿 받아 두기" → tasks: "워크숍 발표"(due 다음 주 금요일), prep_steps ["자료 조사", "슬라이드 템플릿 받기"]',
+    'O. 고치는 말: <context> 에 "방금 정리한 것" 이 있고 사용자가 그것을 고치는 말(예: "아니 오후 8시야", "아니 모레야", "기도회 8시 아니고 7시")을 하면,',
+    '   그 항목을 고친 값으로 다시 적습니다 — 같은 제목으로, 고친 날짜·시각을 넣어 원래 종류(일정은 events, 할 일은 tasks)에. 말하지 않은 날짜·시각은 방금 것 그대로 채웁니다. 앱이 새로 만들지 않고 그 항목을 고칩니다.',
+    '   이때 entry_type 은 "update" 입니다. 고치는 말을 메모나 새 할 일로 만들지 마세요.',
+    'P. 오전/오후: 시각에 오전·오후가 없으면 그런 일이 보통 있는 때로 정합니다. 예) 기도회·예배·모임·저녁 약속·회식 7~11시 → 저녁(19~23시), 출근·조회·아침 운동 6~9시 → 오전, 점심 12시·1시 → 낮.',
+    '   1~6시는 보통 오후(13~18시)입니다. 그래도 애매하면 기준 시각 이후 가장 가까운 때로.',
     'J. 작업 공간의 할 일: <context> 에 "작업 공간에 올려 둔 할 일" 이 있으면, 사용자가 대상을 말하지 않고 "마감 두 시간 후로 미뤄줘", "이거 끝났어", "이거 내일로" 처럼 쓴 글은 그 할 일 이야기입니다.',
     '   이때 done_tasks·updated_tasks 의 title 은 그 할 일 제목을 그대로 씁니다. 다른 할 일 이름이 분명히 적혀 있으면 그쪽입니다. 이런 지시를 새 할 일로 만들지 마세요.',
     '   단, "마감 지난 것들은 2시간 뒤로", "밀린 거 내일로" 처럼 묶음을 말하면 작업 공간의 할 일이 아니라 K(bulk_updates) 입니다 (전부·모두 가 없어도).',
@@ -109,6 +114,8 @@
     // 지금 작업 공간(채팅)에 올려 둔 할 일 — "이거 미뤄줘" 의 대상
     input.focusTask = opts && opts.focusTask ? String(opts.focusTask).slice(0, 200) : null;
     if (input.focusTask && input.openTasks.indexOf(input.focusTask) === -1) input.openTasks = [input.focusTask].concat(input.openTasks);
+    // 방금(30분 안) 정리해 만든 것 — 고치는 말의 대상
+    input.recent = opts && Array.isArray(opts.recent) ? opts.recent.slice(0, 8).map(function (x) { return String(x).slice(0, 160); }) : [];
     // 메모를 할 일 목록으로 끌어 놓았다 — 이 글은 할 일이다 (마감·프로젝트를 함께 알아낸다)
     input.moveToTask = !!(opts && opts.moveToTask);
     return input;
@@ -117,6 +124,7 @@
     var t = O.userText(input);
     var extra = '';
     if (input.focusTask) extra += '작업 공간에 올려 둔 할 일: ' + input.focusTask + '\n';
+    if (input.recent && input.recent.length) extra += '방금 정리한 것 (고치는 말이면 이것을 고친다): ' + input.recent.join(' · ') + '\n';
     if (input.moveToTask) extra += '사용자가 이 글을 할 일 목록으로 끌어 놓았습니다 — 할 일(tasks)로 정리하세요 (entry_type "task"). 마감·할 시각·프로젝트가 글에 있으면 함께 넣고, 목록이면 맨 위 줄이 할 일이고 아래 항목은 세부 할 일입니다.\n';
     return extra ? t.replace('</context>', extra + '</context>') : t;
   }

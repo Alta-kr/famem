@@ -369,9 +369,18 @@
 
     var mine = state.proposals.filter(function (p) { return p.runId === args.run.id && p.status === 'pending' && p.source.id === note.id; });
     var skipped = [];
+    var fixes = [];   // "아니 오후 8시야" — 방금 만든 일정·할 일을 새로 만들지 않고 고친 것
+    var unchanged = [];   // 고치라고 했는데 이미 그 값인 것 { title, at }
     var guessedDur = {};   // 길이를 30분으로 짐작해 넣은 일정 초안
     var ids = [];
+    var saysFix = CORRECT_RE.test([note.title, note.body].join(' '));
     mine.forEach(function (p) {
+      if (p.payload.duplicateOf || saysFix) {
+        var fix = correctExisting(state, p, note, saysFix, now);
+        // 고치라고 했는데 이미 그 값이면 — 바꿀 것 없음 (중복으로 남기지 않는다)
+        if (fix && fix.same) { unchanged.push(fix.same); p.status = 'dismissed'; p.reviewedAt = iso(now); return; }
+        if (fix) { fixes.push(fix); p.status = 'dismissed'; p.reviewedAt = iso(now); return; }
+      }
       if (p.payload.duplicateOf) { skipped.push({ id: p.id, reason: 'duplicate' }); return; }
       if (proj && (userProject || !p.payload.fields.projectId.value)) p.payload.fields.projectId = { value: proj.id, status: 'ok', message: '', options: [] };
       // 날짜·시각이 확실한 일정인데 길이만 없으면 30분으로 두고 캘린더에 넣는다 (나중에 끌어서 고치면 된다)
@@ -446,7 +455,7 @@
     var completed = completeReported(state, note, out.done_tasks, created, now);
     // 날짜 바꾸기 ("견적서는 내일 보낼게") — 앱이 날짜를 다시 계산해 맞을 때만 기존 할 일을 고친다
     var rg = regroup(out, state);
-    var updated = updateReported(state, note, rg.updated, created, completed, now);
+    var updated = fixes.concat(updateReported(state, note, rg.updated, created, completed, now));
     updated = updated.concat(bulkReported(state, note, rg.bulk, created, completed.concat(updated), now));
     var reported = completed.length + updated.length;
     if (entryType === 'done' || entryType === 'update') entryType = reported ? (created.length ? 'mixed' : entryType) : 'memo';
@@ -469,10 +478,12 @@
     if (!note.title && note.captureRole === 'memo' && out.note_title) note.title = String(out.note_title).trim().slice(0, 80);
     // 메모 종류(메모/아이디어/링크) — 사용자가 직접 바꾼 적이 있으면 그대로 둔다
     if (!note.kindByUser) note.kind = NOTE_KIND[out.note_kind] ? out.note_kind : (note.kind || 'memo');
-    if (entryType === 'command') { note.captureRole = 'memo'; note.deletedAt = iso(now); }
+    // 고치는 말인데 이미 그대로였고 다른 결과가 없으면 — 메모로 남기지 않고 "이미 그 시각이에요" 만
+    if (unchanged.length && !created.length && !reported && !skipped.length) entryType = 'unchanged';
+    if (entryType === 'command' || entryType === 'unchanged') { note.captureRole = 'memo'; note.deletedAt = iso(now); }
     note.capture = Object.assign({}, note.capture, {
       status: 'done', entryType: entryType, runId: args.run.id, doneAt: iso(now),
-      created: created, skipped: skipped, completed: completed, updated: updated, projectByAi: !!(proj && !userProject), largeTasks: large
+      created: created, skipped: skipped, completed: completed, updated: updated, unchanged: unchanged, projectByAi: !!(proj && !userProject), largeTasks: large
     });
     return note.capture;
   }
@@ -489,6 +500,86 @@
     var near = open.filter(function (t) { var n = nospace(t.title); return n === k || n.indexOf(k) !== -1 || k.indexOf(n) !== -1; });
     return near.length === 1 ? near[0] : null;
   }
+  // ---------------------------------------------------------------- 고치는 말 ("아니 오후 8시야")
+  //   방금(30분 안) 채팅으로 정리해 만든 일정·할 일과 같은 것을 AI 가 다시 적었으면 — 새로 만들지 않고 그 날짜·시각을 고친다.
+  //   같은 날 같은 이름(중복)이면 고치는 말이 없어도 방금 만든 것일 때만, 날짜까지 바뀌면 고치는 말이 있을 때만.
+  var CORRECT_RE = /(아니|아냐|정정|수정|고쳐|잘못|틀렸|말고|바꿔|바꿀게|변경)/;
+  function recentCreated(state, now, exceptNoteId) {
+    var since = new Date(now).getTime() - 30 * 60000, out = [];
+    state.notes.forEach(function (n) {
+      if (n.id === exceptNoteId || !n.capture || !n.capture.at || new Date(n.capture.at).getTime() < since) return;
+      M.liveCreated(state, n).forEach(function (c) {
+        var item = M.byId(c.kind === 'task' ? state.tasks : state.blocks, c.id);
+        if (item) out.push({ kind: c.kind === 'task' ? 'task' : 'block', item: item });
+      });
+      ((n.capture && n.capture.updated) || []).forEach(function (u) {
+        var item = M.byId(u.kind === 'block' ? state.blocks : state.tasks, u.id);
+        if (item && !out.some(function (o) { return o.item === item; })) out.push({ kind: u.kind === 'block' ? 'block' : 'task', item: item });
+      });
+    });
+    return out;
+  }
+  // AI 에게 알려 줄 '방금 정리한 것' — "기도회 (일정, 2026-10-25 08:00)"
+  function recentLines(state, now) {
+    return recentCreated(state, now).map(function (r) {
+      var x = r.item;
+      if (r.kind === 'block') return (x.title || '일정') + ' (일정, ' + D.ymd(x.start) + ' ' + D.hm(x.start) + ')';
+      var w = M.nextBlockForTask(state, x.id, now);
+      return x.title + ' (할 일' + (x.dueDate ? ', 마감 ' + x.dueDate + (x.dueTime ? ' ' + x.dueTime : '') : '') + (w ? ', ' + D.ymd(w.start) + ' ' + D.hm(w.start) + '에 하기' : '') + ')';
+    }).slice(0, 8);
+  }
+  function correctExisting(state, p, note, says, now) {
+    var ev = effective(p);
+    var nt = nospace(ev.title || '');
+    var recent = recentCreated(state, now, note.id);
+    function same(x) { var t = nospace(x.title || ''); return !!(t && nt && (t === nt || (Math.min(t.length, nt.length) >= 2 && (t.indexOf(nt) !== -1 || nt.indexOf(t) !== -1)))); }
+    function isRecent(item) { return recent.some(function (r) { return r.item === item; }); }
+    var dup = p.payload.duplicateOf;
+    if (p.kind === 'event' && ev.saveAs !== 'task') {
+      if (!ev.date && !ev.time) return null;
+      var b = dup && dup.kind === 'block' ? M.byId(state.blocks, dup.id) : null;
+      if (!b && says) { var rb = recent.filter(function (r) { return r.kind === 'block' && !r.item.taskId && same(r.item); })[0]; b = rb && rb.item; }
+      if (!b || !(says || isRecent(b))) return null;
+      // 말하지 않은 쪽(날짜나 시각)은 원래 일정 그대로 — "아니 모레야" · "아니 오후 8시야"
+      if (!ev.date || !ev.time) { if (!says) return null; ev.date = ev.date || D.ymd(b.start); ev.time = ev.time || D.hm(b.start); }
+      var s = D.parseYmd(ev.date, ev.time);
+      if (new Date(b.start).getTime() === s.getTime() && !(ev.durationMinutes > 0)) return says ? { same: { title: b.title || ev.title, at: ev.date + ' ' + ev.time } } : null;
+      var len = ev.durationMinutes > 0 ? ev.durationMinutes * 60000 : new Date(b.end) - new Date(b.start);
+      var rec = { kind: 'block', id: b.id, prev: { start: b.start, end: b.end }, to: { at: ev.date + ' ' + ev.time } };
+      M.updateBlock(state, b.id, { start: s.toISOString(), end: new Date(s.getTime() + len).toISOString() });
+      return rec;
+    }
+    var t = dup && dup.kind === 'task' ? M.byId(state.tasks, dup.id) : null;
+    if (!t && says) { var rt = recent.filter(function (r) { return r.kind === 'task' && same(r.item); })[0]; t = rt && rt.item; }
+    if (!t || t.deletedAt || t.status === 'done' || !(says || isRecent(t))) return null;
+    var at = ev.atDate && ev.atTime ? { date: ev.atDate, time: ev.atTime } : p.kind === 'event' && ev.date && ev.time ? { date: ev.date, time: ev.time } : null;
+    var due = ev.dueDate ? { date: ev.dueDate, time: ev.dueTime || null } : null;
+    // 옮길 작업 시간: 앞으로 잡힌 것, 없으면 마지막 것 (방금 넣은 시각이 이미 지난 시각일 수도 있다 — "3시" 를 새벽으로 받은 경우)
+    var works = M.blocksForTask(state, t.id).filter(function (x) { return x.kind === 'work'; });
+    var work = works.filter(function (x) { return new Date(x.end) > new Date(now); })[0] || works[works.length - 1] || null;
+    var atSame = !at || !!(work && new Date(work.start).getTime() === D.parseYmd(at.date, at.time).getTime());
+    var dueSame = !due || (due.date === t.dueDate && (due.time || null) === (t.dueTime || null));
+    if (atSame && dueSame) return says && (at || due) ? { same: { title: t.title, at: at ? at.date + ' ' + at.time : due.date + (due.time ? ' ' + due.time : '') } } : null;
+    var rec2 = { kind: 'task', id: t.id, prev: { dueDate: t.dueDate, dueTime: t.dueTime, planDate: t.planDate || null }, prevWork: work ? { id: work.id, start: work.start, end: work.end } : null, newWorkId: null };
+    if (!dueSame) M.updateTask(state, t.id, { dueDate: due.date, dueTime: due.time }, now);
+    if (!atSame) {
+      var st = D.parseYmd(at.date, at.time);
+      var wl = work ? new Date(work.end) - new Date(work.start) : 30 * 60000;
+      if (work) M.updateBlock(state, work.id, { start: st.toISOString(), end: new Date(st.getTime() + wl).toISOString() });
+      else rec2.newWorkId = M.addBlock(state, { taskId: t.id, title: t.title, start: st.toISOString(), end: new Date(st.getTime() + wl).toISOString(), origin: 'user', durationGuessed: true }).id;
+    }
+    rec2.to = { dueDate: dueSame ? t.dueDate : due.date, dueTime: dueSame ? t.dueTime : due.time, at: atSame ? null : at.date + ' ' + at.time };
+    return rec2;
+  }
+  // 날짜 바꾸기 기록 되돌리기 (할 일·일정 모두)
+  function undoUpdate(state, u, now) {
+    if (u.kind === 'block') { if (M.byId(state.blocks, u.id) && u.prev) M.updateBlock(state, u.id, { start: u.prev.start, end: u.prev.end }); return; }
+    var tk = M.byId(state.tasks, u.id);
+    if (tk && u.prev) M.updateTask(state, tk.id, Object.assign({ dueDate: u.prev.dueDate, dueTime: u.prev.dueTime }, 'planDate' in u.prev ? { planDate: u.prev.planDate } : {}), now);
+    if (u.prevWork) M.updateBlock(state, u.prevWork.id, { start: u.prevWork.start, end: u.prevWork.end });
+    if (u.newWorkId) M.deleteBlock(state, u.newWorkId);
+  }
+
   // 날짜 바꾸기: due(마감) 또는 do_at(할 시각). 바꾸기 전 값을 함께 둬서 카드의 × 로 되돌린다
   // 할 일 하나의 마감(due) 또는 할 시각(do_at)을 바꾼다. 바꾸기 전 값을 함께 돌려줘 카드의 × 로 되돌린다
   function changeDue(state, t, dueRaw, atRaw, q, note, now) {
@@ -525,6 +616,86 @@
     }
     if (!asPlan) rec.to = { dueDate: due ? due.date : null, dueTime: due ? due.time || null : null, at: at ? at.date + ' ' + at.time : null };
     return rec;
+  }
+
+  // ---------------------------------------------------------------- 고치는 말 ("아니 오후 8시야")
+  //   방금(30분 안) 채팅으로 정리해 만든 일정·할 일과 같은 것을 AI 가 다시 적었으면 — 새로 만들지 않고 그 날짜·시각을 고친다.
+  //   같은 날 같은 이름(중복)이면 고치는 말이 없어도 방금 만든 것일 때만, 날짜까지 바뀌면 고치는 말이 있을 때만.
+  var CORRECT_RE = /(아니|아냐|정정|수정|고쳐|잘못|틀렸|말고|바꿔|바꿀게|변경)/;
+  function recentCreated(state, now, exceptNoteId) {
+    var since = new Date(now).getTime() - 30 * 60000, out = [];
+    state.notes.forEach(function (n) {
+      if (n.id === exceptNoteId || !n.capture || !n.capture.at || new Date(n.capture.at).getTime() < since) return;
+      M.liveCreated(state, n).forEach(function (c) {
+        var item = M.byId(c.kind === 'task' ? state.tasks : state.blocks, c.id);
+        if (item) out.push({ kind: c.kind === 'task' ? 'task' : 'block', item: item });
+      });
+      ((n.capture && n.capture.updated) || []).forEach(function (u) {
+        var item = M.byId(u.kind === 'block' ? state.blocks : state.tasks, u.id);
+        if (item && !out.some(function (o) { return o.item === item; })) out.push({ kind: u.kind === 'block' ? 'block' : 'task', item: item });
+      });
+    });
+    return out;
+  }
+  // AI 에게 알려 줄 '방금 정리한 것' — "기도회 (일정, 2026-10-25 08:00)"
+  function recentLines(state, now) {
+    return recentCreated(state, now).map(function (r) {
+      var x = r.item;
+      if (r.kind === 'block') return (x.title || '일정') + ' (일정, ' + D.ymd(x.start) + ' ' + D.hm(x.start) + ')';
+      var w = M.nextBlockForTask(state, x.id, now);
+      return x.title + ' (할 일' + (x.dueDate ? ', 마감 ' + x.dueDate + (x.dueTime ? ' ' + x.dueTime : '') : '') + (w ? ', ' + D.ymd(w.start) + ' ' + D.hm(w.start) + '에 하기' : '') + ')';
+    }).slice(0, 8);
+  }
+  function correctExisting(state, p, note, says, now) {
+    var ev = effective(p);
+    var nt = nospace(ev.title || '');
+    var recent = recentCreated(state, now, note.id);
+    function same(x) { var t = nospace(x.title || ''); return !!(t && nt && (t === nt || (Math.min(t.length, nt.length) >= 2 && (t.indexOf(nt) !== -1 || nt.indexOf(t) !== -1)))); }
+    function isRecent(item) { return recent.some(function (r) { return r.item === item; }); }
+    var dup = p.payload.duplicateOf;
+    if (p.kind === 'event' && ev.saveAs !== 'task') {
+      if (!ev.date && !ev.time) return null;
+      var b = dup && dup.kind === 'block' ? M.byId(state.blocks, dup.id) : null;
+      if (!b && says) { var rb = recent.filter(function (r) { return r.kind === 'block' && !r.item.taskId && same(r.item); })[0]; b = rb && rb.item; }
+      if (!b || !(says || isRecent(b))) return null;
+      // 말하지 않은 쪽(날짜나 시각)은 원래 일정 그대로 — "아니 모레야" · "아니 오후 8시야"
+      if (!ev.date || !ev.time) { if (!says) return null; ev.date = ev.date || D.ymd(b.start); ev.time = ev.time || D.hm(b.start); }
+      var s = D.parseYmd(ev.date, ev.time);
+      if (new Date(b.start).getTime() === s.getTime() && !(ev.durationMinutes > 0)) return says ? { same: { title: b.title || ev.title, at: ev.date + ' ' + ev.time } } : null;
+      var len = ev.durationMinutes > 0 ? ev.durationMinutes * 60000 : new Date(b.end) - new Date(b.start);
+      var rec = { kind: 'block', id: b.id, prev: { start: b.start, end: b.end }, to: { at: ev.date + ' ' + ev.time } };
+      M.updateBlock(state, b.id, { start: s.toISOString(), end: new Date(s.getTime() + len).toISOString() });
+      return rec;
+    }
+    var t = dup && dup.kind === 'task' ? M.byId(state.tasks, dup.id) : null;
+    if (!t && says) { var rt = recent.filter(function (r) { return r.kind === 'task' && same(r.item); })[0]; t = rt && rt.item; }
+    if (!t || t.deletedAt || t.status === 'done' || !(says || isRecent(t))) return null;
+    var at = ev.atDate && ev.atTime ? { date: ev.atDate, time: ev.atTime } : p.kind === 'event' && ev.date && ev.time ? { date: ev.date, time: ev.time } : null;
+    var due = ev.dueDate ? { date: ev.dueDate, time: ev.dueTime || null } : null;
+    // 옮길 작업 시간: 앞으로 잡힌 것, 없으면 마지막 것 (방금 넣은 시각이 이미 지난 시각일 수도 있다 — "3시" 를 새벽으로 받은 경우)
+    var works = M.blocksForTask(state, t.id).filter(function (x) { return x.kind === 'work'; });
+    var work = works.filter(function (x) { return new Date(x.end) > new Date(now); })[0] || works[works.length - 1] || null;
+    var atSame = !at || !!(work && new Date(work.start).getTime() === D.parseYmd(at.date, at.time).getTime());
+    var dueSame = !due || (due.date === t.dueDate && (due.time || null) === (t.dueTime || null));
+    if (atSame && dueSame) return says && (at || due) ? { same: { title: t.title, at: at ? at.date + ' ' + at.time : due.date + (due.time ? ' ' + due.time : '') } } : null;
+    var rec2 = { kind: 'task', id: t.id, prev: { dueDate: t.dueDate, dueTime: t.dueTime, planDate: t.planDate || null }, prevWork: work ? { id: work.id, start: work.start, end: work.end } : null, newWorkId: null };
+    if (!dueSame) M.updateTask(state, t.id, { dueDate: due.date, dueTime: due.time }, now);
+    if (!atSame) {
+      var st = D.parseYmd(at.date, at.time);
+      var wl = work ? new Date(work.end) - new Date(work.start) : 30 * 60000;
+      if (work) M.updateBlock(state, work.id, { start: st.toISOString(), end: new Date(st.getTime() + wl).toISOString() });
+      else rec2.newWorkId = M.addBlock(state, { taskId: t.id, title: t.title, start: st.toISOString(), end: new Date(st.getTime() + wl).toISOString(), origin: 'user', durationGuessed: true }).id;
+    }
+    rec2.to = { dueDate: dueSame ? t.dueDate : due.date, dueTime: dueSame ? t.dueTime : due.time, at: atSame ? null : at.date + ' ' + at.time };
+    return rec2;
+  }
+  // 날짜 바꾸기 기록 되돌리기 (할 일·일정 모두)
+  function undoUpdate(state, u, now) {
+    if (u.kind === 'block') { if (M.byId(state.blocks, u.id) && u.prev) M.updateBlock(state, u.id, { start: u.prev.start, end: u.prev.end }); return; }
+    var tk = M.byId(state.tasks, u.id);
+    if (tk && u.prev) M.updateTask(state, tk.id, Object.assign({ dueDate: u.prev.dueDate, dueTime: u.prev.dueTime }, 'planDate' in u.prev ? { planDate: u.prev.planDate } : {}), now);
+    if (u.prevWork) M.updateBlock(state, u.prevWork.id, { start: u.prevWork.start, end: u.prevWork.end });
+    if (u.newWorkId) M.deleteBlock(state, u.newWorkId);
   }
 
   // 날짜 바꾸기: due(마감) 또는 do_at(할 시각). 바꾸기 전 값을 함께 둬서 카드의 × 로 되돌린다
@@ -686,12 +857,7 @@
     (note.capture.completed || []).forEach(function (d) {
       M.reopenTask(state, d.id, now, { undoOf: d.historyId, prevStatus: d.prevStatus });
     });
-    (note.capture.updated || []).forEach(function (u) {
-      var tk = M.byId(state.tasks, u.id);
-      if (tk && u.prev) M.updateTask(state, tk.id, Object.assign({ dueDate: u.prev.dueDate, dueTime: u.prev.dueTime }, 'planDate' in u.prev ? { planDate: u.prev.planDate } : {}), now);
-      if (u.prevWork) M.updateBlock(state, u.prevWork.id, { start: u.prevWork.start, end: u.prevWork.end });
-      if (u.newWorkId) M.deleteBlock(state, u.newWorkId);
-    });
+    (note.capture.updated || []).forEach(function (u) { undoUpdate(state, u, now); });
     note.capture = Object.assign({}, note.capture, { completed: [], updated: [] });
   }
 
@@ -935,12 +1101,7 @@
     // 완료 보고 줄을 빼면 "완료" 를 취소한다 (AI 가 잘못 짚은 것 — 완료 기록도 남기지 않는다)
     if (ref.kind === 'moved') {
       var u = (note.capture.updated || []).filter(function (c) { return c.id === ref.id; })[0];
-      var tk = u && M.byId(state.tasks, u.id);
-      if (tk) {
-        M.updateTask(state, tk.id, Object.assign({ dueDate: u.prev.dueDate, dueTime: u.prev.dueTime }, 'planDate' in u.prev ? { planDate: u.prev.planDate } : {}), now);
-        if (u.prevWork) M.updateBlock(state, u.prevWork.id, { start: u.prevWork.start, end: u.prevWork.end });
-        if (u.newWorkId) M.deleteBlock(state, u.newWorkId);
-      }
+      if (u) undoUpdate(state, u, now);
       var restU = (note.capture.updated || []).filter(function (c) { return c.id !== ref.id; });
       note.capture = Object.assign({}, note.capture, { updated: restU, changedByUser: true });
       if (!M.captureHasResults(state, note)) { note.captureRole = 'memo'; note.capture.entryType = 'memo'; }
@@ -978,7 +1139,7 @@
     });
     // 날짜를 바꾼 할 일 줄
     M.liveUpdated(state, note).forEach(function (x) {
-      out.push({ kind: 'moved', ref: { kind: 'moved', id: x.id }, item: M.byId(state.tasks, x.id), change: x });
+      out.push({ kind: 'moved', ref: { kind: 'moved', id: x.id }, item: M.byId(x.kind === 'block' ? state.blocks : state.tasks, x.id), change: x });
     });
     if (note.captureRole !== 'task_source' || !out.length) out.unshift({ kind: note.kind || 'memo', ref: { kind: 'note', id: note.id }, item: note });
     return out;
@@ -998,7 +1159,7 @@
     refreshStale: refreshStale, staleForDeletedNote: staleForDeletedNote, effective: effective, setEdit: setEdit,
     takeAiUpdate: takeAiUpdate, dismiss: dismiss, restore: restore, checkSelection: checkSelection,
     applySelections: applySelections, readiness: readiness, partition: partition, FIELD_LABEL: FIELD_LABEL, forNote: forNote,
-    applyCapture: applyCapture, captureToMemo: captureToMemo, captureToTask: captureToTask, captureSetProject: captureSetProject, digestFor: digestFor, eventRange: eventRange,
+    applyCapture: applyCapture, recentLines: recentLines, recentCreated: recentCreated, captureToMemo: captureToMemo, captureToTask: captureToTask, captureSetProject: captureSetProject, digestFor: digestFor, eventRange: eventRange,
     captureSetKind: captureSetKind, captureSetItemKind: captureSetItemKind, captureRemoveItem: captureRemoveItem, captureItems: captureItems
   };
 });

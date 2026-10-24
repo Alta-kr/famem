@@ -81,6 +81,8 @@
     var focus = DN.assistant && DN.assistant.focusTask && DN.assistant.focusTask();
     if (focus) opts.focusTask = focus.title;
     if (copts.moveToTask) opts.moveToTask = true;
+    // 방금 정리한 것 — "아니 오후 8시야" 처럼 고치는 말의 대상
+    opts.recent = P.recentLines(S.state, now()).filter(function (l) { return l; });
     var input = C.buildInput(sent, opts);
     var run = S.mutate(null, function (s) {
       var n = M.byId(s.notes, noteId);

@@ -181,6 +181,20 @@
     return res;
   }
 
+  // 오전·오후를 말하지 않은 시각("8시 기도회") — AI 가 고른 쪽 대신 그런 일이 보통 있는 때로
+  //   1~6시: 오후 (새벽·출근·공항 같은 이른 일이면 그대로) · 7~11시: 저녁에 하는 일(기도회·예배·모임·회식·약속…)이면 저녁
+  var MER_RE = /(오전|오후|아침|저녁|밤|새벽|낮|정오|자정|am|pm)/i;
+  var EVE_RE = /(기도회|예배|셀|모임|회식|저녁|술|약속|파티|공연|영화|찬양|리허설|스터디|동아리|데이트|퇴근|야식|콘서트|뮤지컬)/;
+  var EARLY_RE = /(새벽|기상|출근|조회|비행|공항|첫차|등교)/;
+  function meridiem(src, ai, cands) {
+    if (cands.length !== 2 || MER_RE.test(src)) return ai;
+    var am = cands.filter(function (c) { return +c.slice(0, 2) < 12; })[0], pm = cands.filter(function (c) { return +c.slice(0, 2) >= 12; })[0];
+    if (!am || !pm) return ai;
+    var hh = +am.slice(0, 2);
+    if (hh >= 1 && hh <= 6 && !EARLY_RE.test(src)) return pm;
+    if (hh >= 7 && hh <= 11 && EVE_RE.test(src) && !EARLY_RE.test(src)) return pm;
+    return ai;
+  }
   function checkTime(w, quote, ctx, required) {
     var ai = w.time && TIME_RE.test(w.time) ? w.time : null;
     var src = [w.text || '', quote || ''].join(' ');
@@ -193,7 +207,7 @@
       if (ai) return field(null, 'confirm', '메모에 시각이 없는데 AI가 시각을 제안했습니다.', [opt('AI 제안', ai)]);
       return required ? field(null, 'confirm', '메모에 시각이 없습니다. 시각을 정해 주세요.') : field(null, 'ok');
     }
-    if (ai && cands.indexOf(ai) !== -1) return field(ai, 'ok');
+    if (ai && cands.indexOf(ai) !== -1) return field(meridiem(src, ai, cands), 'ok');
     var options = cands.map(function (c) { return opt('메모 표현', c); });
     if (ai) options.unshift(opt('AI 해석', ai));
     return field(null, 'confirm', cands.length > 1 ? '오전인지 오후인지 메모에 없습니다.' : '시각 해석이 다릅니다.', options);

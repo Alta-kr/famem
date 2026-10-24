@@ -154,8 +154,27 @@
         break;
       case 'list_today': listToday(); break;
       case 'day_close': dayClose(); break;
+      case 'fix_ampm': fixAmPm(c.pm); break;
     }
   }
+  // "아니 오후야" — 방금(30분 안) 채팅으로 넣은 일정·작업 시간 중 마지막 것의 오전/오후를 바꾼다 (Ctrl+Z 로 되돌릴 수 있다)
+  function fixAmPm(pm) {
+    var n = now();
+    var cands = DN.aiProposals.recentCreated(S.state, n).map(function (r) {
+      if (r.kind === 'block') return { title: r.item.title || '일정', block: r.item };
+      var w = M.blocksForTask(S.state, r.item.id).filter(function (b) { return b.kind === 'work'; }).pop();
+      return w ? { title: r.item.title, block: w } : null;
+    }).filter(Boolean);
+    var last = cands[cands.length - 1];
+    if (!last) { post({ kind: 'text', text: '고칠 만한 방금 적은 일정이 없어요. 어떤 일정인지 함께 적어 주세요 (예: "기도회 오후 8시야").' }); return; }
+    var b = last.block, h0 = new Date(b.start).getHours();
+    var shift = pm && h0 < 12 ? 12 : !pm && h0 >= 12 ? -12 : 0;
+    if (!shift) { post({ kind: 'text', text: '‘' + last.title + '’는 이미 ' + (pm ? '오후' : '오전') + ' ' + D.hm(b.start) + '이에요.' }); return; }
+    var s = D.addMinutes(new Date(b.start), shift * 60), e = D.addMinutes(new Date(b.end), shift * 60);
+    S.mutate('오전/오후 고치기', function (st) { M.updateBlock(st, b.id, { start: s.toISOString(), end: e.toISOString() }); }, { source: 'chat' });
+    post({ kind: 'text', text: '‘' + last.title + '’ 시각을 고쳤어요 → ' + D.relDay(D.ymd(s), n) + ' ' + D.hm(s) + ' (' + (pm ? '오후' : '오전') + '). 되돌리려면 Ctrl+Z.' });
+  }
+
   // "오늘 할 일 뭐야?" — 오늘 할 일을 채팅에 요약
   function listToday() {
     var n = now();

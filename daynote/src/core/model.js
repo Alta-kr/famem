@@ -356,7 +356,7 @@
   // 날짜 바꾸기 보고("견적서는 내일 보낼게")로 고친 할 일
   function liveUpdated(state, note) {
     return ((note.capture && note.capture.updated) || []).filter(function (c) {
-      var t = byId(state.tasks, c.id);
+      var t = byId(c.kind === 'block' ? state.blocks : state.tasks, c.id);
       return t && !t.deletedAt;
     });
   }
