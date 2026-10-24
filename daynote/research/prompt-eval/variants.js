@@ -119,4 +119,8 @@ function v41(c) { return { system: V41_SYSTEM, user: c.user_prompt.replace(/(시
 const V42_SYSTEM = fs.readFileSync(path.join(__dirname, 'variants/v42-system.txt'), 'utf8');
 function v42(c) { return { system: V42_SYSTEM, user: v2User(c), schema: V4_SCHEMA }; }
 
-module.exports = { v42, v0, v1, v2, v3, v4, v5, v41, calendarLine, calendarLine41, V2_SCHEMA, V3_SCHEMA, V4_SCHEMA, V5_SCHEMA };
+// ---------------------------------------------------------------- vF — 최종안: v4 + 효과 확인된 두 가지(지난 기록+일정 예시 · "좀 나중에"=memo) + 반복 금지 + 출력 상한
+const VF_SYSTEM = fs.readFileSync(path.join(__dirname, 'variants/vF-system.txt'), 'utf8');
+function vF(c) { return { system: VF_SYSTEM, user: v2User(c), schema: V4_SCHEMA, maxOut: 2048 }; }
+
+module.exports = { vF, v42, v0, v1, v2, v3, v4, v5, v41, calendarLine, calendarLine41, V2_SCHEMA, V3_SCHEMA, V4_SCHEMA, V5_SCHEMA };

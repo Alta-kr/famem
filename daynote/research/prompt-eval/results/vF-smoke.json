@@ -1,0 +1,170 @@
+{
+ "variant": "vF",
+ "model": "gemini-3.5-flash-lite",
+ "at": "2026-10-24T05:42:16.183Z",
+ "seconds": 2,
+ "results": [
+  {
+   "id": "031",
+   "ok": true,
+   "status": "completed",
+   "output": {
+    "entry_type": "task",
+    "note_kind": "memo",
+    "note_title": "다음주 월요일 점심식사",
+    "note_project_hint": null,
+    "tasks": [],
+    "events": [
+     {
+      "title": "점심식사",
+      "evidence": {
+       "quote": "다음주 월요일 서울 강남에서 12시에 점심식사",
+       "line": 0
+      },
+      "start": {
+       "text": "다음주 월요일 12시",
+       "date": "2026-10-26",
+       "time": "12:00"
+      },
+      "basis": "explicit",
+      "duration_minutes": 60,
+      "location": "서울 강남",
+      "typical_minutes": 60
+     }
+    ],
+    "done_tasks": [],
+    "updated_tasks": [],
+    "bulk_updates": [],
+    "commands": []
+   },
+   "raw": "{\n  \"entry_type\": \"task\",\n  \"note_kind\": \"memo\",\n  \"note_title\": \"다음주 월요일 점심식사\",\n  \"note_project_hint\": null,\n  \"tasks\": [],\n  \"events\": [\n    {\n      \"title\": \"점심식사\",\n      \"evidence\": {\n        \"quote\": \"다음주 월요일 서울 강남에서 12시에 점심식사\",\n        \"line\": 0\n      },\n      \"start\": {\n        \"text\": \"다음주 월요일 12시\",\n        \"date\": \"2026-10-26\",\n        \"time\": \"12:00\"\n      },\n      \"basis\": \"explicit\",\n      \"duration_minutes\": 60,\n      \"location\": \"서울 강남\",\n      \"typical_minutes\": 60\n    }\n  ],\n  \"done_tasks\": [],\n  \"updated_tasks\": [],\n  \"bulk_updates\": [],\n  \"commands\": []\n}",
+   "ms": 2199,
+   "attempts": 1,
+   "usage": {
+    "input": 2539,
+    "cached": 0,
+    "output": 244,
+    "thought": 0
+   }
+  },
+  {
+   "id": "051",
+   "ok": true,
+   "status": "completed",
+   "output": {
+    "entry_type": "memo",
+    "note_kind": "memo",
+    "note_title": "새로 방문한 조용한 카페 기록",
+    "note_project_hint": null,
+    "tasks": [],
+    "events": [],
+    "done_tasks": [],
+    "updated_tasks": [],
+    "bulk_updates": [],
+    "commands": [],
+    "open_questions": [],
+    "sections": [
+     {
+      "heading": "카페 방문 후기",
+      "bullets": [
+       {
+        "text": "오늘 새로 간 카페는 전반적으로 조용한 분위기였다.",
+        "line": 0
+       },
+       {
+        "text": "특히 창가 자리가 마음에 들었다.",
+        "line": 0
+       }
+      ]
+     }
+    ],
+    "summary": "오늘 방문한 새로운 카페는 조용하고 창가 자리가 좋아 인상적이었다."
+   },
+   "raw": "{\n  \"entry_type\": \"memo\",\n  \"note_kind\": \"memo\",\n  \"note_title\": \"새로 방문한 조용한 카페 기록\",\n  \"note_project_hint\": null,\n  \"tasks\": [],\n  \"events\": [],\n  \"done_tasks\": [],\n  \"updated_tasks\": [],\n  \"bulk_updates\": [],\n  \"commands\": [],\n  \"open_questions\": [],\n  \"sections\": [\n    {\n      \"heading\": \"카페 방문 후기\",\n      \"bullets\": [\n        {\n          \"text\": \"오늘 새로 간 카페는 전반적으로 조용한 분위기였다.\",\n          \"line\": 0\n        },\n        {\n          \"text\": \"특히 창가 자리가 마음에 들었다.\",\n          \"line\": 0\n        }\n      ]\n    }\n  ],\n  \"summary\": \"오늘 방문한 새로운 카페는 조용하고 창가 자리가 좋아 인상적이었다.\"\n}",
+   "ms": 2132,
+   "attempts": 1,
+   "usage": {
+    "input": 2538,
+    "cached": 0,
+    "output": 223,
+    "thought": 0
+   }
+  },
+  {
+   "id": "071",
+   "ok": true,
+   "status": "completed",
+   "output": {
+    "entry_type": "mixed",
+    "note_kind": "memo",
+    "note_title": "오늘 고객 반응과 제안서 발송",
+    "note_project_hint": null,
+    "tasks": [
+     {
+      "title": "제안서 보내기",
+      "evidence": {
+       "quote": "내일까지 제안서 보내기.",
+       "line": 0
+      },
+      "due": {
+       "text": "내일까지",
+       "date": "2026-10-25",
+       "time": null
+      },
+      "do_at": {
+       "text": null,
+       "date": null,
+       "time": null
+      },
+      "size": "large",
+      "basis": "explicit",
+      "breakdown": [
+       {
+        "title": "제안서 내용 초안 작성",
+        "minutes": 30
+       },
+       {
+        "title": "제안서 검토 및 수정",
+        "minutes": 20
+       },
+       {
+        "title": "제안서 발송",
+        "minutes": 10
+       }
+      ],
+      "prep_steps": [],
+      "project_hint": null,
+      "typical_minutes": 120
+     }
+    ],
+    "events": [],
+    "done_tasks": [],
+    "updated_tasks": [],
+    "bulk_updates": [],
+    "commands": [],
+    "open_questions": [],
+    "sections": [
+     {
+      "heading": "고객 반응",
+      "bullets": [
+       {
+        "text": "오늘 고객 반응이 좋았음.",
+        "line": 0
+       }
+      ]
+     }
+    ],
+    "summary": "오늘 고객 반응이 매우 좋았으며, 내일까지 제안서를 보내야 합니다."
+   },
+   "raw": "{\n  \"entry_type\": \"mixed\",\n  \"note_kind\": \"memo\",\n  \"note_title\": \"오늘 고객 반응과 제안서 발송\",\n  \"note_project_hint\": null,\n  \"tasks\": [\n    {\n      \"title\": \"제안서 보내기\",\n      \"evidence\": {\n        \"quote\": \"내일까지 제안서 보내기.\",\n        \"line\": 0\n      },\n      \"due\": {\n        \"text\": \"내일까지\",\n        \"date\": \"2026-10-25\",\n        \"time\": null\n      },\n      \"do_at\": {\n        \"text\": null,\n        \"date\": null,\n        \"time\": null\n      },\n      \"size\": \"large\",\n      \"basis\": \"explicit\",\n      \"breakdown\": [\n        {\n          \"title\": \"제안서 내용 초안 작성\",\n          \"minutes\": 30\n        },\n        {\n          \"title\": \"제안서 검토 및 수정\",\n          \"minutes\": 20\n        },\n        {\n          \"title\": \"제안서 발송\",\n          \"minutes\": 10\n        }\n      ],\n      \"prep_steps\": [],\n      \"project_hint\": null,\n      \"typical_minutes\": 120\n    }\n  ],\n  \"events\": [],\n  \"done_tasks\": [],\n  \"updated_tasks\": [],\n  \"bulk_updates\": [],\n  \"commands\": [],\n  \"open_questions\": [],\n  \"sections\": [\n    {\n      \"heading\": \"고객 반응\",\n      \"bullets\": [\n        {\n          \"text\": \"오늘 고객 반응이 좋았음.\",\n          \"line\": 0\n        }\n      ]\n    }\n  ],\n  \"summary\": \"오늘 고객 반응이 매우 좋았으며, 내일까지 제안서를 보내야 합니다.\"\n}",
+   "ms": 2483,
+   "attempts": 1,
+   "usage": {
+    "input": 2538,
+    "cached": 0,
+    "output": 446,
+    "thought": 0
+   }
+  }
+ ]
+}

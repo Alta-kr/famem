@@ -20,7 +20,7 @@ const opt = (k, d) => { const i = args.indexOf(k); return i === -1 ? d : args[i 
 const MODEL = opt('--model', 'gemini-3.5-flash-lite');
 const CONC = +opt('--conc', 5);
 const ONLY = opt('--only', null);
-const variants = args.filter((a, i) => /^v\d/.test(a) && !/^--/.test(args[i - 1] || ''));
+const variants = args.filter((a, i) => /^v[0-9A-Z]/.test(a) && !/^--/.test(args[i - 1] || ''));
 const THINKING = { 'gemini-3.8-flash': 'low', 'gemini-3.5-flash-lite': 'minimal' };
 const client = new GoogleGenAI({ apiKey: KEY });
 const red = (s) => String(s || '').split(KEY).join('[KEY]').replace(/AIza[0-9A-Za-z_-]{10,}/g, '[KEY]');
@@ -32,7 +32,7 @@ async function once(p) {
     try {
       const res = await client.interactions.create({
         model: MODEL, system_instruction: p.system, input: p.user,
-        generation_config: { thinking_level: THINKING[MODEL] || 'low' },
+        generation_config: Object.assign({ thinking_level: THINKING[MODEL] || 'low' }, p.maxOut ? { max_output_tokens: p.maxOut } : {}),
         response_format: { type: 'text', mime_type: 'application/json', schema: p.schema },
         store: false
       }, { maxRetries: 0 });
