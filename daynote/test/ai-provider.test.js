@@ -97,6 +97,15 @@ test('Gemini 오류: 한도 초과(429)는 한 번 더 시도하고, 키 오류(
     assert.ok(/ai\.studio\/spend/.test(rc.error.message));
     assert.strictEqual(capCalls, 1);
 
+    // 선불 크레딧 소진(402, 본문 없음) — 충전 안내, 다시 보내지 않는다
+    let paidCalls = 0;
+    ai._setClients({ gemini: { interactions: { create: async () => { paidCalls++; throw Object.assign(new Error('402 API error occurred: {"httpMeta":{"response":{},"request":{}}}'), { status: 402 }); } } } });
+    const rp = await ai.organize(Object.assign({}, INPUT, { noteId: 'n402' }));
+    assert.strictEqual(rp.error.type, 'credits');
+    assert.strictEqual(rp.error.retryable, false);
+    assert.ok(/충전/.test(rp.error.message));
+    assert.strictEqual(paidCalls, 1);
+
     let n = 0;
     ai._setClients({ gemini: { interactions: { create: async () => { n++; return { status: 'completed', output_text: n === 1 ? 'not json' : JSON.stringify(OUTPUT) }; } } } });
     const r4 = await ai.organize(INPUT);
