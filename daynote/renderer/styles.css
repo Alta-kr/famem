@@ -1982,3 +1982,16 @@ html.is-resting .toast, html.is-resting .toasts { display: none !important; }   
 .token-box { margin-top: 12px; }
 .token-box .help { margin: 4px 0 0 28px; }
 .cap .token-line { margin: 0; padding: 0 14px 10px; }
+
+/* AI 와 주고받은 내용 (설정에서 켰을 때) */
+.ai-x-list { margin-top: 8px; display: flex; flex-direction: column; gap: 6px; }
+.ai-x-item > summary { cursor: pointer; font-size: 13px; color: var(--text-secondary); padding: 4px 0; }
+.ai-x-item > .ai-x > .ai-x-meta { display: none; }
+.ai-x { display: flex; flex-direction: column; gap: 6px; }
+.ai-x-meta { font-size: 12px; }
+.ai-x-part { border: 1px solid var(--border-deco); border-radius: var(--r-control); padding: 6px 10px; background: var(--surface); }
+.ai-x-part > summary { cursor: pointer; font-size: 13px; font-weight: 600; display: flex; align-items: center; gap: 6px; }
+.ai-x-copy { margin-left: auto; font-size: 12px; }
+.ai-x-pre { margin: 6px 0 2px; max-height: 360px; overflow: auto; white-space: pre-wrap; word-break: break-word; font: 12px/1.55 ui-monospace, SFMono-Regular, Consolas, monospace; color: var(--text-primary); background: var(--surface-subtle); border-radius: 6px; padding: 8px 10px; }
+.cap-x { padding: 0 14px 10px; }
+.cap-x-link { font-size: 12px; }

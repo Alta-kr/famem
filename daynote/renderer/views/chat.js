@@ -239,7 +239,10 @@
     }
     var rows = h('div.cap-rows', { role: 'list' }, items.map(function (it, i) { return capRow(n, it, i, items, st, now); }));
     var run = (st.aiRuns || []).filter(function (r) { return r.noteId === n.id && r.kind === 'capture' && r.usage; }).pop();
-    return bubble('assistant', h('div.cap', head, rows, foot, run ? DN.aiFlow.usageLine(run.usage, run.model) : null), 'msg-cap');
+    // 설정에서 '주고받은 내용 보기' 를 켰으면 이 글을 보낸 프롬프트·받은 답
+    var x = st.prefs.showPrompts && DN.aiFlow.exchangeForNote(n.id);
+    var xBtn = x ? h('button.link-btn.cap-x-link', { type: 'button', onclick: function () { DN.aiFlow.openExchange(x); } }, '보낸 프롬프트·받은 답 보기') : null;
+    return bubble('assistant', h('div.cap', head, rows, foot, run ? DN.aiFlow.usageLine(run.usage, run.model) : null, xBtn ? h('div.cap-x', xBtn) : null), 'msg-cap');
   }
 
   // "할 일로 정리했어요" · "메모와 할 일 2개로 나눴어요" · "아이디어로 남겼어요"

@@ -44,7 +44,7 @@
   function call(input) {
     return S.host.ai.organizeNote(input).catch(function (e) {
       return { ok: false, error: { type: 'ipc', message: e && e.message ? e.message : String(e), retryable: true } };
-    }).then(function (res) { DN.aiFlow.recordUsage(res); return res; });
+    }).then(function (res) { DN.aiFlow.recordUsage(res); DN.aiFlow.recordExchange(input, res); return res; });
   }
 
   function todayStr() { var n = now(); return D.ymd(n) + ' (' + D.WEEKDAYS[n.getDay()] + ')'; }

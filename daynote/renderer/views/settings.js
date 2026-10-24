@@ -198,6 +198,31 @@
       h('div.sug-actions', h('button.btn.btn-sm', { type: 'button', onclick: function () { fileIn.click(); } }, ui.icon('upload'), 'ICS 파일에서 가져오기'), fileIn));
   }
 
+  // AI 와 주고받은 내용 — 켜면 이 기기에 최근 20개를 남기고 여기서 펼쳐 본다 (채팅 결과 카드에도 '보낸 프롬프트·받은 답 보기')
+  function promptBox() {
+    var st = S.state, AF = DN.aiFlow;
+    var list = h('div.ai-x-list');
+    function draw() {
+      list.textContent = '';
+      if (!S.state.prefs.showPrompts) return;
+      var xs = AF.exchanges();
+      if (!xs.length) { list.appendChild(h('p.help', '아직 기록이 없어요. 채팅에 글을 보내면 여기에 쌓여요.')); return; }
+      xs.forEach(function (x, i) { list.appendChild(h('details.ai-x-item', i === 0 ? { open: true } : {}, h('summary', AF.exchangeView(x, false).firstChild.textContent), AF.exchangeView(x, false))); });
+      list.appendChild(h('div.sug-actions', h('button.btn.btn-sm.btn-ghost', { type: 'button', onclick: function () { AF.clearExchanges(); } }, '기록 지우기')));
+    }
+    var off = AF.onExchange(draw);
+    var box = h('input', { type: 'checkbox', id: 'set-prompts', checked: !!st.prefs.showPrompts,
+      onchange: function () { S.mutate(null, function (s) { s.prefs.showPrompts = box.checked; }); } });
+    var el = h('div.token-box',
+      h('label.check-row', { for: 'set-prompts' }, box, h('span', 'AI에 보낸 프롬프트와 받은 답 보기')),
+      h('p.help', '켜 두면 AI와 주고받은 내용을 이 기기에만 최근 20개까지 남겨요 (다른 기기·백업에는 안 들어가요). 채팅 결과 카드에도 ‘보낸 프롬프트·받은 답 보기’가 생겨요.'),
+      list);
+    draw();
+    // 화면을 떠나면 구독을 푼다
+    setTimeout(function watch() { if (!document.body.contains(el)) { off(); return; } setTimeout(watch, 5000); }, 5000);
+    return el;
+  }
+
   // 쓴 토큰 — 켜면 AI 답마다 토큰 한 줄, 여기에는 오늘·이번 달 합계
   function usageBox() {
     var st = S.state, u = st.meta.aiUsage || {}, now = DN.app.now();
@@ -262,6 +287,7 @@
         aiSt.keySource ? h('span.meta', ' · ' + (KEY_SOURCE[aiSt.keySource] || aiSt.keySource) + (aiSt.savedKey && aiSt.keySource === 'saved' ? ' ' + aiSt.savedKey : '')) : null),
       models,
       usageBox(),
+      promptBox(),
       aiSt.provider === 'fake' || aiSt.managed ? null : h('div', { style: { display: 'flex', gap: '8px', flexWrap: 'wrap', alignItems: 'center', marginTop: '12px' } },
         h('label.sr-only', { for: 'set-ai-key' }, 'Google AI Studio API 키'),
         input,

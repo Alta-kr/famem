@@ -88,6 +88,7 @@
     }).then(function (res) {
       delete inflight[noteId];
       recordUsage(res);
+      recordExchange(input, res);
       var done = DN.app.now();
       if (!res.ok) {
         S.mutate(null, function (s) { P.finishRun(s, run.id, { status: 'failed', error: res.error, rawOutput: res.raw || null, attempts: res.attempts || 1 }, done); }, { source: 'ai' });
@@ -142,7 +143,68 @@
       '토큰 ' + num(totalTokens(usage)) + ' (' + parts.join(' · ') + ')' + (model ? ' · ' + model : ''));
   }
 
+  // ------------------------------------------------------------------ AI 와 주고받은 내용 (설정에서 켜면)
+  // 보낸 프롬프트(시스템 지시 + 보낸 글)와 받은 답을 이 기기에만 최근 20개 남긴다 — 데이터 파일·동기화에는 넣지 않는다.
+  //   프롬프트는 AI 를 부르는 쪽(services/ai.js)과 같은 정의(src/core/ai/*)로 다시 만든다 — 실제로 보낸 글과 같다
+  var LOG_KEY = 'daynote:aiLog', LOG_MAX = 20;
+  var PURPOSE_LABEL = { capture: '적은 글 정리', breakdown: '작게 나누기', elaborate: '자세히 적기', organize: '메모 정리' };
+  function requestDef(input) {
+    var p = input && input.purpose;
+    if (p === 'capture') return DN.aiCapture;
+    if (p === 'breakdown') return DN.aiAssist.BREAKDOWN;
+    if (p === 'elaborate') return DN.aiAssist.ELABORATE;
+    return DN.aiOrganize;
+  }
+  function readLog() { try { return JSON.parse(localStorage.getItem(LOG_KEY) || '[]'); } catch (e) { return []; } }
+  function writeLog(list) {
+    // 저장소가 꽉 차면 오래된 것부터 덜어 낸다
+    for (var n = list.length; n > 0; n = Math.floor(n / 2)) {
+      try { localStorage.setItem(LOG_KEY, JSON.stringify(list.slice(-n))); return; } catch (e) {}
+    }
+  }
+  var logListeners = [];
+  function recordExchange(input, res) {
+    if (!S.state.prefs.showPrompts || !input) return;
+    var def = requestDef(input), sys = '', user = '';
+    try { sys = def.SYSTEM; user = def.userText(input); } catch (e) { user = JSON.stringify(input, null, 2); }
+    var out = res && (res.raw || (res.output ? JSON.stringify(res.output) : null));
+    var list = readLog();
+    list.push({
+      id: M.uid('ai'), at: new Date().toISOString(), purpose: input.purpose || 'organize', promptVersion: input.promptVersion || null,
+      noteId: input.noteId || null, model: res && res.model || null, provider: res && res.provider || null,
+      system: sys, user: user, output: out, error: res && !res.ok ? res.error || null : null, usage: res && res.usage || null
+    });
+    writeLog(list.slice(-LOG_MAX));
+    logListeners.forEach(function (fn) { try { fn(); } catch (e) {} });
+  }
+  function exchanges() { return readLog().slice().reverse(); }
+  function clearExchanges() { try { localStorage.removeItem(LOG_KEY); } catch (e) {} logListeners.forEach(function (fn) { try { fn(); } catch (e) {} }); }
+  function pretty(text) { try { return JSON.stringify(JSON.parse(text), null, 2); } catch (e) { return text || ''; } }
+  // 주고받은 내용 하나 — 펼쳐 보는 칸 세 개 (시스템 지시 · 보낸 글 · 받은 답), 각각 복사
+  function exchangeView(x, open) {
+    var ui = DN.ui, h = ui.h;
+    function block(label, text, opened) {
+      return h('details.ai-x-part', opened ? { open: true } : {},
+        h('summary', label, h('span.meta', ' · ' + Number((text || '').length).toLocaleString('ko-KR') + '자'),
+          h('button.link-btn.ai-x-copy', { type: 'button', onclick: function (e) { e.preventDefault(); S.host.copyText(text || '').then(function () { ui.toast(label + '을(를) 복사했어요.'); }); } }, '복사')),
+        h('pre.ai-x-pre', text || '(없음)'));
+    }
+    var u = x.usage;
+    return h('div.ai-x',
+      h('div.ai-x-meta.meta', D.ymd(x.at) + ' ' + D.hm(x.at) + ' · ' + (PURPOSE_LABEL[x.purpose] || x.purpose) + (x.model ? ' · ' + x.model : '') +
+        (x.promptVersion ? ' · ' + x.promptVersion : '') + (u ? ' · 토큰 ' + Number(totalTokens(u)).toLocaleString('ko-KR') : '') + (x.error ? ' · 실패: ' + (x.error.message || x.error.type) : '')),
+      block('시스템 지시', x.system, false),
+      block('보낸 글', x.user, open),
+      block('받은 답', x.error && !x.output ? JSON.stringify(x.error, null, 2) : pretty(x.output), open));
+  }
+  function openExchange(x) {
+    DN.ui.modal({ title: 'AI와 주고받은 내용', wide: true, body: exchangeView(x, true), actions: [{ label: '닫기', primary: true }] });
+  }
+  function exchangeForNote(noteId) { return readLog().filter(function (x) { return x.noteId === noteId; }).pop() || null; }
+
   DN.aiFlow = {
+    recordExchange: recordExchange, exchanges: exchanges, clearExchanges: clearExchanges, exchangeView: exchangeView, openExchange: openExchange, exchangeForNote: exchangeForNote,
+    onExchange: function (fn) { logListeners.push(fn); return function () { logListeners = logListeners.filter(function (f) { return f !== fn; }); }; },
     recordUsage: recordUsage, usageLine: usageLine, totalTokens: totalTokens,
     loadStatus: loadStatus, organize: organize, contextOpts: contextOpts,
     status: function () { return status; },
