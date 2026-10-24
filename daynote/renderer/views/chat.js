@@ -220,11 +220,15 @@
     var A = DN.app, AS = DN.assistant;
     if (m.role === 'user') return bubble('user', h('div.msg-text', m.text));
     if (m.kind === 'text') {
-      return bubble('assistant', h('div', h('div.msg-text', m.text),
-        (m.actions || []).length ? h('div.msg-actions', m.actions.map(function (a) {
-          return a === 'next' ? h('button.btn.btn-xs', { type: 'button', onclick: function () { AS.next(); } }, '다음 할 일 추천받기')
-            : a === 'rest' ? h('button.btn.btn-xs.btn-primary', { type: 'button', onclick: function () { AS.rest(); } }, '쉬러 가기') : null;
-        })) : null));
+      // 긴 목록은 줄여 보이고 [더 보기] 로 전부 (m.full) — 다시 [접기]
+      var more = m.full ? h('button.btn.btn-xs', { type: 'button', 'aria-expanded': String(!!m.expanded), onclick: function () { AS.update(m.id, { expanded: !m.expanded }); } },
+        ui.icon(m.expanded ? 'chevronUp' : 'chevronDown'), m.expanded ? '접기' : '더 보기 (' + (m.moreCount || '') + '개)') : null;
+      var acts = (m.actions || []).map(function (a) {
+        return a === 'next' ? h('button.btn.btn-xs', { type: 'button', onclick: function () { AS.next(); } }, '다음 할 일 추천받기')
+          : a === 'rest' ? h('button.btn.btn-xs.btn-primary', { type: 'button', onclick: function () { AS.rest(); } }, '쉬러 가기') : null;
+      });
+      return bubble('assistant', h('div', h('div.msg-text', m.full && m.expanded ? m.full : m.text),
+        more || acts.length ? h('div.msg-actions', more, acts) : null));
     }
     if (m.kind === 'thinking') return bubble('assistant', h('div.msg-text', h('span.spinner', { 'aria-hidden': 'true' }), ' ', m.text));
     if (m.kind === 'capture') return captureCard(m, st, now);
@@ -238,6 +242,7 @@
     if (m.kind === 'rest') return restCard(m, st, now);
     if (m.kind === 'confirm') return confirmCard(m, st);
     if (m.kind === 'pickdate') return pickDateCard(m, st, now);
+    if (m.kind === 'agenda') return agendaCard(m, st);
     return null;
   }
 
@@ -996,7 +1001,34 @@
           h('button.btn.btn-xs.btn-ghost', { type: 'button', onclick: function () { AS.rest(); } }, '다른 스트레칭'))));
   }
 
-  // 마감이 없던 할 일을 미뤘을 때 — "오늘 기준으로 내일로 옮겼어요" + [내일] [모레] [글피] [다음 주 월] (지금 고른 날은 눌린 상태)
+  // 할 일·일정 목록 — 줄을 누르면 자세히 (할 일: 상세 창 · 일정: 일정 창). 15줄이 넘으면 [더 보기]·[접기]
+  var AG_LIMIT = 15;
+  function agendaCard(m, st) {
+    var AS = DN.assistant, shown = 0, list = [];
+    (m.rows || []).forEach(function (r) {
+      if (r.day) { if (m.expanded || shown < AG_LIMIT) list.push(h('div.ag-day', r.day)); return; }
+      if (!m.expanded && shown >= AG_LIMIT) return;
+      shown++;
+      var item = M.byId(r.ref === 'task' ? st.tasks : st.blocks, r.id);
+      var gone = !item || item.deletedAt;
+      list.push(h('button.ag-row' + (gone ? '.is-gone' : '') + (item && r.ref === 'task' && item.status === 'done' ? '.is-done' : ''), {
+        type: 'button', disabled: !!gone, title: gone ? '지워진 항목이에요' : '눌러서 자세히 보기',
+        onclick: function () { if (r.ref === 'task') DN.app.openTask(r.id); else DN.views.schedule.open({ blockId: r.id }); }
+      }, r.at ? h('span.ag-at', r.at) : null, h('span.ag-name', (item && item.title) || r.name), r.tag ? h('span.ag-tag', r.tag) : null));
+    });
+    // 접은 상태에서 끝에 남은 빈 날짜 머리는 뺀다
+    while (list.length && list[list.length - 1].classList.contains('ag-day')) list.pop();
+    var more = m.count > AG_LIMIT ? h('button.btn.btn-xs', { type: 'button', 'aria-expanded': String(!!m.expanded), onclick: function () { AS.update(m.id, { expanded: !m.expanded }); } },
+      ui.icon(m.expanded ? 'chevronUp' : 'chevronDown'), m.expanded ? '접기' : '더 보기 (' + (m.count - AG_LIMIT) + '개)') : null;
+    var acts = (m.actions || []).indexOf('next') !== -1 ? h('button.btn.btn-xs', { type: 'button', onclick: function () { AS.next(); } }, '다음 할 일 추천받기') : null;
+    return bubble('assistant', h('div.agenda',
+      h('div.msg-text', m.head),
+      h('div.ag-list', { role: 'list' }, list),
+      m.foot ? h('div.meta', m.foot) : null,
+      more || acts ? h('div.msg-actions', more, acts) : null));
+  }
+
+  // 마감이 없던 할 일을 미뤘을 때 —"오늘 기준으로 내일로 옮겼어요" + [내일] [모레] [글피] [다음 주 월] (지금 고른 날은 눌린 상태)
   function pickDateCard(m, st, now) {
     var AS = DN.assistant;
     var t = M.byId(st.tasks, m.taskId);

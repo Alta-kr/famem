@@ -218,28 +218,22 @@
   }
 
   // "오늘 할 일 뭐야?" — 오늘 할 일을 채팅에 요약
+  // 할 일·일정 목록 답 (kind 'agenda') — 줄마다 눌러 자세히 보기 (할 일: 상세 창, 일정: 일정 창). 15줄이 넘으면 [더 보기]
+  //   rows: { day: '10/27 (화)' } 날짜 머리 · { ref: 'task'|'block', id, at, name, tag }
   function listToday(period) {
     var n = now();
     // "내일 아침" · "이번 주 남은 일" · "다음 주" — 그 기간의 할 일·일정을 날짜별로 (오늘 전체는 아래 오늘 목록 그대로)
     if (period && !(period.from === D.ymd(n) && period.to === period.from && !period.part)) { listPeriod(period, n); return; }
     var list = DN.aiCommands.todayTasks(S.state, n);
-    var events = S.state.blocks.filter(function (b) { return b.kind === 'event' && DN.dates.ymd(b.start) === DN.dates.ymd(n) && new Date(b.end) > n; })
+    var events = S.state.blocks.filter(function (b) { return b.kind === 'event' && D.ymd(b.start) === D.ymd(n) && new Date(b.end) > n; })
       .sort(function (a, b) { return a.start < b.start ? -1 : 1; });
     if (!list.length && !events.length) { post({ kind: 'text', text: '오늘은 남은 할 일도 일정도 없어요. 쉬어 가도 좋겠어요.' }); return; }
-    var lines = [];
-    if (list.length) {
-      lines.push('오늘 할 일 ' + list.length + '개예요.');
-      list.slice(0, 8).forEach(function (t) {
-        var tag = t.status === 'in_progress' ? ' (진행 중)' : t.status === 'paused' ? ' (일시 정지)' : '';
-        var due = t.dueDate ? ' · 마감 ' + DN.dates.relDay(t.dueDate, n) + (t.dueTime ? ' ' + t.dueTime : '') + ' · ' + DN.dates.remainText(DN.dates.dueAt(t.dueDate, t.dueTime), n) : '';
-        lines.push('• ' + t.title + tag + due);
-      });
-      if (list.length > 8) lines.push('… 외 ' + (list.length - 8) + '개');
-    }
-    if (events.length) {
-      lines.push('남은 일정: ' + events.map(function (b) { return DN.dates.hm(b.start) + ' ' + b.title; }).join(', '));
-    }
-    post({ kind: 'text', text: lines.join('\n'), actions: list.length ? ['next'] : [] });
+    var rows = list.map(function (t) {
+      var tag = [t.status === 'in_progress' ? '진행 중' : t.status === 'paused' ? '일시 정지' : '',
+        t.dueDate ? '마감 ' + D.relDay(t.dueDate, n) + (t.dueTime ? ' ' + t.dueTime : '') + ' · ' + D.remainText(D.dueAt(t.dueDate, t.dueTime), n) : ''].filter(Boolean).join(' · ');
+      return { ref: 'task', id: t.id, name: t.title, tag: tag };
+    }).concat(events.map(function (b) { return { ref: 'block', id: b.id, at: D.hm(b.start), name: b.title || '일정', tag: '일정' }; }));
+    post({ kind: 'agenda', head: '오늘 할 일 ' + list.length + '개' + (events.length ? ' · 남은 일정 ' + events.length + '개' : '') + '예요.', rows: rows, count: rows.length, actions: list.length ? ['next'] : [] });
   }
 
   var AG_TAG = { work: '', due: '마감', plan: '할 날', doing: '진행 중', late: '마감 지남', event: '일정' };
@@ -249,28 +243,22 @@
     var dayName = function (k) { var d = D.parseYmd(k); var r = D.relDay(k, n); return /^(오늘|내일|모레)$/.test(r) ? r + '(' + D.WEEKDAYS[d.getDay()] + ')' : (d.getMonth() + 1) + '/' + d.getDate() + ' (' + D.WEEKDAYS[d.getDay()] + ')'; };
     var title = one ? dayName(p.from) + (p.part ? ' ' + p.part.label : '') : p.label;
     var count = days.reduce(function (a, d) { return a + d.items.length; }, 0);
-    var line = function (it) {
-      var name = it.task ? it.task.title : (it.block.title || '일정');
-      var tag = it.kind === 'due' ? '마감' + (it.at ? ' ' + it.at : '') : it.kind === 'late' ? '마감 지남 ' + it.task.dueDate.slice(5).replace('-', '/') : AG_TAG[it.kind];
-      return '• ' + (it.at && it.kind !== 'due' ? it.at + ' ' : '') + name + (tag ? ' · ' + tag : '');
-    };
-    var lines = [];
     if (!count) {
-      lines.push((one ? title : p.label === '이번 주 남은' ? '이번 주 남은 날' : p.label) + '에는 잡힌 할 일·일정이 없어요.');
-    } else {
-      lines.push(title + ' 할 일·일정 ' + count + '개예요.');
-      var shown = 0;
-      days.forEach(function (d) {
-        if (shown >= 15) return;
-        if (!one) lines.push(dayName(d.ymd));
-        d.items.forEach(function (it) { if (shown++ < 15) lines.push(line(it)); });
-      });
-      if (count > 15) lines.push('… 외 ' + (count - 15) + '개');
+      post({ kind: 'text', text: (one ? title : p.label === '이번 주 남은' ? '이번 주 남은 날' : p.label) + '에는 잡힌 할 일·일정이 없어요.', actions: ['next'] });
+      return;
     }
+    var rows = [];
+    days.forEach(function (d) {
+      if (!one) rows.push({ day: dayName(d.ymd) });
+      d.items.forEach(function (it) {
+        var tag = it.kind === 'due' ? '마감' + (it.at ? ' ' + it.at : '') : it.kind === 'late' ? '마감 지남 ' + it.task.dueDate.slice(5).replace('-', '/') : AG_TAG[it.kind];
+        rows.push(it.task ? { ref: 'task', id: it.task.id, at: it.kind !== 'due' ? it.at || null : null, name: it.task.title, tag: tag }
+          : { ref: 'block', id: it.block.id, at: it.at || null, name: it.block.title || '일정', tag: tag });
+      });
+    });
     // 여러 날을 물었으면 날짜 없는 할 일도 알려 준다 (그중에서 골라 드릴 수 있게)
     var undated = !one ? M.liveTasks(S.state).filter(function (t) { return t.status !== 'done' && !t.dueDate && !t.planDate && !M.blocksForTask(S.state, t.id).length; }).length : 0;
-    if (undated) lines.push('날짜를 안 정한 할 일도 ' + undated + '개 있어요.');
-    post({ kind: 'text', text: lines.join('\n'), actions: ['next'] });
+    post({ kind: 'agenda', head: title + ' 할 일·일정 ' + count + '개예요.', rows: rows, count: count, foot: undated ? '날짜를 안 정한 할 일도 ' + undated + '개 있어요.' : null, actions: ['next'] });
   }
 
   // 지금 작업 공간에 올라 있는 할 일 — 가장 최근의 접히지 않은 작업 카드 (끝낸·지운 일은 빼고)
