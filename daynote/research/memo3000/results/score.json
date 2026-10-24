@@ -2,9 +2,9 @@
  "prompt": "capture.v15",
  "total": {
   "n": 3000,
-  "ok": 2971
+  "ok": 2984
  },
- "rate": 99,
+ "rate": 99.5,
  "per": {
   "task_new_simple": {
    "n": 143,
@@ -59,21 +59,20 @@
   },
   "note_pure_log": {
    "n": 143,
-   "ok": 136,
+   "ok": 137,
    "notes": {
     "✗ 기록인데 할 일·변경 생김 [{\"title\":\"변론기일\",\"at\":\"": 2,
     "✗ 기록인데 할 일·변경 생김 [{\"title\":\"디카페인 원두 주간 기본 발주량 늘리기\",\"due\":null,\"dueTime\":null,\"plan\":null,\"at\":null,\"mins\":null,\"est\":10}]": 1,
     "✗ 기록인데 할 일·변경 생김 [{\"title\":\"일일 4,000단어 이상 집필하기\",\"due\":null,\"dueTime\":null,\"plan\":null,\"at\":null,\"mins\":null,\"est\":null}]": 1,
     "✗ 기록인데 할 일·변경 생김 [{\"title\":\"결제 PG사 점검 자동 우회 로직 켜기\",\"due\":\"": 1,
-    "✗ 기록인데 할 일·변경 생김 [{\"title\":\"전자현미경 사용\",\"due\":\"": 1,
     "✗ 기록인데 할 일·변경 생김 [{\"title\":\"자동 우회 로직 켜기\",\"due\":\"": 1
    }
   },
   "mixed_note_and_task": {
    "n": 143,
-   "ok": 140,
+   "ok": 142,
    "notes": {
-    "✗ 마감 다름": 3
+    "✗ 마감 다름": 1
    }
   },
   "mixed_done_and_new_task": {
@@ -133,17 +132,15 @@
   },
   "command_open_or_search": {
    "n": 142,
-   "ok": 133,
+   "ok": 142,
    "notes": {
-    "✗ 화면 다름 calendar": 9
+    "✓ 캘린더 주간 보기": 12
    }
   },
   "command_workflow_control": {
    "n": 142,
-   "ok": 141,
-   "notes": {
-    "✗ 대상 다름": 1
-   }
+   "ok": 142,
+   "notes": {}
   },
   "bulk_update_overdue_or_proj": {
    "n": 142,
@@ -154,7 +151,7 @@
   }
  },
  "flags": {
-  "keptMemo": 178,
+  "keptMemo": 175,
   "confirmCmds": 326,
   "localPath": 142
  },

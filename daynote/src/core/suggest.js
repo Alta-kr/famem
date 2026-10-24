@@ -245,8 +245,30 @@
     return all.filter(function (c) { return !taken[normalizeText(c.excerpt)]; });
   }
 
+  // 이름이 거의 같은 것 하나 — AI 가 할 일 이름을 옮기다 글자 몇 개를 틀린 경우 (실측: "잠재고セミ 고객")
+  //   띄어쓰기를 뺀 글자 거리가 긴 쪽의 20% 이하이고, 그런 것이 하나뿐일 때만
+  function editDistance(a, b) {
+    var prev = [], cur, i, j;
+    for (j = 0; j <= b.length; j++) prev[j] = j;
+    for (i = 1; i <= a.length; i++) {
+      cur = [i];
+      for (j = 1; j <= b.length; j++) cur[j] = Math.min(prev[j] + 1, cur[j - 1] + 1, prev[j - 1] + (a[i - 1] === b[j - 1] ? 0 : 1));
+      prev = cur;
+    }
+    return prev[b.length];
+  }
+  function closeTitle(list, title, key) {
+    var k = String(title || '').replace(/\s+/g, '').toLowerCase();
+    if (k.length < 6) return null;
+    var hits = list.filter(function (x) {
+      var n = String(key ? key(x) : x).replace(/\s+/g, '').toLowerCase();
+      return Math.abs(n.length - k.length) <= Math.ceil(Math.max(n.length, k.length) * 0.2) && editDistance(n, k) <= Math.ceil(Math.max(n.length, k.length) * 0.2);
+    });
+    return hits.length === 1 ? hits[0] : null;
+  }
+
   return {
     parseDueHint: parseDueHint, extractFromNote: extractFromNote, extractFromEmail: extractFromEmail,
-    scan: scan, normalizeText: normalizeText, hash: hash
+    scan: scan, normalizeText: normalizeText, hash: hash, closeTitle: closeTitle
   };
 });

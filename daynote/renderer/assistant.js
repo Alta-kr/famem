@@ -146,8 +146,8 @@
       case 'schedule': A.scheduleTask(t.id); break;
       case 'delete': A.deleteTask(t.id); post({ kind: 'text', text: '‘' + t.title + '’ 지웠어요. 알림의 되돌리기나 Ctrl+Z로 살릴 수 있어요.' }); break;
       case 'open':
-        post({ kind: 'text', text: (VIEW_LABEL[c.view] || c.view) + ' 화면을 열었어요. 돌아오려면 사이드바의 ‘오늘’을 눌러 주세요.' });
-        A.go(c.view);
+        post({ kind: 'text', text: (VIEW_LABEL[c.view] || c.view) + (c.mode === 'week' ? '(주간)' : '') + ' 화면을 열었어요. 돌아오려면 사이드바의 ‘오늘’을 눌러 주세요.' });
+        A.go(c.view, c.mode ? { mode: c.mode } : undefined);
         break;
       case 'search':
         if (DN.palette) DN.palette.open(c.query);
@@ -171,6 +171,23 @@
     if (!m || m.status !== 'pending') return;
     update(msgId, { status: yes ? 'done' : 'cancelled' });
     if (yes) runCommand(m.cmd);
+  }
+
+  // 마감이 없던 할 일을 "하루 미뤄줘" — 오늘 기준 하루 뒤(내일)로 넣었다. 다른 날을 버튼으로 고른다 (Ctrl+Z 로도 되돌릴 수 있다)
+  function askDate(taskId, at) {
+    var base = D.ymd(at || now());
+    var t = M.byId(S.state.tasks, taskId);
+    post({ kind: 'pickdate', taskId: taskId, title: t ? t.title : '', base: base, chosen: t && t.dueDate || D.ymd(D.addDays(D.parseYmd(base), 1)) });
+  }
+  function pickDate(msgId, ymd) {
+    var m = M.byId(S.state.chat || [], msgId);
+    var t = m && M.byId(S.state.tasks, m.taskId);
+    if (!t || t.deletedAt) return;
+    S.mutate('마감 바꾸기', function (st) {
+      M.updateTask(st, t.id, { dueDate: ymd }, now());
+      var mm = M.byId(st.chat || [], msgId);
+      if (mm) mm.chosen = ymd;
+    }, { source: 'chat' });
   }
 
   // "아니 오후야" — 방금(30분 안) 채팅으로 넣은 일정·작업 시간 중 마지막 것의 오전/오후를 바꾼다 (Ctrl+Z 로 되돌릴 수 있다)
@@ -596,7 +613,7 @@
     send: send, next: next, donePrep: donePrep, breakdown: breakdown, applyBreakdown: applyBreakdown, deferBreakdown: deferBreakdown,
     elaborate: elaborate, saveElaboration: saveElaboration, skipElaboration: skipElaboration,
     rest: rest, startTimer: startTimer, tryNudge: tryNudge, update: update, post: post, work: work, returnWork: returnWork, focusTask: focusTask, runCommand: runCommand,
-    needsConfirm: needsConfirm, askCommand: askCommand, confirmCommand: confirmCommand, CONFIRM_LABEL: CONFIRM,
+    needsConfirm: needsConfirm, askCommand: askCommand, confirmCommand: confirmCommand, CONFIRM_LABEL: CONFIRM, askDate: askDate, pickDate: pickDate,
     rested: rested, startFocus: startFocus, stopFocus: stopFocus, dayClose: dayClose, overdueOffer: overdueOffer, replan: replan, weekStart: weekStart, planAt: planAt, checkLongFocus: checkLongFocus,
     quickKey: function () { return quickKey; }
   };

@@ -9,12 +9,12 @@
 
 (function (factory) {
   var deps = (typeof module !== 'undefined' && module.exports)
-    ? { dates: require('../dates'), model: require('../model') }
-    : { dates: window.Daynote.dates, model: window.Daynote.model };
-  var api = factory(deps.dates, deps.model);
+    ? { dates: require('../dates'), model: require('../model'), suggest: require('../suggest') }
+    : { dates: window.Daynote.dates, model: window.Daynote.model, suggest: window.Daynote.suggest };
+  var api = factory(deps.dates, deps.model, deps.suggest);
   if (typeof module !== 'undefined' && module.exports) module.exports = api;
   if (typeof window !== 'undefined') { window.Daynote = window.Daynote || {}; window.Daynote.aiCommands = api; }
-})(function (D, M) {
+})(function (D, M, SG) {
   var ACTIONS = ['recommend', 'breakdown', 'start', 'pause', 'complete', 'return_todo', 'work', 'rest', 'list_today', 'open', 'search', 'schedule', 'delete', 'day_close'];
   var NEEDS_TASK = { start: 1, pause: 1, complete: 1, return_todo: 1, work: 1, schedule: 1, delete: 1 };   // breakdown 은 없으면 앱이 고른다
   var VIEWS = ['today', 'archive', 'tasks', 'calendar', 'projects', 'weekly', 'settings'];
@@ -51,7 +51,8 @@
     var k = nospace(title);
     if (k.length < 2) return null;
     var near = open.filter(function (t) { var n = nospace(t.title); return n === k || n.indexOf(k) !== -1 || k.indexOf(n) !== -1; });
-    return near.length === 1 ? near[0] : null;
+    if (near.length === 1) return near[0];
+    return near.length ? null : SG.closeTitle(open, title, function (t) { return t.title; });   // AI 가 글자 몇 개 틀리게 옮긴 이름
   }
   // 문장 속 낱말(2자 이상)과 겹치는 열린 할 일 — 하나일 때만
   function taskInText(state, text) {
@@ -65,7 +66,9 @@
   // ---------------------------------------------------------------- 바로 알아듣는 짧은 명령 (AI 없이)
   //   글이 짧고(40자 이하) 아래 꼴일 때만. 애매하면 null → AI 로
   //   "오늘 할 일 화면" 은 오늘 화면 (할 일 목록 화면보다 먼저 본다)
-  var VIEW_WORDS = [[/^(홈|오늘\s*(할\s*일\s*)?화면)/, 'today'],[/캘린더|달력|일정표/, 'calendar'], [/보관함/, 'archive'], [/할\s*일\s*(목록|화면|전체)/, 'tasks'], [/주간\s*(정리|보고)|이번\s*주\s*정리/, 'weekly'],
+  //   "주간 일정표" · "이번 주 캘린더" 는 캘린더 주간 보기 (주간 정리는 돌아보기 화면이다)
+  var WEEK_CAL_RE = /(주간|이번\s*주|금주)\s*(일정표|일정|캘린더|달력|스케줄)/;
+  var VIEW_WORDS = [[WEEK_CAL_RE, 'calendar', 'week'], [/^(홈|오늘\s*(할\s*일\s*)?화면)/, 'today'],[/캘린더|달력|일정표/, 'calendar'], [/보관함/, 'archive'], [/할\s*일\s*(목록|화면|전체)/, 'tasks'], [/주간\s*(정리|보고)|이번\s*주\s*정리/, 'weekly'],
     [/프로젝트/, 'projects'], [/설정/, 'settings'], [/^(홈|오늘\s*화면)/, 'today']];
   var VERB_DONE_RE = /(보여\s*줘|보여줄래|열어\s*줘|열어|켜\s*줘|띄워\s*줘|가자|보자|로\s*가)/;
 
@@ -119,7 +122,7 @@
     // 화면 열기 — "캘린더 보여줘"
     if (VERB_DONE_RE.test(s)) {
       var v = VIEW_WORDS.filter(function (x) { return x[0].test(s); })[0];
-      if (v && s.replace(v[0], '').replace(VERB_DONE_RE, '').replace(/[\s을를좀]/g, '').length <= 4) return { action: 'open', view: v[1] };
+      if (v && s.replace(v[0], '').replace(VERB_DONE_RE, '').replace(/[\s을를좀]/g, '').length <= 4) return v[2] ? { action: 'open', view: v[1], mode: v[2] } : { action: 'open', view: v[1] };
     }
     // 찾기 — "회의록 찾아줘"
     if ((m = s.match(/^(.+?)\s*(관련\s*)?(메모|할\s*일)?\s*(좀\s*)?(찾아\s*(줘|봐|줄래)|검색\s*해\s*(줘|봐)|어디\s*(있|갔))/))) {
@@ -152,7 +155,11 @@
         if (!t && (NEEDS_TASK[c.action] || (c.action === 'breakdown' && c.target))) { cmd.missing = c.target || true; }
         if (t) cmd.taskId = t.id;
       }
-      if (c.action === 'open') { if (VIEWS.indexOf(c.view) === -1) return; cmd.view = c.view; }
+      if (c.action === 'open') {
+        if (VIEWS.indexOf(c.view) === -1) return;
+        cmd.view = c.view;
+        if ((c.view === 'calendar' || c.view === 'weekly') && WEEK_CAL_RE.test(q)) { cmd.view = 'calendar'; cmd.mode = 'week'; }
+      }
       if (c.action === 'search') { var qq = String(c.query || '').trim().slice(0, 60); if (!qq) return; cmd.query = qq; }
       // "회의 전까지 40분 비는데 뭐 하면 좋을까" — 근거 문장에서 남는 시간을 앱이 읽는다
       if (c.action === 'recommend' && FREE_RE.test(q)) { cmd.free = true; cmd.minutes = freeMinutes(q); }

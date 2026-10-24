@@ -186,6 +186,7 @@
     if (m.kind === 'elaborate') return withUsage(elaborateCard(m, st, now), m.usage, m.model, m.exchangeId);
     if (m.kind === 'rest') return restCard(m, st, now);
     if (m.kind === 'confirm') return confirmCard(m, st);
+    if (m.kind === 'pickdate') return pickDateCard(m, st, now);
     return null;
   }
 
@@ -204,6 +205,9 @@
   // 칩을 누르면 바로 고친다 (모두 Ctrl+Z 로 되돌릴 수 있다). 원문 메모는 빼도 지워지지 않는다.
   var KINDS = ['task', 'event', 'memo', 'idea', 'link'];
   var NOTE_KIND = { memo: 1, idea: 1, link: 1 };
+  // 메모로 남은 글이 할 일 같아 보이는가 — 행동 말 + 날짜·시각 말 ("금일 11:00에 서류 전달 진행 예정")
+  var TASKISH_RE = /(하기|할\s*것|할게|하자|진행|예정|해야|제출|보내|전달|까지)/;
+  var WHEN_RE = /(\d{1,2}\s*시|\d{1,2}:\d{2}|오늘|금일|내일|명일|모레|글피|[월화수목금토일](요일|욜)|다음\s*주|담주|\d+\s*월\s*\d+\s*일)/;
 
   function captureCard(m, st, now) {
     var CP = DN.capture;
@@ -236,10 +240,17 @@
       head = h('div.cap-head', h('span', '메모로 남겨 뒀어요'), c.error && c.error.message ? h('span.cap-head-sub', ' · ' + c.error.message) : null);
       foot = h('div.cap-foot', h('button.btn.btn-xs', { type: 'button', onclick: function () { CP.classify(n.id); } }, ui.icon('refresh'), '다시 시도'));
     } else {
-      var skipped = (c.skipped || []).length;
+      var skipped = (c.skipped || []).filter(function (s) { return s.reason === 'duplicate'; }).length;
       head = h('div.cap-head', h('span', summary(items, now)),
         skipped ? h('span.cap-head-sub', ' · 비슷한 할 일이 이미 있어서 ' + skipped + '개는 만들지 않았어요') : null);
-      foot = null;
+      // 사실 기록이라 바로 만들지 않은 것 — "‘전자현미경 사용’ 할 일·일정으로 넣을까요? [넣기]"
+      var recs = (c.skipped || []).filter(function (s) { return s.reason === 'record' && (st.proposals || []).some(function (p) { return p.id === s.id && p.status === 'pending'; }); });
+      // 메모로만 남았는데 날짜·시각이 있는 할 일 같은 글 — [할 일로 만들기]
+      var asTask = !recs.length && c.entryType === 'memo' && !items.some(function (it) { return it.ref.kind !== 'note'; }) && TASKISH_RE.test(n.body || '') && WHEN_RE.test(n.body || '');
+      foot = recs.length || asTask ? h('div.cap-foot', recs.map(function (s) {
+        return h('div.cap-suggest', h('span', '‘' + (s.title || '항목') + '’ 기록 문장이라 바로 넣지 않았어요. '),
+          h('button.btn.btn-xs', { type: 'button', onclick: function () { CP.applySkipped(n.id, s.id); } }, ui.icon('plus'), '넣기'));
+      }), asTask ? h('button.btn.btn-xs', { type: 'button', onclick: function () { CP.toTask(n.id, { withDate: true }); } }, ui.icon('task'), '할 일로 만들기') : null) : null;
     }
     var rows = h('div.cap-rows', { role: 'list' }, items.map(function (it, i) { return capRow(n, it, i, items, st, now); }));
     var run = (st.aiRuns || []).filter(function (r) { return r.noteId === n.id && r.kind === 'capture' && r.usage; }).pop();
@@ -934,7 +945,27 @@
           h('button.btn.btn-xs.btn-ghost', { type: 'button', onclick: function () { AS.rest(); } }, '다른 스트레칭'))));
   }
 
-  // AI 가 읽은 명령 확인 — "‘우유 사기’ → 완료로 표시할까요?" [실행] [아니요]
+  // 마감이 없던 할 일을 미뤘을 때 — "오늘 기준으로 내일로 옮겼어요" + [내일] [모레] [글피] [다음 주 월] (지금 고른 날은 눌린 상태)
+  function pickDateCard(m, st, now) {
+    var AS = DN.assistant;
+    var t = M.byId(st.tasks, m.taskId);
+    if (!t || t.deletedAt) return bubble('assistant', h('div.msg-text.meta', '그 할 일이 이제 없어요.'));
+    var base = D.parseYmd(m.base);
+    var monday = D.addDays(D.startOfWeek(base), 7);
+    var opts = [['내일', D.addDays(base, 1)], ['모레', D.addDays(base, 2)], ['글피', D.addDays(base, 3)], ['다음 주 월', monday]]
+      .map(function (o) { return [o[0], D.ymd(o[1])]; })
+      .filter(function (o, i, a) { return a.findIndex(function (x) { return x[1] === o[1]; }) === i; });
+    var cur = t.dueDate;
+    return bubble('assistant', h('div.pickdate',
+      h('div.msg-text', '‘' + t.title + '’에 원래 마감이 없어서 오늘 기준으로 미뤘어요 → ', h('b', cur ? dayLabel(cur, now) : '마감 없음'), '. 다른 날로 할까요?'),
+      h('div.msg-actions', opts.map(function (o) {
+        var on = cur === o[1];
+        return h('button.btn.btn-xs' + (on ? '.btn-primary' : ''), { type: 'button', 'aria-pressed': String(on), title: o[1], onclick: function () { if (!on) AS.pickDate(m.id, o[1]); } },
+          o[0] + ' ' + D.parseYmd(o[1]).getDate() + '일(' + D.WEEKDAYS[D.parseYmd(o[1]).getDay()] + ')');
+      }))));
+  }
+
+  // AI 가 읽은 명령 확인 —"‘우유 사기’ → 완료로 표시할까요?" [실행] [아니요]
   function confirmCard(m, st) {
     var AS = DN.assistant;
     var t = m.cmd && M.byId(st.tasks, m.cmd.taskId);

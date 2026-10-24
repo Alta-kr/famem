@@ -349,6 +349,22 @@
     return M.liveProjects(state).filter(function (p) { var n = norm(p.name); return n && (n === h || n.indexOf(h) !== -1 || h.indexOf(n) !== -1); })[0] || null;
   }
 
+  var RECORD_RE = /가능(함|하다|합니다|해요|해)?\s*[.!]*$/;
+  var ACTION_RE = /(하기|할\s*것|할게|하자|예정|해야|까지|진행)/;
+  // 결과 카드의 제안(기록 문장이라 바로 만들지 않은 것)을 사용자가 [넣기] 로 만든다
+  function captureApplySkipped(state, noteId, pid, now) {
+    var note = M.byId(state.notes, noteId);
+    var p = M.byId(state.proposals, pid);
+    if (!note || !note.capture || !p || p.status !== 'pending') return null;
+    var res = applySelections(state, [pid], now);
+    if (!res.ok || !res.created.length) return null;
+    note.capture = Object.assign({}, note.capture, {
+      created: (note.capture.created || []).concat(res.created.map(function (c) { return { kind: c.kind, id: c.id }; })),
+      skipped: (note.capture.skipped || []).filter(function (s) { return s.id !== pid; })
+    });
+    return res.created[0];
+  }
+
   function applyCapture(state, args, now) {
     ensure(state);
     var note = M.byId(state.notes, args.note.id);
@@ -383,6 +399,8 @@
         if (fix) { fixes.push(fix); p.status = 'dismissed'; p.reviewedAt = iso(now); return; }
       }
       if (p.payload.duplicateOf) { skipped.push({ id: p.id, reason: 'duplicate' }); return; }
+      // "다음 주 수요일 오후에만 전자현미경 사용 가능." 같은 사실 기록은 바로 만들지 않고 결과 카드에 제안으로 (넣기 버튼)
+      if (RECORD_RE.test(String(p.source && p.source.quote || '').trim()) && !ACTION_RE.test(String(p.source && p.source.quote || ''))) { skipped.push({ id: p.id, reason: 'record', title: p.payload.title }); return; }
       if (proj && (userProject || !p.payload.fields.projectId.value)) p.payload.fields.projectId = { value: proj.id, status: 'ok', message: '', options: [] };
       // 날짜·시각이 확실한 일정인데 길이만 없으면 30분으로 두고 캘린더에 넣는다 (나중에 끌어서 고치면 된다)
       if (p.kind === 'event') {
@@ -577,7 +595,18 @@
     var k = nospace(title);
     if (k.length < 2) return null;
     var near = open.filter(function (t) { var n = nospace(t.title); return n === k || n.indexOf(k) !== -1 || k.indexOf(n) !== -1; });
-    return near.length === 1 ? near[0] : null;
+    if (near.length === 1) return near[0];
+    return near.length ? null : SG.closeTitle(open, title, function (t) { return t.title; });   // 글자 몇 개 틀린 이름
+  }
+  // AI 가 엉뚱한 기존 할 일을 고르는 일이 있다 (실측: 새 할 일 글을 무관한 '방수 공사 …' 의 날짜 바꾸기로 줌).
+  //   글에 그 할 일 이름의 낱말이 하나도 없고, 글에 다른 내용 낱말이 둘 이상 있으면 그 할 일로 보지 않는다
+  //   ("마감 두 시간 미뤄줘" 처럼 명령 말뿐이면 작업 공간의 할 일이라 괜찮다)
+  function mentions(note, t) {
+    var body = bare([note.title, note.body].join('\n'));
+    var tw = words(t.title);
+    if (tw.some(function (w) { return body.indexOf(bare(w)) !== -1; })) return true;
+    var own = words([note.title, note.body].join(' ')).filter(function (w) { return nospace(t.title).indexOf(nospace(w)) === -1; });
+    return own.length < 2;
   }
   // ---------------------------------------------------------------- 고치는 말 ("아니 오후 8시야")
   //   방금(30분 안) 채팅으로 정리해 만든 일정·할 일과 같은 것을 AI 가 다시 적었으면 — 새로 만들지 않고 그 날짜·시각을 고친다.
@@ -732,6 +761,8 @@
       else rec.newWorkId = M.addBlock(state, { taskId: t.id, title: t.title, start: s.toISOString(), end: new Date(s.getTime() + len).toISOString(), origin: 'user', durationGuessed: true }).id;
     }
     if (!asPlan) rec.to = { dueDate: due ? due.date : null, dueTime: due ? due.time || null : null, at: at ? at.date + ' ' + at.time : null };
+    // 마감이 없던 일을 "하루 미뤄줘" — 오늘 기준으로 미루고, 채팅에서 다른 날(모레·글피 …)을 고를 수 있게 표시
+    if (shift && shift % 1440 === 0 && !rec.prev.dueDate) rec.pickDate = true;
     return rec;
   }
 
@@ -746,7 +777,7 @@
       var q = d.evidence && d.evidence.quote;
       if (!q || body.indexOf(bare(q)) === -1) return;
       var t = findOpenTask(state, String(d.title), exclude);
-      if (!t) return;
+      if (!t || !mentions(note, t)) return;
       var rec = changeDue(state, t, d.due, d.do_at, q, note, now);
       if (!rec) return;
       exclude[t.id] = true;
@@ -920,15 +951,20 @@
   }
 
   // "할 일로 바꾸기" — 적은 글 전체를 할 일 하나로 (원문 연결)
-  function captureToTask(state, noteId, now) {
+  function captureToTask(state, noteId, now, opts) {
     var note = M.byId(state.notes, noteId);
     if (!note) return null;
     var text = (note.body || note.title || '').split('\n').map(function (l) { return l.trim(); }).filter(Boolean);
     // 첫 줄이 제목, 그 아래 줄(목록·들여쓰기)은 세부 할 일 — 세부 할 일도 아래 단계를 가질 수 있다
     var shaped = ST.taskFromText(note.body || note.title || '');
     var first = shaped ? shaped.title : '';
+    // 글에 날짜 말이 있으면 함께 ("~까지" 면 마감, 아니면 할 날)
+    var whole = note.body || note.title || '';
+    var pd = opts && opts.withDate ? SG.parseDueHint(whole, now) : null;
     var task = M.addTask(state, {
       title: first.length > 120 ? first.slice(0, 117) + '…' : first || '(제목 없음)',
+      dueDate: pd && V.isDeadlineText(whole) ? pd.dueDate : null,
+      planDate: pd && !V.isDeadlineText(whole) ? pd.dueDate : null,
       steps: shaped ? shaped.steps : [],
       projectId: note.projectId || null,
       sources: [{ type: 'note', refId: note.id, excerpt: text.join(' ').slice(0, 300) }],
@@ -1201,7 +1237,7 @@
     refreshStale: refreshStale, staleForDeletedNote: staleForDeletedNote, effective: effective, setEdit: setEdit,
     takeAiUpdate: takeAiUpdate, dismiss: dismiss, restore: restore, checkSelection: checkSelection,
     applySelections: applySelections, readiness: readiness, partition: partition, FIELD_LABEL: FIELD_LABEL, forNote: forNote,
-    applyCapture: applyCapture, recentLines: recentLines, recentCreated: recentCreated, captureToMemo: captureToMemo, captureToTask: captureToTask, captureSetProject: captureSetProject, digestFor: digestFor, eventRange: eventRange,
+    applyCapture: applyCapture, recentLines: recentLines, recentCreated: recentCreated, captureToMemo: captureToMemo, captureToTask: captureToTask, captureApplySkipped: captureApplySkipped, captureSetProject: captureSetProject, digestFor: digestFor, eventRange: eventRange,
     captureSetKind: captureSetKind, captureSetItemKind: captureSetItemKind, captureRemoveItem: captureRemoveItem, captureItems: captureItems
   };
 });

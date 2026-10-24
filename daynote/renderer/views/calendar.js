@@ -26,8 +26,10 @@
     } catch (x) {}
   }
 
-  function render(root) {
+  function render(root, params) {
     var A = DN.app;
+    // 채팅에서 "주간 일정표 보여줘" — 처음 열 때 한 번만 그 보기로 (그 뒤 사용자가 바꾼 보기는 그대로)
+    if (params && params.mode && !params.modeUsed) { mem.mode = params.mode; params.modeUsed = true; }
     var st = S.state;
     var now = A.now();
     if (!mem.anchor) mem.anchor = D.ymd(now);

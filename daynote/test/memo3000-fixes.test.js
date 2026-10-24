@@ -111,3 +111,54 @@ test('AI 없이 알아듣는 말: "오늘 할 일 화면" 은 오늘 화면 · �
   assert.deepStrictEqual(CMD.matchLocal(st, '오늘 할 일 화면 좀 열어줘', null), { action: 'open', view: 'today' });
   assert.deepStrictEqual(CMD.matchLocal(st, "'견적서 보내기' 쪼개줘", null), { action: 'breakdown', taskId: t.id });
 });
+
+test('정책: 마감 없던 할 일 "하루 미뤄줘" → 오늘 기준 내일 + 날짜 고르기 표시', () => {
+  const st = M.emptyState();
+  const t = M.addTask(st, { title: '단어장 업데이트' }, NOW);
+  const body = "'단어장 업데이트' 일정 하루 미뤄줘";
+  const { note } = apply(st, body, { entry_type: 'update', updated_tasks: [{ title: '단어장 업데이트', evidence: { quote: body, line: 1 }, due: { text: '하루 미뤄', date: null, time: null }, do_at: NUL }] });
+  assert.strictEqual(t.dueDate, '2026-11-01');
+  assert.strictEqual(note.capture.updated[0].pickDate, true);
+  // 마감이 있던 일은 그 마감에서 미루고 고르기 표시는 없다
+  const t2 = M.addTask(st, { title: '견적서 회신', dueDate: '2026-11-05' }, NOW);
+  const b2 = "'견적서 회신' 하루 미뤄줘";
+  const r2 = apply(st, b2, { entry_type: 'update', updated_tasks: [{ title: '견적서 회신', evidence: { quote: b2, line: 1 }, due: { text: '하루 미뤄', date: null, time: null }, do_at: NUL }] }).note;
+  assert.strictEqual(t2.dueDate, '2026-11-06');
+  assert.ok(!r2.capture.updated[0].pickDate);
+});
+
+test('엉뚱한 기존 할 일로 연결하지 않는다 · 이름 오타는 가까운 것 하나로', () => {
+  const st = M.emptyState();
+  const other = M.addTask(st, { title: '방수 공사 후 담수 테스트 누수 확인', dueDate: '2026-11-03' }, NOW);
+  const q = '금일 밤 11시까지 도장 공정 퍼티 평탄도 검수 제출 마감임';
+  apply(st, q, { entry_type: 'update', updated_tasks: [{ title: other.title, evidence: { quote: q, line: 1 }, due: { text: '금일 밤 11시까지', date: '2026-10-31', time: '23:00' }, do_at: NUL }] });
+  assert.strictEqual(other.dueDate, '2026-11-03', '무관한 할 일은 그대로');
+  const t = M.addTask(st, { title: '장기 미전환 잠재고객 팔로업 전화 돌리기' }, NOW);
+  assert.strictEqual(CMD.findTask(st, '장기 미전환 잠재고セミ 고객 팔로업 전화 돌리기'), t);
+});
+
+test('"주간 일정표" 는 캘린더 주간 보기', () => {
+  const st = M.emptyState();
+  assert.deepStrictEqual(CMD.matchLocal(st, '주간 일정표 좀 열어줘', null), { action: 'open', view: 'calendar', mode: 'week' });
+  assert.deepStrictEqual(CMD.matchLocal(st, '주간 정리 보여줘', null), { action: 'open', view: 'weekly' });
+});
+
+test('"…사용 가능." 같은 사실 기록은 바로 만들지 않고 제안으로 — [넣기] 로 만든다', () => {
+  const st = M.emptyState();
+  const q = '다음 주 수요일 오후에만 전자현미경 사용 가능.';
+  const { note } = apply(st, q, { entry_type: 'mixed', tasks: [{ title: '전자현미경 사용', evidence: { quote: q, line: 1 }, due: { text: '다음 주 수요일', date: '2026-11-04', time: null }, do_at: NUL, size: 'small', basis: 'explicit' }] });
+  assert.strictEqual(M.liveTasks(st).length, 0);
+  assert.strictEqual(note.captureRole, 'memo');
+  const s = note.capture.skipped.find((x) => x.reason === 'record');
+  assert.ok(s);
+  P.captureApplySkipped(st, note.id, s.id, NOW);
+  assert.strictEqual(M.liveTasks(st).length, 1);
+  assert.ok(!note.capture.skipped.some((x) => x.id === s.id));
+});
+
+test('[할 일로 만들기] — 글의 날짜도 함께 (까지면 마감, 아니면 할 날)', () => {
+  const st = M.emptyState();
+  const note = M.addNote(st, { title: '', body: '내일 11:00에 서류 관세사 전달 진행 예정' }, NOW);
+  const t = P.captureToTask(st, note.id, NOW, { withDate: true });
+  assert.deepStrictEqual([t.planDate, t.dueDate], ['2026-11-01', null]);
+});

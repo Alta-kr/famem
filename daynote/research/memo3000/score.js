@@ -3,6 +3,7 @@
 // 메모 3,000개 채점 — AI 답(results/raw.jsonl)을 실제 앱 코드에 넣어(검증 → 명령 확인 → 적용) 최종 결과로 본다.
 //   앱 순서 그대로: 짧은 명령은 AI 없이 바로 알아듣는 것(matchLocal)이 먼저, 아니면 AI 답.
 //   node research/memo3000/score.js  → results/score.json · results/fails.csv · 화면 요약
+//   require('./score').scoreAll() — npm test 의 회귀 검사(test/memo3000.test.js)가 쓴다 (AI 를 다시 부르지 않는다)
 
 const fs = require('fs');
 const path = require('path');
@@ -15,9 +16,12 @@ const C = require(path.join(ROOT, 'src/core/ai/capture'));
 const CMD = require(path.join(ROOT, 'src/core/ai/commands'));
 const H = require('./harness');
 
-const raw = {};
-fs.readFileSync(path.join(__dirname, 'results', 'raw.jsonl'), 'utf8').split('\n').filter(Boolean).forEach((l) => { const r = JSON.parse(l); if (!raw[r.id] || r.ok) raw[r.id] = r; });
-const rows = H.load();
+let raw = {}, rows = [];
+function load() {
+  raw = {};
+  fs.readFileSync(path.join(__dirname, 'results', 'raw.jsonl'), 'utf8').split('\n').filter(Boolean).forEach((l) => { const r = JSON.parse(l); if (!raw[r.id] || r.ok) raw[r.id] = r; });
+  rows = H.load();
+}
 
 const hm = (iso) => D.ymd(iso) + ' ' + D.hm(iso);
 function quoted(r, ctx) {
@@ -150,7 +154,8 @@ function judge(r, o) {
       const want = /workspace/.test(arg) ? S.focus : S.byKey[(arg.match(/\d+/) || [])[0]];
       return c.taskId === (want && want.id) ? [true] : [false, '삭제 대상 다름'];
     }
-    if (act === 'open') return c.view === arg ? [true] : [false, '화면 다름 ' + c.view];
+    // "주간 일정표" — 데이터는 주간 정리, 앱은 캘린더 주간 보기 (정책: 일정표는 캘린더)
+    if (act === 'open') return c.view === arg ? [true] : arg === 'weekly' && c.view === 'calendar' && c.mode === 'week' ? [true, '캘린더 주간 보기'] : [false, '화면 다름 ' + c.view];
     if (act === 'search') return c.query && c.query.replace(/\s/g, '').indexOf(arg.replace(/\s/g, '')) !== -1 ? [true] : [false, '찾을 말 다름 ' + c.query];
     if (/^(start|pause|breakdown)$/.test(act)) { const q = quoted(r, ctx), k = key(q); return !q || c.taskId === S.byKey[k].id ? [true] : [false, '대상 다름']; }
     return [true];
@@ -158,6 +163,8 @@ function judge(r, o) {
   return [false, '알 수 없는 유형'];
 }
 
+function scoreAll() {
+load();
 const per = {}, fails = [], cost = { in: 0, cached: 0, out: 0, n: 0, ms: [] }, models = {};
 const flags = { keptMemo: 0, confirmCmds: 0, localPath: 0 };
 rows.forEach((r) => {
@@ -180,9 +187,17 @@ const pct = (q) => cost.ms[Math.floor(cost.ms.length * q)] || 0;
 const usd = cost.in / 1e6 * 0.30 + cost.out / 1e6 * 2.5;   // 3.5 Flash-Lite 기준 (캐시 할인 전 상한)
 const summary = { prompt: C.PROMPT_VERSION, total, rate: +(total.ok / total.n * 100).toFixed(1), per, flags, models,
   latency: { p50: pct(0.5), p90: pct(0.9), p99: pct(0.99), max: cost.ms[cost.ms.length - 1] }, tokens: { in: cost.in, out: cost.out, n: cost.n }, usdUpperBound: +usd.toFixed(2) };
+return { summary, fails };
+}
+function main() {
+const { summary, fails } = scoreAll();
+const { total, per, flags, models } = summary;
 fs.writeFileSync(path.join(__dirname, 'results', 'score.json'), JSON.stringify(summary, null, 1));
 const esc = (s) => '"' + String(s == null ? '' : s).replace(/"/g, '""') + '"';
 fs.writeFileSync(path.join(__dirname, 'results', 'fails.csv'), '﻿id,intent,style,why,memo,ai\n' + fails.map((f) => [f.id, f.intent, f.style, f.why, f.memo, f.out].map(esc).join(',')).join('\n'));
 console.log('통과', total.ok + '/' + total.n, summary.rate + '%', '| 프롬프트', C.PROMPT_VERSION);
 Object.keys(per).forEach((k) => console.log(' ', k.padEnd(30), per[k].ok + '/' + per[k].n, JSON.stringify(per[k].notes)));
 console.log('메모 지킴', flags.keptMemo, '| 확인 카드 명령', flags.confirmCmds, '| AI 없이 알아들음', flags.localPath, '| 모델', JSON.stringify(models), '| 지연', JSON.stringify(summary.latency), '| 비용 상한 $' + summary.usdUpperBound);
+}
+module.exports = { scoreAll };
+if (require.main === module) main();

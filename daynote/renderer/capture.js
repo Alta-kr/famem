@@ -136,6 +136,9 @@
         cap = P.applyCapture(s, { note: sent, run: r, validated: v, output: res.output, commands: cmds }, t);
       }, { source: 'capture' });
       notify();
+      // 마감이 없던 일을 미뤘으면 — 오늘 기준으로 넣고, 다른 날을 고를 수 있는 버튼
+      var picks = (cap && cap.updated || []).filter(function (u) { return u.pickDate; });
+      if (picks.length && DN.assistant && DN.assistant.askDate) S.withJoin(key, function () { picks.forEach(function (u) { DN.assistant.askDate(u.id, t); }); });
       if (cmds.length && DN.assistant && DN.assistant.runCommand) S.withJoin(key, function () {
         // 할 일 상태를 바꾸는 명령(완료·삭제 …)은 바로 하지 않고 대상과 바뀌는 내용을 보여 주고 묻는다
         cmds.forEach(function (c) { if (DN.assistant.needsConfirm(c)) DN.assistant.askCommand(c); else DN.assistant.runCommand(c); });
@@ -147,8 +150,11 @@
   function toMemo(noteId) {
     S.mutate('메모로 바꾸기', function (s) { P.captureToMemo(s, noteId, now()); }, { source: 'capture' });
   }
-  function toTask(noteId) {
-    return S.mutate('할 일로 바꾸기', function (s) { return P.captureToTask(s, noteId, now()); }, { source: 'capture' });
+  function toTask(noteId, opts) {
+    return S.mutate('할 일로 바꾸기', function (s) { return P.captureToTask(s, noteId, now(), opts); }, { source: 'capture' });
+  }
+  function applySkipped(noteId, pid) {
+    S.mutate('제안 넣기', function (s) { P.captureApplySkipped(s, noteId, pid, now()); }, { source: 'capture' });
   }
   function setProject(noteId, projectId) {
     S.mutate('프로젝트 바꾸기', function (s) { P.captureSetProject(s, noteId, projectId); }, { source: 'capture' });
@@ -176,7 +182,7 @@
   }
 
   DN.capture = {
-    submit: submit, classify: classify, toMemo: toMemo, toTask: toTask, setProject: setProject, today: today,
+    submit: submit, classify: classify, toMemo: toMemo, toTask: toTask, applySkipped: applySkipped, setProject: setProject, today: today,
     setKind: setKind, setItemKind: setItemKind, removeItem: removeItem, items: items, KIND_LABEL: KIND_LABEL,
     isRunning: function (id) { return !!inflight[id]; },
     onChange: function (fn) { listeners.push(fn); return function () { listeners = listeners.filter(function (f) { return f !== fn; }); }; }

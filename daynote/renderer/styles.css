@@ -1203,6 +1203,7 @@ kbd {
 .cap-foot { display: flex; align-items: center; gap: 4px; flex-wrap: wrap; padding: 2px 14px 10px; }
 .cap-foot kbd { font-size: 11px; padding: 0 5px; margin-right: 2px; }
 .cap-foot .btn svg { width: 14px; height: 14px; }
+.cap-suggest { display: flex; align-items: center; gap: 6px; flex-wrap: wrap; width: 100%; font-size: 12.5px; color: var(--text-secondary); }
 
 /* 정리 중 — 얇은 줄 하나 (움직임은 위치만: 깜빡임 없음) */
 .cap.is-pending { padding: 10px 14px; }
