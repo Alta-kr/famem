@@ -55,7 +55,7 @@
     }
 
     var card = h('div.login-card',
-      h('div.login-brand', h('div.brand-mark', { 'aria-hidden': 'true' }, 'M'), h('span', 'Modib')),
+      h('div.login-brand', h('div.brand-mark', ui.appMark()), ui.wordmark()),
       h('h1.login-title', st.owner ? '다시 로그인해 주세요' : 'Google 계정으로 시작하기'),
       h('p.login-sub', st.subText ? st.subText : st.owner
         ? '이 컴퓨터의 Modib은 ' + st.owner + ' 계정으로 쓰고 있어요.'

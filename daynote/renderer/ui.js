@@ -88,6 +88,22 @@
     return span.firstChild;
   }
 
+  // ------------------------------------------------------------------ Modib 로고
+  //   appMark: 앱 아이콘(해가 마침표 — 글줄 끝에 노란 해) · wordmark: 둥근 기하 글자 'modib' (글자 색은 currentColor)
+  var APP_MARK = '<rect width="120" height="120" rx="28" fill="#F4F4FB"/><rect x="24" y="24" width="72" height="72" rx="16" fill="#5B5BD6"/>' +
+    '<g stroke="#FFFFFF" stroke-width="6" stroke-linecap="round"><line x1="38" y1="44" x2="82" y2="44"/><line x1="38" y1="60" x2="74" y2="60" stroke-opacity="0.75"/><line x1="38" y1="76" x2="56" y2="76" stroke-opacity="0.5"/></g>' +
+    '<circle cx="70" cy="76" r="7" fill="#FFC857"/>';
+  var WORDMARK = '<g fill="none" stroke="currentColor" stroke-width="22" stroke-linecap="round" stroke-linejoin="round">' +
+    '<path d="M11 146 V82 A31 31 0 0 1 73 82 V146 M73 82 A31 31 0 0 1 135 82 V146"/><circle cx="214" cy="100" r="46"/><circle cx="343" cy="100" r="46"/>' +
+    '<path d="M389 11 V146 M442 64 V146 M500 11 V146"/><circle cx="546" cy="100" r="46"/></g><circle cx="442" cy="21" r="13" fill="currentColor"/>';
+  function svgEl(viewBox, body, cls, label) {
+    var span = document.createElement('span');
+    span.innerHTML = '<svg class="' + cls + '" viewBox="' + viewBox + '"' + (label ? ' role="img" aria-label="' + label + '"' : ' aria-hidden="true"') + '>' + body + '</svg>';
+    return span.firstChild;
+  }
+  function appMark(cls) { return svgEl('0 0 120 120', APP_MARK, 'app-mark' + (cls ? ' ' + cls : '')); }
+  function wordmark(cls) { return svgEl('0 0 603 157', WORDMARK, 'wordmark' + (cls ? ' ' + cls : ''), 'Modib'); }
+
   // ------------------------------------------------------------------ 알림
   var toastWrap = null;
   function toast(msg, opts) {
@@ -1066,7 +1082,7 @@
   window.addEventListener('blur', function () { document.documentElement.classList.remove('alt-down'); });
 
   window.Daynote.ui = {
-    h: h, icon: icon, toast: toast, undoToast: undoToast, modal: modal, confirm: confirmDialog, menu: menu, closeMenu: closeMenu, popover: popover,
+    h: h, icon: icon, appMark: appMark, wordmark: wordmark, toast: toast, undoToast: undoToast, modal: modal, confirm: confirmDialog, menu: menu, closeMenu: closeMenu, popover: popover,
     kindChip: kindChip, KIND_LABEL: KIND_LABEL, KIND_ICON: KIND_ICON, josa: josa,
     stepsPanel: stepsPanel, stepsToggle: stepsToggle, stepTree: stepTree, dueEditor: dueEditor, projectPicker: projectPicker, projectPickChip: projectPickChip,
     projectChip: projectChip, dueChip: dueChip, planChip: planChip, osNotify: osNotify, noteProjectChip: noteProjectChip, folderIcon: folderIcon, fileNote: fileNote, UNFILED_COLOR: UNFILED_COLOR,

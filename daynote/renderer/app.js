@@ -49,7 +49,7 @@
       } }, ui.icon('clock'), h('span.focus-pill-label', '집중 '), els.focusTime),
       h('button.focus-pill-stop', { type: 'button', title: '집중 그만', 'aria-label': '집중 그만', onclick: function () { if (DN.assistant) DN.assistant.stopFocus(); } }, ui.icon('x')));
     els.sidebar = h('aside.sidebar',
-      h('div.brand', h('div.brand-mark', { 'aria-hidden': 'true' }, 'M'), h('div.brand-name', 'Modib'),
+      h('div.brand', h('div.brand-mark', ui.appMark()), h('div.brand-name', ui.wordmark()),
         h('button.icon-btn.brand-collapse', { type: 'button', 'aria-label': '사이드바 접기/펴기', title: '사이드바 접기/펴기 (Ctrl+\\)', onclick: toggleSidebar }, ui.icon('sidebar'))),
       els.nav,
       h('div.sidebar-foot', els.focus, els.navSub, h('div.sidebar-foot-row', els.save, els.hist))

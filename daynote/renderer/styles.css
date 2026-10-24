@@ -319,12 +319,12 @@ code { font-family: var(--mono); font-size: .92em; background: var(--code-bg); b
   overflow: hidden;
 }
 .brand { display: flex; align-items: center; gap: 9px; padding: 2px 4px 14px 8px; min-height: 40px; }
-.brand-mark {
-  width: 24px; height: 24px; flex: 0 0 24px; border-radius: var(--r-control);
-  background: var(--primary-fill); color: var(--on-primary); display: grid; place-items: center;
-  font-weight: 700; font-size: 13px; letter-spacing: 0;
-}
-.brand-name { font-weight: 700; font-size: 16px; letter-spacing: -0.02em; white-space: nowrap; }
+.brand-mark { width: 26px; height: 26px; flex: 0 0 26px; display: grid; place-items: center; }
+.app-mark { width: 100%; height: 100%; display: block; }
+.brand-name { display: flex; align-items: center; color: var(--text-primary); }
+.wordmark { height: 17px; width: auto; display: block; }
+.login-brand .brand-mark { width: 30px; height: 30px; flex-basis: 30px; }
+.login-brand .wordmark { height: 20px; }
 .brand-collapse { margin-left: auto; }
 
 .nav { display: flex; flex-direction: column; gap: 1px; }
