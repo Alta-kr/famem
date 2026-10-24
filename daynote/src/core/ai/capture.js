@@ -20,7 +20,7 @@
   if (node) module.exports = api;
   if (typeof window !== 'undefined') { window.Daynote = window.Daynote || {}; window.Daynote.aiCapture = api; }
 })(function (O, CMD, D) {
-  var PROMPT_VERSION = 'capture.v15';   // v2~v13: 큰 일·메모 종류·시간 정한 할 일·완료·날짜 바꾸기·명령·묶음·목록·걸리는 시간·준비·고치는 말 · v14: 최종안(달력 줄·분류 먼저·짧은 답) · v15: 마감·작업 시간 지우기
+  var PROMPT_VERSION = 'capture.v16';   // v2~v13: 큰 일·메모 종류·시간 정한 할 일·완료·날짜 바꾸기·명령·묶음·목록·걸리는 시간·준비·고치는 말 · v14: 최종안(달력 줄·분류 먼저·짧은 답) · v15: 마감·작업 시간 지우기 · v16: 기간 물어보기(list_today)
   var ENTRY_TYPES = ['memo', 'task', 'mixed', 'done', 'update', 'command'];
   var NOTE_KINDS = ['memo', 'idea', 'link'];
   var MAX_OUTPUT_TOKENS = 2048;
@@ -72,7 +72,7 @@
     "방금 정리한 것 정정(\"아니 오후 8시야\", \"아니 모레까지야\"): 같은 제목·원래 종류(tasks/events)로 고친 값을 다시 적고, 말하지 않은 날짜·시각은 방금 것 그대로. entry_type=update.",
     "",
     "[앱 명령 commands]",
-    "기록이 아니라 Daynote에게 해 달라는 요청만: recommend(추천·뭐부터·\"30분 남는데 뭐 하지\") · breakdown · start · pause · complete · return_todo · work(작업 공간·채팅에 올리기) · day_close(하루 마무리·퇴근·오늘은 여기까지) · rest · list_today · open(view: today|archive|tasks|calendar|projects|weekly|settings) · search(query) · schedule · delete. target=적힌 기존 제목, 없으면 null.",
+    "기록이 아니라 Daynote에게 해 달라는 요청만: recommend(추천·뭐부터·\"30분 남는데 뭐 하지\") · breakdown · start · pause · complete · return_todo · work(작업 공간·채팅에 올리기) · day_close(하루 마무리·퇴근·오늘은 여기까지) · rest · list_today(할 일·일정 알려 주기 — 오늘·내일 아침·이번 주·다음 주) · open(view: today|archive|tasks|calendar|projects|weekly|settings) · search(query) · schedule · delete. target=적힌 기존 제목, 없으면 null.",
     "요청이 여럿이면 각각 넣는다. 예) \"보고서 작게 나눠서 작업 공간에 올려줘\" → breakdown, work.",
     "\"~해 주면 어떨까\"는 아이디어이지 명령이 아니다.",
     "",

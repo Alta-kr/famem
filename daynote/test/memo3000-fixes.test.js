@@ -162,3 +162,28 @@ test('[할 일로 만들기] — 글의 날짜도 함께 (까지면 마감, 아�
   const t = P.captureToTask(st, note.id, NOW, { withDate: true });
   assert.deepStrictEqual([t.planDate, t.dueDate], ['2026-11-01', null]);
 });
+
+test('기간 물어보기: 내일 아침 · 이번 주 남은 일 · 다음 주 정리 — 그 기간의 할 일·일정', () => {
+  const now = new Date(2026, 9, 21, 15, 0);   // 수요일
+  const st = M.emptyState();
+  const a = M.addTask(st, { title: '보고서 마감', dueDate: '2026-10-22' }, now);
+  const b = M.addTask(st, { title: '서버 점검' }, now);
+  M.addBlock(st, { taskId: b.id, title: b.title, start: new Date(2026, 9, 22, 9, 0).toISOString(), end: new Date(2026, 9, 22, 10, 0).toISOString() });
+  M.addBlock(st, { title: '팀 회의', start: new Date(2026, 9, 22, 15, 0).toISOString(), end: new Date(2026, 9, 22, 16, 0).toISOString() });
+  M.addTask(st, { title: '다음 주 발표', dueDate: '2026-10-27' }, now);
+  const q = (s) => CMD.matchLocal(st, s, null, now);
+  const morning = q('내일 아침에 뭐해야돼?');
+  assert.deepStrictEqual([morning.action, morning.period.from, morning.period.part.label], ['list_today', '2026-10-22', '아침']);
+  const am = CMD.agenda(st, morning.period, now)[0].items.map((x) => (x.task || x.block).title);
+  assert.deepStrictEqual(am, ['서버 점검', '보고서 마감'], '아침 작업 시간 + 그날 마감 (오후 회의는 빼고)');
+  const week = q('이번주 남은일 알려줘').period;
+  assert.deepStrictEqual([week.from, week.to], ['2026-10-21', '2026-10-25']);
+  assert.strictEqual(CMD.agenda(st, week, now).reduce((n, d) => n + d.items.length, 0), 3);
+  const next = q('다음주 해야할일 정리해줘').period;
+  assert.deepStrictEqual([next.from, next.to], ['2026-10-26', '2026-11-01']);
+  assert.deepStrictEqual(CMD.agenda(st, next, now).map((d) => [d.ymd, d.items[0].task.title]), [['2026-10-27', '다음 주 발표']]);
+  // 할 일로 적은 글은 질문이 아니다
+  assert.strictEqual(q('내일까지 보고서 정리해줘'), null);
+  assert.strictEqual(q('내일 아침 운동하기'), null);
+  void a;
+});

@@ -63,7 +63,7 @@
       if (s.chat.length > MAX_MESSAGES) s.chat.splice(0, s.chat.length - MAX_MESSAGES);
     }, { source: 'chat' });
     // 자주 쓰는 짧은 명령("할 일 추천해줘", "쉬고 싶어", "캘린더 보여줘")은 AI 없이 바로 — 메모로 남기지 않는다
-    var local = DN.aiCommands.matchLocal(S.state, text, focusTask());
+    var local = DN.aiCommands.matchLocal(S.state, text, focusTask(), now());
     if (local) { S.withJoin(key, function () { runCommand(local); }); return null; }
     var note = DN.capture.submit(text, projectId, function (r, noteId) {
       if (!r || !r.ok || !r.capture) return;
@@ -152,7 +152,7 @@
       case 'search':
         if (DN.palette) DN.palette.open(c.query);
         break;
-      case 'list_today': listToday(); break;
+      case 'list_today': listToday(c.period); break;
       case 'day_close': dayClose(); break;
       case 'fix_ampm': fixAmPm(c.pm); break;
     }
@@ -209,8 +209,10 @@
   }
 
   // "오늘 할 일 뭐야?" — 오늘 할 일을 채팅에 요약
-  function listToday() {
+  function listToday(period) {
     var n = now();
+    // "내일 아침" · "이번 주 남은 일" · "다음 주" — 그 기간의 할 일·일정을 날짜별로 (오늘 전체는 아래 오늘 목록 그대로)
+    if (period && !(period.from === D.ymd(n) && period.to === period.from && !period.part)) { listPeriod(period, n); return; }
     var list = DN.aiCommands.todayTasks(S.state, n);
     var events = S.state.blocks.filter(function (b) { return b.kind === 'event' && DN.dates.ymd(b.start) === DN.dates.ymd(n) && new Date(b.end) > n; })
       .sort(function (a, b) { return a.start < b.start ? -1 : 1; });
@@ -229,6 +231,37 @@
       lines.push('남은 일정: ' + events.map(function (b) { return DN.dates.hm(b.start) + ' ' + b.title; }).join(', '));
     }
     post({ kind: 'text', text: lines.join('\n'), actions: list.length ? ['next'] : [] });
+  }
+
+  var AG_TAG = { work: '', due: '마감', plan: '할 날', doing: '진행 중', late: '마감 지남', event: '일정' };
+  function listPeriod(p, n) {
+    var days = DN.aiCommands.agenda(S.state, p, n);
+    var one = p.from === p.to;
+    var dayName = function (k) { var d = D.parseYmd(k); var r = D.relDay(k, n); return /^(오늘|내일|모레)$/.test(r) ? r + '(' + D.WEEKDAYS[d.getDay()] + ')' : (d.getMonth() + 1) + '/' + d.getDate() + ' (' + D.WEEKDAYS[d.getDay()] + ')'; };
+    var title = one ? dayName(p.from) + (p.part ? ' ' + p.part.label : '') : p.label;
+    var count = days.reduce(function (a, d) { return a + d.items.length; }, 0);
+    var line = function (it) {
+      var name = it.task ? it.task.title : (it.block.title || '일정');
+      var tag = it.kind === 'due' ? '마감' + (it.at ? ' ' + it.at : '') : it.kind === 'late' ? '마감 지남 ' + it.task.dueDate.slice(5).replace('-', '/') : AG_TAG[it.kind];
+      return '• ' + (it.at && it.kind !== 'due' ? it.at + ' ' : '') + name + (tag ? ' · ' + tag : '');
+    };
+    var lines = [];
+    if (!count) {
+      lines.push((one ? title : p.label === '이번 주 남은' ? '이번 주 남은 날' : p.label) + '에는 잡힌 할 일·일정이 없어요.');
+    } else {
+      lines.push(title + ' 할 일·일정 ' + count + '개예요.');
+      var shown = 0;
+      days.forEach(function (d) {
+        if (shown >= 15) return;
+        if (!one) lines.push(dayName(d.ymd));
+        d.items.forEach(function (it) { if (shown++ < 15) lines.push(line(it)); });
+      });
+      if (count > 15) lines.push('… 외 ' + (count - 15) + '개');
+    }
+    // 여러 날을 물었으면 날짜 없는 할 일도 알려 준다 (그중에서 골라 드릴 수 있게)
+    var undated = !one ? M.liveTasks(S.state).filter(function (t) { return t.status !== 'done' && !t.dueDate && !t.planDate && !M.blocksForTask(S.state, t.id).length; }).length : 0;
+    if (undated) lines.push('날짜를 안 정한 할 일도 ' + undated + '개 있어요.');
+    post({ kind: 'text', text: lines.join('\n'), actions: ['next'] });
   }
 
   // 지금 작업 공간에 올라 있는 할 일 — 가장 최근의 접히지 않은 작업 카드 (끝낸·지운 일은 빼고)

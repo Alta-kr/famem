@@ -33,7 +33,7 @@
   var PROMPT = [
     'L. 명령: 글이 기록·할 일이 아니라 Daynote 에게 무엇을 해 달라는 요청이면 commands 에 넣습니다. (해당 없으면 빈 배열)',
     '   recommend(할 일 추천·뭐부터 할지·"30분 남는데 뭐 하지" 처럼 시간이 남았다는 말) · breakdown(작게 나누기) · start(시작) · pause(일시 정지·멈춤) · complete(완료 처리 요청) · return_todo(할 일로 되돌리기) · work(작업 공간·채팅에 올리기)',
-    '   day_close(하루 마무리·퇴근·오늘은 여기까지) · rest(휴식·쉬기) · list_today(오늘 할 일·일정 알려 주기) · open(화면 열기: view 에 today/archive/tasks/calendar/projects/weekly/settings) · search(찾기: query 에 찾을 말) · schedule(일정에 배치) · delete(할 일 지우기)',
+    '   day_close(하루 마무리·퇴근·오늘은 여기까지) · rest(휴식·쉬기) · list_today(할 일·일정 알려 주기 — 오늘·내일 아침·이번 주 남은 일·다음 주 정리도) · open(화면 열기: view 에 today/archive/tasks/calendar/projects/weekly/settings) · search(찾기: query 에 찾을 말) · schedule(일정에 배치) · delete(할 일 지우기)',
     '   target 은 대상 할 일 제목(목록 글자 그대로). 대상을 말하지 않았으면 null (앱이 작업 공간의 할 일을 쓴다). 명령만 있는 글이면 entry_type "command".',
     '   명령을 새 할 일로 만들지 마세요. 예) "할 일 추천해줘" → recommend / "견적서 작게 나눠줘" → breakdown, target "견적서 보내기" / "캘린더 보여줘" → open, view "calendar" / "회의록 메모 찾아줘" → search, query "회의록"',
     '   "완료했어", "끝났어" 처럼 끝냈다는 보고는 H(done_tasks)이고, "완료 처리해 줘" 처럼 요청하면 complete 입니다.'
@@ -91,10 +91,13 @@
     return { action: 'recommend', free: true, minutes: freeMinutes(s) };
   }
 
-  function matchLocal(state, text, focus) {
+  function matchLocal(state, text, focus, now) {
     var s = String(text || '').trim().replace(/[.!~]+$/, '');
     if (!s || s.length > 40 || /\n/.test(s)) return null;
     var m;
+    // 기간 물어보기 — "내일 아침에 뭐 해야 돼?" · "이번 주 남은 일 알려줘" · "다음 주 할 일 정리해줘"
+    var ap = askPeriod(s, now || new Date());
+    if (ap) return { action: 'list_today', period: ap };
     // 남는 시간 — 그 시간 안에 할 일 (준비할 일 위주)
     var ft = freeTime(s);
     if (ft) return ft;
@@ -163,10 +166,72 @@
       if (c.action === 'search') { var qq = String(c.query || '').trim().slice(0, 60); if (!qq) return; cmd.query = qq; }
       // "회의 전까지 40분 비는데 뭐 하면 좋을까" — 근거 문장에서 남는 시간을 앱이 읽는다
       if (c.action === 'recommend' && FREE_RE.test(q)) { cmd.free = true; cmd.minutes = freeMinutes(q); }
+      // "다음 주에 뭐 해야 하는지 정리해서 알려줄래" — 기간은 앱이 근거 문장에서 읽는다
+      if (c.action === 'list_today') { var per = periodOf(q, new Date(note.updatedAt || Date.now())); if (per) cmd.period = per; }
       if (out.some(function (o) { return o.action === cmd.action && o.taskId === cmd.taskId && o.view === cmd.view; })) return;
       out.push(cmd);
     });
     return out.slice(0, 5);
+  }
+
+  // ---------------------------------------------------------------- 기간 물어보기 ("내일 아침에 뭐 해야 돼?" · "이번 주 남은 일" · "다음 주 할 일 정리해줘")
+  //   글에서 기간을 읽는다 → { from, to (YYYY-MM-DD), part: {from,to,label} | null, label }. 기간 말이 없으면 null
+  var PARTS = [[/(새벽)/, '00:00', '06:00', '새벽'], [/(아침|오전)/, '05:00', '12:00', '아침'], [/(점심)/, '11:00', '14:00', '점심'],
+    [/(오후|낮)/, '12:00', '18:00', '오후'], [/(저녁|밤)/, '17:00', '24:00', '저녁']];
+  function periodOf(text, now) {
+    var s = String(text || ''), today = D.startOfDay(new Date(now));
+    var part = null;
+    PARTS.some(function (p) { if (p[0].test(s)) { part = { from: p[1], to: p[2], label: p[3] }; return true; } return false; });
+    var mon = D.startOfWeek(today), from, to, label;
+    if (/(이번\s*주|금주|이번주)/.test(s) && !/[월화수목금토일](요일|욜)/.test(s)) { from = today; to = D.addDays(mon, 6); label = '이번 주 남은'; }
+    else if (/(다다음\s*주)/.test(s) && !/[월화수목금토일](요일|욜)/.test(s)) { from = D.addDays(mon, 14); to = D.addDays(mon, 20); label = '다다음 주'; }
+    else if (/(다음\s*주|담주|차주)/.test(s) && !/[월화수목금토일](요일|욜)/.test(s)) { from = D.addDays(mon, 7); to = D.addDays(mon, 13); label = '다음 주'; }
+    else if (/주말/.test(s)) { from = D.addDays(mon, 5); to = D.addDays(mon, 6); if (to < today) { from = D.addDays(from, 7); to = D.addDays(to, 7); } if (from < today) from = today; label = '주말'; }
+    else {
+      var pd = SG.parseDueHint(s, today);
+      if (pd) { from = to = D.parseYmd(pd.dueDate); label = D.relDay(pd.dueDate, today); }
+      else if (part) { from = to = today; label = '오늘'; }
+      else return null;
+    }
+    return { from: D.ymd(from), to: D.ymd(to), part: from === to || D.ymd(from) === D.ymd(to) ? part : null, label: label };
+  }
+  // 그 기간의 할 일·일정 — 날마다 { ymd, items: [{ task|block, kind: 'work'|'due'|'plan'|'doing'|'late'|'event', at }] }
+  function agenda(state, period, now) {
+    var n = new Date(now), today = D.ymd(n);
+    var open = M.liveTasks(state).filter(function (t) { return t.status !== 'done'; });
+    var inPart = function (b) {
+      if (!period.part) return true;
+      var d = D.ymd(b.start);
+      return new Date(b.start) < D.parseYmd(d, period.part.to === '24:00' ? '23:59' : period.part.to) && new Date(b.end) > D.parseYmd(d, period.part.from);
+    };
+    var days = [];
+    for (var d = D.parseYmd(period.from); D.ymd(d) <= period.to; d = D.addDays(d, 1)) {
+      var k = D.ymd(d), items = [], seen = {};
+      var push = function (x) { var id = (x.task || x.block).id; if (seen[id]) return; seen[id] = true; items.push(x); };
+      state.blocks.filter(function (b) { return D.ymd(b.start) === k && inPart(b) && !(k === today && new Date(b.end) <= n); })
+        .sort(function (a, b) { return a.start < b.start ? -1 : 1; })
+        .forEach(function (b) {
+          if (!b.taskId) { push({ block: b, kind: 'event', at: D.hm(b.start) }); return; }
+          var t = M.byId(state.tasks, b.taskId);
+          if (t && !t.deletedAt && t.status !== 'done') push({ task: t, kind: 'work', at: D.hm(b.start) });
+        });
+      if (k === today) open.filter(function (t) { return t.status === 'in_progress' || t.status === 'paused'; }).forEach(function (t) { push({ task: t, kind: 'doing' }); });
+      open.filter(function (t) { return t.dueDate === k; }).forEach(function (t) { push({ task: t, kind: 'due', at: t.dueTime || null }); });
+      open.filter(function (t) { return t.planDate === k; }).forEach(function (t) { push({ task: t, kind: 'plan' }); });
+      if (k === today && !period.part) open.filter(function (t) { return t.dueDate && t.dueDate < today; }).forEach(function (t) { push({ task: t, kind: 'late' }); });
+      if (items.length) days.push({ ymd: k, items: items });
+    }
+    return days;
+  }
+  // 바로 알아듣는 기간 질문 — 기간 말 + 묻는 말이 있고, 그 밖의 내용 낱말이 없을 때만 ("내일까지 보고서 정리해줘" 는 할 일)
+  var ASK_RE = /(뭐|뭘|무엇|무슨|알려|정리해|보여|있어|있나|있지|있니|남은|해야\s*(돼|되|하|할|해)|할\s*일|일정)/;
+  var FILLER_RE = /(이번\s*주|이번주|금주|다다음\s*주|다음\s*주|담주|차주|주말|오늘|금일|내일\s*모레|내일|명일|모레|글피|[월화수목금토일](요일|욜)|새벽|아침|오전|점심|오후|낮|저녁|밤|에는|에|는|은|좀|나|내가|제가|우리|남은|남아\s*있는|해야\s*(돼|되나|되지|할|하는|해)|할\s*일|할일|일정|스케줄|일|거|것|들|뭐|뭘|무엇|무슨|알려\s*(줘|주세요|줄래)?|정리해\s*(줘|주세요|줄래)?|정리|보여\s*(줘|주세요|줄래)?|있어|있나|있지|있니|있는지|하지|하나|해|요|[?？!.~\s])/g;
+  function askPeriod(text, now) {
+    var s = String(text || '').trim();
+    if (!s || s.length > 40 || /\n/.test(s) || !ASK_RE.test(s)) return null;
+    var p = periodOf(s, now);
+    if (!p) return null;
+    return s.replace(FILLER_RE, '').length <= 1 ? p : null;
   }
 
   // 오늘 할 일 (오늘 화면 목록과 같은 기준): 진행 중·일시 정지, 오늘 작업 시간, 오늘까지 마감, 오늘 적은 것
@@ -186,5 +251,6 @@
   }
 
   return { ACTIONS: ACTIONS, VIEWS: VIEWS, NEEDS_TASK: NEEDS_TASK, SCHEMA_PART: SCHEMA_PART, PROMPT: PROMPT,
-    matchLocal: matchLocal, resolve: resolve, findTask: findTask, todayTasks: todayTasks, freeMinutes: freeMinutes };
+    matchLocal: matchLocal, resolve: resolve, findTask: findTask, todayTasks: todayTasks, freeMinutes: freeMinutes,
+    periodOf: periodOf, agenda: agenda, askPeriod: askPeriod };
 });
