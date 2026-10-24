@@ -1137,9 +1137,11 @@ kbd {
 @media (max-width: 860px) {
   .home { grid-template-columns: 1fr; grid-template-rows: 60vh auto; overflow: auto; height: auto; }
   .home-split { display: none; }
-  .home-sec-tasks { flex: 3 1 0 !important; }
-  .home-sec-memos { flex: 2 1 0 !important; border-top: 1px solid var(--border-deco); }
-  .home-sec-agenda { flex: 0 1 auto !important; border-top: 1px solid var(--border-deco); }
+  /* 아래 칸은 높이가 정해지지 않아 0 기준으로 나누면 칸이 접혀 제목이 겹친다 — 내용만큼 쌓고 화면째 스크롤 */
+  .home-today { flex: none; }
+  .home-sec-tasks { flex: 0 0 auto !important; }
+  .home-sec-memos { flex: 0 0 auto !important; border-top: 1px solid var(--border-deco); }
+  .home-sec-agenda { flex: 0 0 auto !important; border-top: 1px solid var(--border-deco); }
 }
 
 /* 모션 줄이기 — OS 설정 또는 앱 설정 */
