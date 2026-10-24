@@ -113,7 +113,7 @@ test('채팅: "아니 오후야" 는 앱이 바로 알아듣는다', () => {
 });
 
 test('프롬프트: 고치는 말·오전/오후 규칙', () => {
-  assert.strictEqual(C.PROMPT_VERSION, 'capture.v16');
+  assert.strictEqual(C.PROMPT_VERSION, 'capture.v17');
   assert.ok(C.SYSTEM.indexOf('방금 정리한 것 정정') !== -1 && C.SYSTEM.indexOf('오전/오후가 없으면') !== -1);
   // 예약: 하는 것은 할 일, 이미 잡힌 것은 일정
   assert.ok(C.SYSTEM.indexOf('예약됨') !== -1);

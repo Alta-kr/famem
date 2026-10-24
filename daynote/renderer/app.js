@@ -49,7 +49,7 @@
       } }, ui.icon('clock'), h('span.focus-pill-label', '집중 '), els.focusTime),
       h('button.focus-pill-stop', { type: 'button', title: '집중 그만', 'aria-label': '집중 그만', onclick: function () { if (DN.assistant) DN.assistant.stopFocus(); } }, ui.icon('x')));
     els.sidebar = h('aside.sidebar',
-      h('div.brand', h('div.brand-mark', { 'aria-hidden': 'true' }, 'D'), h('div.brand-name', 'Daynote'),
+      h('div.brand', h('div.brand-mark', { 'aria-hidden': 'true' }, 'M'), h('div.brand-name', 'Modib'),
         h('button.icon-btn.brand-collapse', { type: 'button', 'aria-label': '사이드바 접기/펴기', title: '사이드바 접기/펴기 (Ctrl+\\)', onclick: toggleSidebar }, ui.icon('sidebar'))),
       els.nav,
       h('div.sidebar-foot', els.focus, els.navSub, h('div.sidebar-foot-row', els.save, els.hist))
@@ -69,7 +69,7 @@
   }
 
   // 집중 남은 시간 — 사이드바 알약 · 창 제목(작업 표시줄) · 트레이 툴팁. 1초마다
-  var baseTitle = 'Daynote', lastStatus = null;
+  var baseTitle = 'Modib', lastStatus = null;
   function focusTick() {
     var f = S.state.meta.focus;
     var title = baseTitle, status = '';
@@ -157,7 +157,7 @@
     renderView();
     renderNav();
     var v = DN.views[view];
-    baseTitle = (v.title || '') + ' · Daynote';
+    baseTitle = (v.title || '') + ' · Modib';
     focusTick();
   }
 

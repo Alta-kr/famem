@@ -29,8 +29,8 @@
     sending = true;
     Q.submit(text).then(function (r) {
       sending = false;
-      if (r && r.login) { document.getElementById('sent-text').textContent = 'Daynote에 먼저 로그인해 주세요 — 로그인 창을 열었어요.'; }
-      else if (!r || !r.ok) { document.getElementById('sent-text').textContent = '보내지 못했어요. Daynote 창에서 다시 시도해 주세요.'; }
+      if (r && r.login) { document.getElementById('sent-text').textContent = 'Modib에 먼저 로그인해 주세요 — 로그인 창을 열었어요.'; }
+      else if (!r || !r.ok) { document.getElementById('sent-text').textContent = '보내지 못했어요. Modib 창에서 다시 시도해 주세요.'; }
       else {
         // 보냈으면 바로 사라진다 — 정리는 Daynote 가 뒤에서 하고 결과는 오늘 화면 채팅에 남는다
         ta.value = ''; fit();
@@ -49,7 +49,7 @@
 
   if (Q.onResult) Q.onResult(function (text) {
     if (!document.body.classList.contains('is-sent')) return;
-    document.getElementById('sent-text').textContent = text + ' · 고치려면 Daynote 오늘 화면에서';
+    document.getElementById('sent-text').textContent = text + ' · 고치려면 Modib 오늘 화면에서';
     clearTimeout(hideTimer);
     hideTimer = setTimeout(function () { Q.hide(); }, 2200);
   });

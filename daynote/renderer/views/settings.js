@@ -82,7 +82,7 @@
     var actions = h('div.sug-actions');
     var box = h('section.card.settings-card', { 'aria-labelledby': 'set-md' },
       h('h3#set-md', '마크다운 파일'), line,
-      h('p.help', '저장할 때마다 메모·할 일·주간 보고를 .md 파일로 맞춰 써요. 메모 파일을 직접 고치면 Daynote 로 돌아올 때 앱에도 반영돼요.'),
+      h('p.help', '저장할 때마다 메모·할 일·주간 보고를 .md 파일로 맞춰 써요. 메모 파일을 직접 고치면 Modib으로 돌아올 때 앱에도 반영돼요.'),
       h('div.md-tree', h('pre', ['Daynote/', '├─ <프로젝트>/메모/2026-10-21 제목.md', '├─ <프로젝트>/할 일.md', '├─ 미분류/…', '└─ 주간 보고/2026-10-19 주간 보고.md'].join('\n'))),
       h('div.status-line', h('span', '위치: '), pathEl), actions);
     function draw() {
@@ -115,9 +115,9 @@
       var u = st.user;
       line.appendChild(h('span.acc-avatar', { 'aria-hidden': 'true' }, (u.name || u.email).trim().charAt(0).toUpperCase()));
       line.appendChild(h('span', h('b', u.name || u.email), ' · ' + u.email));
-      box.appendChild(h('p.help', hostText('account', '이 컴퓨터의 Daynote는 이 Google 계정으로만 열려요. 메모·할 일은 지금처럼 이 컴퓨터에만 저장돼요.')));
+      box.appendChild(h('p.help', hostText('account', '이 컴퓨터의 Modib은 이 Google 계정으로만 열려요. 메모·할 일은 지금처럼 이 컴퓨터에만 저장돼요.')));
       box.appendChild(h('div.sug-actions', h('button.btn.btn-sm', { type: 'button', onclick: function () {
-        ui.confirm('로그아웃', hostText('signOut', '로그아웃하면 다시 로그인할 때까지 Daynote를 열 수 없어요. 데이터는 이 컴퓨터에 그대로 있어요.'), '로그아웃').then(function (ok) {
+        ui.confirm('로그아웃', hostText('signOut', '로그아웃하면 다시 로그인할 때까지 Modib을 열 수 없어요. 데이터는 이 컴퓨터에 그대로 있어요.'), '로그아웃').then(function (ok) {
           if (!ok) return;
           Promise.resolve(S.flush()).then(function () { return auth.signOut(); }).then(function () { A().reload(); });
         });
@@ -150,7 +150,7 @@
           h('div.help', c.url ? C.maskUrl(c.url) + ' · ' : 'ICS 파일 · ', c.error ? h('span.cal-sub-err', c.error) : (ago(c.lastSync) + (c.lastSync ? ' · 일정 ' + (c.count || 0) + '개' : '')))),
         syncBtn,
         h('button.btn.btn-sm.btn-ghost', { type: 'button', onclick: function () {
-          ui.confirm('‘' + c.name + '’ 빼기', '이 캘린더에서 가져온 일정도 Daynote 에서 사라져요. 원래 캘린더는 그대로예요.', '빼기').then(function (ok) {
+          ui.confirm('‘' + c.name + '’ 빼기', '이 캘린더에서 가져온 일정도 Modib 에서 사라져요. 원래 캘린더는 그대로예요.', '빼기').then(function (ok) {
             if (!ok) return;
             C.remove(c.id);
             ui.toast('‘' + c.name + '’ 캘린더를 뺐어요.');
@@ -185,7 +185,7 @@
       h('h3#set-cal', '캘린더'),
       h('div.status-line', h('span.status-dot' + (cals.some(function (c) { return c.error; }) ? '.err' : '.ok')),
         cals.length ? '외부 캘린더 ' + cals.length + '개를 보는 중 (읽기 전용)' : '앱 안 캘린더만 사용 중'),
-      h('p.help', '회사·개인 캘린더의 회의를 Daynote 에서도 봐요. 빈 시간 찾기·작업 배치·추천이 회의를 피해서 잡아요. 고치는 건 원래 캘린더에서 해요.'),
+      h('p.help', '회사·개인 캘린더의 회의를 Modib 에서도 봐요. 빈 시간 찾기·작업 배치·추천이 회의를 피해서 잡아요. 고치는 건 원래 캘린더에서 해요.'),
       rows.length ? h('div.provider-list', rows) : null,
       h('div.cal-add', nameIn, urlIn, addBtn),
       h('details.cal-help#set-cal-help',
@@ -194,7 +194,7 @@
           h('li', h('b', 'Google 캘린더'), ' — 웹에서 설정 → 왼쪽 ‘내 캘린더의 설정’에서 캘린더 선택 → ‘캘린더 통합’ → ', h('b', 'iCal 형식의 비공개 주소'), ' 복사'),
           h('li', h('b', 'Outlook (Microsoft 365)'), ' — 웹에서 설정 → 캘린더 → 공유 캘린더 → ', h('b', '캘린더 게시'), ' → ‘모든 세부 정보 보기’로 게시 → ICS 링크 복사'),
           h('li', '회사 정책으로 게시가 막혀 있으면 캘린더를 .ics 파일로 내보낸 뒤 아래 ‘파일에서 가져오기’를 쓰세요 (자동으로 새로 가져오지는 않아요).')),
-        h('p.help', '이 주소는 비밀번호처럼 다뤄 주세요 — 아는 사람은 누구나 일정을 볼 수 있어요. Daynote 는 이 컴퓨터(와 전체 백업 파일)에만 저장하고 화면에는 앞부분만 보여요.')),
+        h('p.help', '이 주소는 비밀번호처럼 다뤄 주세요 — 아는 사람은 누구나 일정을 볼 수 있어요. Modib은 이 컴퓨터(와 전체 백업 파일)에만 저장하고 화면에는 앞부분만 보여요.')),
       h('div.sug-actions', h('button.btn.btn-sm', { type: 'button', onclick: function () { fileIn.click(); } }, ui.icon('upload'), 'ICS 파일에서 가져오기'), fileIn));
   }
 
@@ -427,7 +427,7 @@
       }
     });
     var KEYS = [
-      ['Ctrl + Shift + Space', '어디서나 빠른 메모 (Daynote가 켜져 있거나 트레이에 있을 때)'],
+      ['Ctrl + Shift + Space', '어디서나 빠른 메모 (Modib이 켜져 있거나 트레이에 있을 때)'],
       ['Ctrl + K', '검색·명령 (메모 편집 중에는 링크 넣기)'],
       ['Alt + 1~6', '오늘 · 보관함 · 할 일 · 캘린더 · 프로젝트 · 주간 정리로 이동'],
       ['/', '입력창·검색 칸으로 (홈·보관함·할 일)'],

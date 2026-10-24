@@ -50,18 +50,18 @@
         h('b', '처음 한 번 설정이 필요해요'),
         h('ol',
           h('li', 'Google Cloud 콘솔에서 OAuth 동의 화면을 만들고, ‘데스크톱 앱’ 종류의 OAuth 클라이언트 ID를 만드세요.'),
-          h('li', 'Daynote 폴더의 ', h('code', '.env'), ' 파일에 두 줄을 넣으세요: ', h('code', 'GOOGLE_OAUTH_CLIENT_ID=…'), ' · ', h('code', 'GOOGLE_OAUTH_CLIENT_SECRET=…')),
-          h('li', 'Daynote를 완전히 끄고(트레이 → 끝내기) 다시 켜세요.'))));
+          h('li', '앱 폴더의 ', h('code', '.env'), ' 파일에 두 줄을 넣으세요: ', h('code', 'GOOGLE_OAUTH_CLIENT_ID=…'), ' · ', h('code', 'GOOGLE_OAUTH_CLIENT_SECRET=…')),
+          h('li', 'Modib을 완전히 끄고(트레이 → 끝내기) 다시 켜세요.'))));
     }
 
     var card = h('div.login-card',
-      h('div.login-brand', h('div.brand-mark', { 'aria-hidden': 'true' }, 'D'), h('span', 'Daynote')),
+      h('div.login-brand', h('div.brand-mark', { 'aria-hidden': 'true' }, 'M'), h('span', 'Modib')),
       h('h1.login-title', st.owner ? '다시 로그인해 주세요' : 'Google 계정으로 시작하기'),
       h('p.login-sub', st.subText ? st.subText : st.owner
-        ? '이 컴퓨터의 Daynote는 ' + st.owner + ' 계정으로 쓰고 있어요.'
-        : '처음 로그인한 계정이 이 컴퓨터 Daynote의 주인이 돼요. 메모·할 일은 지금처럼 이 컴퓨터에만 저장돼요.'),
+        ? '이 컴퓨터의 Modib은 ' + st.owner + ' 계정으로 쓰고 있어요.'
+        : '처음 로그인한 계정이 이 컴퓨터 Modib의 주인이 돼요. 메모·할 일은 지금처럼 이 컴퓨터에만 저장돼요.'),
       btn, h('div.login-row', msg, cancelBtn), setupBox,
-      h('p.login-fine', st.fineText || 'Daynote는 이름과 이메일 주소만 받아요. 메일·드라이브 같은 다른 정보에는 접근하지 않아요.'));
+      h('p.login-fine', st.fineText || 'Modib은 이름과 이메일 주소만 받아요. 메일·드라이브 같은 다른 정보에는 접근하지 않아요.'));
     root.appendChild(h('div.login-screen', card));
     if (!st.configured) { setMsg('구글 로그인 설정(클라이언트 ID)이 아직 없어요.', 'err'); renderSetup(); btn.disabled = true; }
     else setTimeout(function () { btn.focus(); }, 0);

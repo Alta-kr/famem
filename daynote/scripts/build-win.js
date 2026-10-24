@@ -1,6 +1,6 @@
 'use strict';
 
-// Windows 실행 파일 만들기 — dist/ 에 설치 파일(Daynote-Setup-버전.exe)과 휴대용(Daynote-버전-portable.exe)
+// Windows 실행 파일 만들기 — dist/ 에 설치 파일(Modib-Setup-버전.exe)과 휴대용(Modib-버전-portable.exe)
 //   npm.cmd run dist
 //   - electron-builder: 이 폴더 node_modules 에 있으면 그것, 없으면 ELECTRON_BUILDER_DIR (이 PC 에 이미 깔린 것) 를 쓴다
 //   - Electron 런타임은 node_modules/electron/dist 의 것을 그대로 (새로 내려받지 않는다)

@@ -16,7 +16,7 @@
     var st = S.state;
     root.textContent = '';
 
-    var ta = h('textarea', { rows: 1, placeholder: '생각나는 걸 적고 Enter — Daynote가 알아서 나눠요', 'aria-label': '적어 두기 (Enter 보내기 · Shift+Enter 줄바꿈)', 'data-slash': '' });
+    var ta = h('textarea', { rows: 1, placeholder: '생각나는 걸 적고 Enter — Modib이 알아서 나눠요', 'aria-label': '적어 두기 (Enter 보내기 · Shift+Enter 줄바꿈)', 'data-slash': '' });
     ta.value = st.quickDraft.text || '';
 
     // ---------------------------------------------------------------- 메시지 (입력창과 따로 다시 그린다)
@@ -129,7 +129,7 @@
       return h('div.chat-empty',
         h('div.chat-empty-mark', { 'aria-hidden': 'true' }, ui.icon('edit')),
         h('h3.chat-empty-title', '생각나는 걸 그냥 적어 보세요'),
-        h('p.chat-empty-sub', '할 일인지, 일정인지, 메모인지는 Daynote가 알아서 나눠요.'),
+        h('p.chat-empty-sub', '할 일인지, 일정인지, 메모인지는 Modib이 알아서 나눠요.'),
         h('div.chat-examples', { role: 'group', 'aria-label': '예시 (누르면 입력창에 채워져요)' }, EXAMPLES.map(function (ex) {
           return h('button.chat-example', { type: 'button', onclick: function () { fill(ex); } }, ex);
         })),
@@ -179,7 +179,7 @@
       h('button.btn.btn-primary.btn-sm', { type: 'button', onclick: sendNow, 'aria-label': '보내기' }, '보내기')));
 
     root.appendChild(h('section.chat', { 'aria-label': '적어 두기' },
-      h('div.chat-head', h('h2.panel-title', '적어 두기'), h('span.meta', '할 일·일정·메모는 Daynote가 나눠요')),
+      h('div.chat-head', h('h2.panel-title', '적어 두기'), h('span.meta', '할 일·일정·메모는 Modib이 나눠요')),
       list, tools, input));
     setTimeout(function () {
       if (!placePin(true)) list.scrollTop = list.scrollHeight;

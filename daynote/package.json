@@ -1,7 +1,7 @@
 {
   "name": "daynote",
-  "version": "0.1.21",
-  "description": "Daynote — 생각을 기록하고, 일을 계획하고, 성과를 기억하는 데스크톱 메모·업무 관리 앱",
+  "version": "0.1.22",
+  "description": "Modib — 생각을 기록하고, 일을 계획하고, 성과를 기억하는 데스크톱 메모·업무 관리 앱",
   "main": "main.js",
   "license": "MIT",
   "scripts": {
@@ -24,8 +24,8 @@
   },
   "build": {
     "appId": "kr.alta.daynote",
-    "productName": "Daynote",
-    "copyright": "Daynote",
+    "productName": "Modib",
+    "copyright": "Modib",
     "directories": {
       "output": "dist"
     },
@@ -59,11 +59,11 @@
       "allowToChangeInstallationDirectory": true,
       "createDesktopShortcut": true,
       "createStartMenuShortcut": true,
-      "shortcutName": "Daynote",
-      "artifactName": "Daynote-Setup-${version}.exe"
+      "shortcutName": "Modib",
+      "artifactName": "Modib-Setup-${version}.exe"
     },
     "portable": {
-      "artifactName": "Daynote-${version}-portable.exe"
+      "artifactName": "Modib-${version}-portable.exe"
     },
     "mac": {
       "target": [
@@ -76,7 +76,7 @@
       "gatekeeperAssess": false
     },
     "dmg": {
-      "artifactName": "Daynote-${version}-${arch}.dmg"
+      "artifactName": "Modib-${version}-${arch}.dmg"
     }
   }
 }

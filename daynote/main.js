@@ -11,6 +11,9 @@ const fsSync = require('fs');
 const DATA_FILE = () => path.join(app.getPath('userData'), 'daynote-data.json');
 const BACKUP_FILE = () => DATA_FILE() + '.bak';
 
+// 앱 이름은 Modib 로 바뀌었지만 데이터 폴더는 예전 그대로(%APPDATA%\Daynote) — 메모·할 일·저장한 키를 그대로 쓴다
+app.setPath('userData', path.join(app.getPath('appData'), 'Daynote'));
+
 // `--profile=test` 로 켜면 다른 폴더에 저장한다 (검증용 격리 데이터).
 (function applyProfile() {
   let name = process.env.DAYNOTE_PROFILE || '';
@@ -112,7 +115,7 @@ let mdMirror = null;
 const MD_CFG = () => path.join(app.getPath('userData'), 'md-mirror.json');
 function mdConfig() { try { return JSON.parse(fsSync.readFileSync(MD_CFG(), 'utf8')) || {}; } catch (e) { return {}; } }
 function mdSaveConfig(c) { try { fsSync.mkdirSync(path.dirname(MD_CFG()), { recursive: true }); fsSync.writeFileSync(MD_CFG(), JSON.stringify(c, null, 1)); } catch (e) {} }
-function mdChosenDir() { return process.env.DAYNOTE_MD_DIR || mdConfig().dir || path.join(app.getPath('documents'), 'Daynote'); }
+function mdChosenDir() { return process.env.DAYNOTE_MD_DIR || mdConfig().dir || path.join(app.getPath('documents'), 'Daynote'); }   // 폴더 이름은 그대로 (앱 이름이 Modib으로 바뀌어도 기존 파일 위치 유지)
 function mdDir() {
   if (process.env.DAYNOTE_MD_DIR) return process.env.DAYNOTE_MD_DIR;
   if (CHECK_RUN || mdConfig().enabled === false) return null;
@@ -243,7 +246,7 @@ function createWindow() {
     height: 900,
     minWidth: 900,
     minHeight: 600,
-    title: 'Daynote',
+    title: 'Modib',
     icon: ICON(256),
     backgroundColor: nativeTheme.shouldUseDarkColors ? '#111113' : '#F7F7F5',
     autoHideMenuBar: true,
@@ -355,14 +358,14 @@ ipcMain.handle('app:ready', () => {
 // 앱 밖 알림 — 다른 앱(IDE 등)에서 일하는 중에도 집중 끝·쉬기 권유를 알 수 있게. 누르면 Daynote 창을 앞으로
 ipcMain.handle('app:notify', (_e, title, body, sound) => {
   if (CHECK_RUN || !Notification.isSupported()) return false;
-  const n = new Notification({ title: String(title || 'Daynote').slice(0, 80), body: String(body || '').slice(0, 240), silent: !sound, icon: ICON(256) });
+  const n = new Notification({ title: String(title || 'Modib').slice(0, 80), body: String(body || '').slice(0, 240), silent: !sound, icon: ICON(256) });
   n.on('click', () => showMain());
   n.show();
   return true;
 });
 // 트레이 아이콘에 지금 상태 (예: "집중 18분 남음 · 배포 체크리스트")
 ipcMain.handle('app:status', (_e, text) => {
-  if (tray) tray.setToolTip(text ? 'Daynote — ' + String(text).slice(0, 100) : (quickRegistered ? 'Daynote — Ctrl+Shift+Space 빠른 메모' : 'Daynote'));
+  if (tray) tray.setToolTip(text ? 'Modib — ' + String(text).slice(0, 100) : (quickRegistered ? 'Modib — Ctrl+Shift+Space 빠른 메모' : 'Modib'));
   return true;
 });
 
@@ -379,7 +382,7 @@ function createQuickWindow() {
   quickWindow = new BrowserWindow({
     width: 680, height: 140, show: false, frame: false, transparent: true, resizable: false, movable: false,
     minimizable: false, maximizable: false, fullscreenable: false, skipTaskbar: true, alwaysOnTop: true,
-    backgroundColor: '#00000000', hasShadow: false, title: 'Daynote 빠른 메모',
+    backgroundColor: '#00000000', hasShadow: false, title: 'Modib 빠른 메모',
     webPreferences: { preload: path.join(__dirname, 'quick-preload.js'), contextIsolation: true, nodeIntegration: false, sandbox: true, spellcheck: false }
   });
   quickWindow.setAlwaysOnTop(true, 'pop-up-menu');
@@ -427,7 +430,7 @@ function trayHintOnce() {
   if (fsSync.existsSync(flag) || !tray) return;
   try { fsSync.writeFileSync(flag, '1'); } catch (_) {}
   tray.displayBalloon({
-    iconType: 'info', title: 'Daynote는 트레이에서 계속 실행돼요',
+    iconType: 'info', title: 'Modib은 트레이에서 계속 실행돼요',
     content: 'Ctrl+Shift+Space — 창이 닫혀 있으면 빠른 메모, 열려 있으면 채팅 입력칸으로. 완전히 끄려면 트레이 아이콘 → 끝내기.'
   });
 }
@@ -435,9 +438,9 @@ function createTray() {
   const img = nativeImage.createFromPath(ICON(16));
   img.addRepresentation({ scaleFactor: 2, buffer: fsSync.readFileSync(ICON(32)) });
   tray = new Tray(img);
-  tray.setToolTip(quickRegistered ? 'Daynote — Ctrl+Shift+Space 빠른 메모' : 'Daynote');
+  tray.setToolTip(quickRegistered ? 'Modib — Ctrl+Shift+Space 빠른 메모' : 'Modib');
   tray.setContextMenu(Menu.buildFromTemplate([
-    { label: 'Daynote 열기', click: showMain },
+    { label: 'Modib 열기', click: showMain },
     quickRegistered ? { label: '빠른 메모', accelerator: QUICK_KEY, click: toggleQuick } : { label: '빠른 메모', click: toggleQuick },
     { type: 'separator' },
     { label: '끝내기', click: () => { isQuitting = true; app.quit(); } }

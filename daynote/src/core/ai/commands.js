@@ -31,7 +31,7 @@
     } } };
 
   var PROMPT = [
-    'L. 명령: 글이 기록·할 일이 아니라 Daynote 에게 무엇을 해 달라는 요청이면 commands 에 넣습니다. (해당 없으면 빈 배열)',
+    'L. 명령: 글이 기록·할 일이 아니라 Modib 에게 무엇을 해 달라는 요청이면 commands 에 넣습니다. (해당 없으면 빈 배열)',
     '   recommend(할 일 추천·뭐부터 할지·"30분 남는데 뭐 하지" 처럼 시간이 남았다는 말) · breakdown(작게 나누기) · start(시작) · pause(일시 정지·멈춤) · complete(완료 처리 요청) · return_todo(할 일로 되돌리기) · work(작업 공간·채팅에 올리기)',
     '   day_close(하루 마무리·퇴근·오늘은 여기까지) · rest(휴식·쉬기) · list_today(할 일·일정 알려 주기 — 오늘·내일 아침·이번 주 남은 일·다음 주 정리도) · open(화면 열기: view 에 today/archive/tasks/calendar/projects/weekly/settings) · search(찾기: query 에 찾을 말) · schedule(일정에 배치) · delete(할 일 지우기)',
     '   target 은 대상 할 일 제목(목록 글자 그대로). 대상을 말하지 않았으면 null (앱이 작업 공간의 할 일을 쓴다). 명령만 있는 글이면 entry_type "command".',
