@@ -72,6 +72,57 @@
       AS.work(e.dataTransfer.getData('application/x-daynote-task'));
     });
 
+    // 말풍선 오른쪽 클릭 — 복사 · 수정해서 다시 보내기 · 다시 보내기 · 메모 열기 · 삭제 (Ctrl+Z 로 되돌리기)
+    //   할 일 줄처럼 자기 메뉴가 있는 곳·입력칸은 그쪽 메뉴를 쓴다
+    list.addEventListener('contextmenu', function (e) {
+      if (e.defaultPrevented || /^(INPUT|TEXTAREA|SELECT)$/.test(e.target.tagName) || e.target.isContentEditable) return;
+      var node = e.target.closest && e.target.closest('[data-mid]');
+      var m = node && M.byId(S.state.chat || [], node.getAttribute('data-mid'));
+      if (!m) return;
+      e.preventDefault();
+      msgMenu(m, node, { x: e.clientX, y: e.clientY });
+    });
+    function msgMenu(m, node, at) {
+      var body = node.querySelector('.msg-body') || node;
+      var sel = window.getSelection && String(window.getSelection() || '');
+      var picked = sel && window.getSelection().rangeCount && body.contains(window.getSelection().getRangeAt(0).commonAncestorContainer) ? sel : '';
+      var text = m.role === 'user' ? m.text || '' : (body.innerText || '').trim();
+      var mine = m.role === 'user' && m.kind === 'text';
+      var note = m.kind === 'capture' && M.byId(S.state.notes, m.noteId);
+      var replies = [];
+      if (mine) {
+        var all = S.state.chat || [], i = all.indexOf(m);
+        for (var j = i + 1; j < all.length && all[j].role !== 'user'; j++) replies.push(all[j].id);
+      }
+      var items = [];
+      if (picked) items.push({ label: '고른 글 복사', icon: 'copy', onClick: function () { copyText(picked); } });
+      items.push({ label: picked ? '말풍선 전체 복사' : '복사', icon: 'copy', onClick: function () { copyText(text); } });
+      if (mine) {
+        items.push({ label: '수정해서 다시 보내기', icon: 'edit', onClick: function () { ta.value = text; ta.dispatchEvent(new Event('input')); ta.focus(); ta.setSelectionRange(ta.value.length, ta.value.length); } });
+        items.push({ label: '다시 보내기', icon: 'refresh', onClick: function () { AS.send(text); } });
+      }
+      if (note && !note.deletedAt) items.push({ label: '메모 열기', icon: 'note', onClick: function () { DN.app.openNote(note.id); } });
+      items.push({ sep: true });
+      items.push({ label: '삭제', icon: 'trash', onClick: function () { removeMessages([m.id], '말풍선을 지웠어요.'); } });
+      if (replies.length) items.push({ label: '답과 함께 삭제', icon: 'trash', onClick: function () { removeMessages([m.id].concat(replies), '말풍선과 답 ' + replies.length + '개를 지웠어요.'); } });
+      // 마우스 자리에 연다
+      var point = { getBoundingClientRect: function () { return { top: at.y, bottom: at.y, left: at.x, right: at.x, width: 0, height: 0 }; }, contains: function () { return false; }, isConnected: false };
+      ui.menu(point, items, { label: '말풍선 메뉴' });
+    }
+    // 채팅에서만 지운다 — 그 글로 만든 할 일·일정·메모는 그대로
+    function removeMessages(ids, msg) {
+      S.mutate('채팅 지우기', function (s) { s.chat = (s.chat || []).filter(function (x) { return ids.indexOf(x.id) === -1; }); }, { source: 'chat' });
+      ui.undoToast(msg + ' 만든 할 일·메모는 그대로예요.');
+    }
+    function copyText(t) {
+      var done = function () { ui.toast('복사했어요.'); };
+      if (navigator.clipboard && navigator.clipboard.writeText) navigator.clipboard.writeText(t).then(done, fallback); else fallback();
+      function fallback() {
+        var x = h('textarea', { style: { position: 'fixed', opacity: '0' } }); x.value = t; document.body.appendChild(x); x.select();
+        try { document.execCommand('copy'); done(); } catch (err) {} x.remove();
+      }
+    }
+
     // 첫 화면 — 무엇을 하는 앱인지 30초 안에 보이게. 예시는 입력창에 채우기만 한다 (보내지 않음)
     function onboarding() {
       var key = AS.quickKey && AS.quickKey();
