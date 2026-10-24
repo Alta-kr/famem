@@ -35,7 +35,7 @@ function submit(st, text, patch) {
 const live = (list) => list.filter((x) => !x.deletedAt);
 
 test('스키마 v14: 글 종류 먼저 · 목록은 꼭 · 요약·섹션은 선택', () => {
-  assert.strictEqual(C.PROMPT_VERSION, 'capture.v14');
+  assert.strictEqual(C.PROMPT_VERSION, 'capture.v15');
   assert.deepStrictEqual(C.SCHEMA.properties.note_kind.enum, ['memo', 'idea', 'link']);
   assert.deepStrictEqual(Object.keys(C.SCHEMA.properties).slice(0, 6), ['entry_type', 'note_kind', 'note_title', 'note_project_hint', 'events', 'tasks']);
   ['tasks', 'events', 'done_tasks', 'updated_tasks', 'bulk_updates', 'commands'].forEach((k) => assert.ok(C.SCHEMA.required.indexOf(k) !== -1, k));

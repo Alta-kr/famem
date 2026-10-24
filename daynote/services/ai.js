@@ -45,6 +45,18 @@ const blockedUntil = {};      // 하루 한도에 걸린 모델 → 풀리는 �
 const HEDGE_MS = 8000;
 let hedgeMs = null;           // 테스트에서만 바꾼다
 const inflight = new Set();   // 같은 메모를 동시에 두 번 정리하지 않는다
+// 답 길이 상한 — 긴 글은 그만큼 늘리되 8,192 를 넘기지 않는다.
+//   할 일 하나가 근거·날짜 칸까지 150~200 토큰이라 줄 수에 비례한다 (실측: 할 일 24줄 목록 326자 → 답 3,566 토큰)
+const MAX_CAP = 8192;
+function outCap(input, def) {
+  const base = def.MAX_OUTPUT_TOKENS || 4096;
+  const lines = ((input && input.lines) || []).filter((l) => String(l).trim());
+  const chars = String((input && input.title) || '').length + lines.join('\n').length;
+  return Math.min(MAX_CAP, Math.max(base, Math.round(800 + lines.length * 200 + chars * 0.5)));
+}
+// 같은 글이 답 길이 상한에 두 번 닿으면 그 글은 더 보내지 않는다 (되풀이 폭주에 비용·시간이 쌓이지 않게)
+const truncatedTimes = new Map();   // 글 열쇠 → 끊긴 횟수
+function textKey(input) { return String(input && (input.noteId || input.requestId)) + '|' + String((input && input.title) || '') + '|' + ((input && input.lines) || []).join('\n'); }
 
 // 키는 이 모듈 안에만 둔다.
 //   설정 화면에서 저장한 키 — 메인 프로세스가 복호화해 넣어 준다 (가장 우선: 사용자가 가장 최근에 직접 넣은 키)
@@ -205,7 +217,7 @@ function dailyLimitError() {
 }
 const sleep = (ms) => new Promise((r) => setTimeout(r, retryDelayMs != null ? retryDelayMs : ms));
 
-async function callGemini(input, model, signal) {
+async function callGemini(input, model, signal, cap) {
   const def = requestDef(input);
   model = model || MODELS.gemini;
   const res = await gemini().interactions.create({
@@ -214,7 +226,7 @@ async function callGemini(input, model, signal) {
     input: def.userText(input),
     // 정리·추출은 깊은 추론보다 정확한 읽기 — 낮은 thinking
     // 답 길이 상한 — 드물게 요약을 끝없이 되풀이하는 일이 있었다(실측 21,632 토큰). 닿으면 '끊김'으로 다시 시도
-    generation_config: { thinking_level: THINKING[model] || 'low', max_output_tokens: def.MAX_OUTPUT_TOKENS || 4096 },
+    generation_config: { thinking_level: THINKING[model] || 'low', max_output_tokens: cap || outCap(input, def) },
     // Claude 와 같은 JSON 스키마로 구조를 고정한다
     response_format: { type: 'text', mime_type: 'application/json', schema: def.SCHEMA },
     // 요청·응답을 Google 쪽에 보관하지 않는다
@@ -236,8 +248,9 @@ async function callGemini(input, model, signal) {
 
 // 늦는 요청 대비 — 첫 요청이 HEDGE_MS 안에 안 끝나면 같은 요청을 하나 더. 먼저 온 성공을 쓰고 나머지는 끊는다
 //   (금방 실패하면 기다리지 않고 바로 실패를 돌려준다 → 다른 모델로)
-function callGeminiHedged(input, model) {
-  const ms = hedgeMs != null ? hedgeMs : HEDGE_MS;
+function callGeminiHedged(input, model, cap) {
+  // 끊겨서 다시 보내는 길은 겹쳐 보내지 않는다 (긴 답 두 개 값을 내지 않게)
+  const ms = cap ? 0 : hedgeMs != null ? hedgeMs : HEDGE_MS;
   return new Promise((resolve, reject) => {
     const ctrls = [];
     let settled = false, inFlight = 0, timer = null;
@@ -250,7 +263,7 @@ function callGeminiHedged(input, model) {
     function launch() {
       const c = new AbortController();
       ctrls.push(c); inFlight++;
-      callGemini(input, model, c.signal).then((r) => {
+      callGemini(input, model, c.signal, cap).then((r) => {
         inFlight--;
         // 성공이거나 다시 해도 소용없는 실패면 바로. 다시 할 만한 실패인데 다른 요청이 아직 가는 중이면 그쪽을 기다린다
         if (r.ok || !r.error || !r.error.retryable || inFlight === 0) finish(resolve, r);
@@ -269,9 +282,11 @@ function callGeminiHedged(input, model) {
 async function callGeminiTiered(input) {
   const order = [MODELS.geminiFast, MODELS.gemini].filter((k) => !(blockedUntil[k] > Date.now()));
   if (!order.length) return { ok: false, error: dailyLimitError() };
+  // 답이 상한에 닿아 끊기면(truncated) 다른 모델로 상한을 두 배로 해 딱 한 번만 더. 또 끊기면 멈춘다 (글은 메모로 남아 있다)
+  let cap = null, truncs = 0;
   async function attempt(model) {
     try {
-      const r = await callGeminiHedged(input, model);
+      const r = await callGeminiHedged(input, model, cap);
       // 예외 없이 '끝내지 못함(incomplete·failed)' 을 돌려줘도 다시 할 만한 실패면 다음으로 (JSON 을 못 읽은 건 organize 가 한 번 더)
       return { done: r.ok || !r.error || !r.error.retryable || r.error.type === 'invalid_json', res: r };
     } catch (e) {
@@ -287,8 +302,15 @@ async function callGeminiTiered(input) {
     const a = await attempt(order[i]);
     if (a.done) return a.res;
     last = errs[order[i]] = a.res;
+    if (last.error.type === 'truncated') {
+      if (++truncs >= 2) return last;
+      cap = Math.min(MAX_CAP, outCap(input, requestDef(input)) * 2);
+      if (i === order.length - 1) return (await attempt(order[i])).res;   // 다른 모델이 없으면 같은 모델로 한 번
+      continue;
+    }
     if (i < order.length - 1) await sleep(last.error.type === 'rate_limit' ? 150 : 600);
   }
+  if (last && last.error.type === 'truncated') return last;
   // 하루 한도로 다 막혔으면 기다리지 않고 알린다
   const left = order.filter((k) => !(blockedUntil[k] > Date.now()));
   if (!left.length) return { ok: false, error: dailyLimitError() };
@@ -305,6 +327,9 @@ async function organize(input) {
   const key = input && (input.noteId || input.requestId);
   if (!key) return { ok: false, error: { type: 'bad_input', message: '요청 정보가 없습니다.', retryable: false } };
   if (inflight.has(key)) return { ok: false, error: { type: 'busy', message: '이미 처리 중입니다.', retryable: false } };
+  const tk = textKey(input);
+  if ((truncatedTimes.get(tk) || 0) >= 2) return { ok: false, attempts: 0, error: { type: 'truncated', retryable: false,
+    message: 'AI 답이 너무 길어져 두 번 끊겼어요. 같은 글은 더 보내지 않아요 — 글은 메모로 남아 있어요. 글을 나눠서 보내 주세요.' } };
   inflight.add(key);
   try {
     if (m === 'fake') {
@@ -317,6 +342,11 @@ async function organize(input) {
     let res = await call();
     let attempts = 1;
     if (!res.ok && res.error.type === 'invalid_json') { res = await call(); attempts = 2; }
+    if (!res.ok && res.error.type === 'truncated') {
+      truncatedTimes.set(tk, (truncatedTimes.get(tk) || 0) + 1);
+      if (truncatedTimes.size > 200) truncatedTimes.delete(truncatedTimes.keys().next().value);
+      res.error = Object.assign({}, res.error, { message: 'AI 답이 너무 길어져 중간에 끊겼어요. 글은 메모로 남겨 두었어요.' });
+    }
     return Object.assign(res, { attempts });
   } catch (e) {
     return { ok: false, error: e._classified || (m === 'gemini' ? classifyGemini(e) : classifyClaude(e)), attempts: 1 };

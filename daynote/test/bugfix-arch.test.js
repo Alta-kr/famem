@@ -132,5 +132,5 @@ test('BUG-NEW-10: 샘플 지우면 채팅의 고아 카드도 정리 / 이름을
   assert.deepStrictEqual(CMD.matchLocal(st, '내 일 작게 나눠줘', null), { action: 'breakdown', taskId: mine.id });
   assert.deepStrictEqual(CMD.matchLocal(st, '이거 쪼개줘', mine), { action: 'breakdown', taskId: mine.id });
   const r = CMD.resolve(st, { title: '', body: '보고서 작게 나눠줘' }, [{ action: 'breakdown', target: '보고서', view: null, query: null, evidence: { quote: '보고서 작게 나눠줘', line: 1 } }], null);
-  assert.deepStrictEqual(r, [{ action: 'breakdown', missing: '보고서' }]);
+  assert.deepStrictEqual(r, [{ action: 'breakdown', missing: '보고서', quote: '보고서 작게 나눠줘' }]);
 });

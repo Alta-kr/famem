@@ -50,12 +50,12 @@ test('AI 명령 검증: 근거가 원문에 있고, 대상은 열린 할 일 (�
     { action: 'delete', target: null, view: null, query: null, evidence: ev('원문에 없는 말') },
     { action: 'hack', target: null, view: null, query: null, evidence: ev('견적서 작업 시작할게') }
   ], b);
-  assert.deepStrictEqual(out, [{ action: 'start', taskId: a.id }, { action: 'open', view: 'calendar' }]);
+  assert.deepStrictEqual(out, [{ action: 'start', taskId: a.id, quote: '견적서 작업 시작할게' }, { action: 'open', view: 'calendar', quote: '캘린더 좀 보자' }]);   // 근거 말은 확인 카드에 보여 준다
   // 대상 없으면 작업 공간 할 일, 목록에 없는 대상은 missing
   const out2 = CMD.resolve(st, { title: '', body: '이거 일시 정지해줘' }, [{ action: 'pause', target: null, view: null, query: null, evidence: ev('이거 일시 정지해줘') }], b);
-  assert.deepStrictEqual(out2, [{ action: 'pause', taskId: b.id }]);
+  assert.deepStrictEqual(out2, [{ action: 'pause', taskId: b.id, quote: '이거 일시 정지해줘' }]);
   const out3 = CMD.resolve(st, { title: '', body: '보고서 지워줘' }, [{ action: 'delete', target: '보고서', view: null, query: null, evidence: ev('보고서 지워줘') }], null);
-  assert.deepStrictEqual(out3, [{ action: 'delete', missing: '보고서' }]);
+  assert.deepStrictEqual(out3, [{ action: 'delete', missing: '보고서', quote: '보고서 지워줘' }]);
 });
 
 test('스키마: commands 와 entry_type command 가 있고 프롬프트에 명령 규칙', () => {

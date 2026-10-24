@@ -124,19 +124,21 @@
       }
     }
     // (이번 주|다음 주|차주) 금요일(까지)
-    m = s.match(/(?:(이번\s*주|금주|다음\s*주|차주)\s*)?([월화수목금토일])요일(?:\s*까지)?/);
+    //   줄임말(금욜·담주)·다다음 주도
+    m = s.match(/(?:(이번\s*주|금주|다다음\s*주|다음\s*주|담주|차주)\s*)?([월화수목금토일])(?:요일|욜)(?:\s*까지)?/);
     if (m) {
       var idx = (WD[m[2]] + 6) % 7;                 // 월=0 … 일=6
       var base = D.startOfWeek(today);
-      var next = m[1] && /다음|차주/.test(m[1]);
-      dt = D.addDays(base, idx + (next ? 7 : 0));
+      var next = m[1] && /다음|담주|차주/.test(m[1]);
+      dt = D.addDays(base, idx + (next ? (/다다음/.test(m[1]) ? 14 : 7) : 0));
       if (!next && dt < today) dt = D.addDays(dt, 7);
       return { dueDate: D.ymd(dt), phrase: m[0] };
     }
     // 오늘 / 내일 / 모레
-    m = s.match(/(오늘|내일|모레)(?:\s*까지)?/);
+    //   금일·명일·익일·내일모레·글피도 ("내일모레" 는 모레)
+    m = s.match(/(내일\s*모레|오늘|금일|내일|명일|익일|모레|글피)(?:\s*까지)?/);
     if (m) {
-      var add = { '오늘': 0, '내일': 1, '모레': 2 }[m[1]];
+      var add = { '오늘': 0, '금일': 0, '내일': 1, '명일': 1, '익일': 1, '모레': 2, '내일모레': 2, '글피': 3 }[m[1].replace(/\s+/g, '')];
       return { dueDate: D.ymd(D.addDays(today, add)), phrase: m[0] };
     }
     // 7일까지 — 지났으면 다음 달

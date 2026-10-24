@@ -157,6 +157,22 @@
       case 'fix_ampm': fixAmPm(c.pm); break;
     }
   }
+  // AI 가 글에서 읽은 명령 중 할 일 상태를 바꾸는 것 — 실행 전에 대상·바뀌는 내용을 보여 주고 묻는다
+  //   ("민수가 '우유 사기 완료 처리해 달라'고 했다" 같은 인용을 명령으로 잘못 읽어도 그냥 실행되지 않게)
+  //   AI 없이 알아들은 짧은 명령("완료 처리해 줘")은 작업 공간의 할 일에 바로 한다
+  var CONFIRM = { complete: '완료로 표시', delete: '지우기', return_todo: '할 일로 되돌리기', start: '지금 시작', pause: '일시 정지', schedule: '일정에 넣기' };
+  function needsConfirm(c) { return !!(c && CONFIRM[c.action] && c.taskId && !c.missing); }
+  function askCommand(c) {
+    var t = M.byId(S.state.tasks, c.taskId);
+    post({ kind: 'confirm', cmd: { action: c.action, taskId: c.taskId }, title: t ? t.title : '', quote: c.quote || '', status: 'pending' });
+  }
+  function confirmCommand(msgId, yes) {
+    var m = M.byId(S.state.chat || [], msgId);
+    if (!m || m.status !== 'pending') return;
+    update(msgId, { status: yes ? 'done' : 'cancelled' });
+    if (yes) runCommand(m.cmd);
+  }
+
   // "아니 오후야" — 방금(30분 안) 채팅으로 넣은 일정·작업 시간 중 마지막 것의 오전/오후를 바꾼다 (Ctrl+Z 로 되돌릴 수 있다)
   function fixAmPm(pm) {
     var n = now();
@@ -580,6 +596,7 @@
     send: send, next: next, donePrep: donePrep, breakdown: breakdown, applyBreakdown: applyBreakdown, deferBreakdown: deferBreakdown,
     elaborate: elaborate, saveElaboration: saveElaboration, skipElaboration: skipElaboration,
     rest: rest, startTimer: startTimer, tryNudge: tryNudge, update: update, post: post, work: work, returnWork: returnWork, focusTask: focusTask, runCommand: runCommand,
+    needsConfirm: needsConfirm, askCommand: askCommand, confirmCommand: confirmCommand, CONFIRM_LABEL: CONFIRM,
     rested: rested, startFocus: startFocus, stopFocus: stopFocus, dayClose: dayClose, overdueOffer: overdueOffer, replan: replan, weekStart: weekStart, planAt: planAt, checkLongFocus: checkLongFocus,
     quickKey: function () { return quickKey; }
   };

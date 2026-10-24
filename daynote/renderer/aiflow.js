@@ -23,13 +23,25 @@
 
   function contextOpts(note) {
     var st = S.state, now = DN.app.now();
+    // 진행 중 → 마감 가까운 순 (AI 에는 60개까지)
+    var open = M.liveTasks(st).filter(function (t) { return t.status !== 'done'; }).sort(function (a, b) {
+      var ra = a.status === 'in_progress' || a.status === 'paused' ? 0 : 1, rb = b.status === 'in_progress' || b.status === 'paused' ? 0 : 1;
+      return ra - rb || String(a.dueDate || '9999').localeCompare(String(b.dueDate || '9999'));
+    });
     return {
       noteHash: P.noteHash(note),
       today: D.ymd(now) + ' (' + D.WEEKDAYS[now.getDay()] + ')',
       timezone: (Intl.DateTimeFormat().resolvedOptions().timeZone) || 'Asia/Seoul',
       projects: M.liveProjects(st).map(function (p) { return p.name; }),
-      openTasks: M.liveTasks(st).filter(function (t) { return t.status !== 'done'; }).map(function (t) { return t.title; })
+      openTasks: open.map(function (t) { return t.title; }),
+      // 이미 있는 할 일의 마감·상태·프로젝트 — "하루 미뤄줘", "시각만 3시로" 를 AI 가 기존 날짜 기준으로 읽게
+      openTaskInfo: open.map(function (t) { return taskInfo(st, t); })
     };
+  }
+  function taskInfo(st, t) {
+    var p = t.projectId && M.byId(st.projects, t.projectId);
+    return { title: t.title, dueDate: t.dueDate || null, dueTime: t.dueTime || null,
+      state: t.status === 'in_progress' || t.status === 'paused' ? t.status : null, project: p && !p.deletedAt ? p.name : null };
   }
   function buildInput(note) { return O.buildInput(note, contextOpts(note)); }
 
@@ -215,7 +227,7 @@
     recordExchange: recordExchange, exchangeById: exchangeById, promptButton: promptButton, exchanges: exchanges, clearExchanges: clearExchanges, exchangeView: exchangeView, openExchange: openExchange, exchangeForNote: exchangeForNote,
     onExchange: function (fn) { logListeners.push(fn); return function () { logListeners = logListeners.filter(function (f) { return f !== fn; }); }; },
     recordUsage: recordUsage, usageLine: usageLine, totalTokens: totalTokens,
-    loadStatus: loadStatus, organize: organize, contextOpts: contextOpts,
+    loadStatus: loadStatus, organize: organize, contextOpts: contextOpts, taskInfo: taskInfo,
     status: function () { return status; },
     isRunning: function (noteId) { return !!inflight[noteId]; },
     onChange: function (fn) { listeners.push(fn); return function () { listeners = listeners.filter(function (f) { return f !== fn; }); }; }

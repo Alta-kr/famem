@@ -41,6 +41,8 @@
 
   // ---------------------------------------------------------------- 대상 할 일 찾기
   function nospace(s) { return String(s || '').replace(/\s+/g, '').toLowerCase(); }
+  // 근거 문장 맞추기 — 띄어쓰기·따옴표는 보지 않는다 (AI 가 근거를 옮겨 적으며 따옴표를 빼는 일이 많다)
+  function bare(s) { return nospace(s).replace(/['"‘’“”`]/g, ''); }
   function findTask(state, title) {
     if (!title) return null;
     var open = M.liveTasks(state).filter(function (t) { return t.status !== 'done'; });
@@ -62,7 +64,8 @@
 
   // ---------------------------------------------------------------- 바로 알아듣는 짧은 명령 (AI 없이)
   //   글이 짧고(40자 이하) 아래 꼴일 때만. 애매하면 null → AI 로
-  var VIEW_WORDS = [[/캘린더|달력|일정표/, 'calendar'], [/보관함/, 'archive'], [/할\s*일\s*(목록|화면|전체)/, 'tasks'], [/주간\s*(정리|보고)|이번\s*주\s*정리/, 'weekly'],
+  //   "오늘 할 일 화면" 은 오늘 화면 (할 일 목록 화면보다 먼저 본다)
+  var VIEW_WORDS = [[/^(홈|오늘\s*(할\s*일\s*)?화면)/, 'today'],[/캘린더|달력|일정표/, 'calendar'], [/보관함/, 'archive'], [/할\s*일\s*(목록|화면|전체)/, 'tasks'], [/주간\s*(정리|보고)|이번\s*주\s*정리/, 'weekly'],
     [/프로젝트/, 'projects'], [/설정/, 'settings'], [/^(홈|오늘\s*화면)/, 'today']];
   var VERB_DONE_RE = /(보여\s*줘|보여줄래|열어\s*줘|열어|켜\s*줘|띄워\s*줘|가자|보자|로\s*가)/;
 
@@ -106,7 +109,8 @@
     if (/오늘\s*(할\s*일|할일|일정|해야\s*할\s*(일|거))\s*(이\s*)?(뭐|뭔|알려|보여|정리|있)|오늘\s*뭐\s*(해야|있)/.test(s)) return { action: 'list_today' };
     // 작게 나누기 — "견적서 작게 나눠줘" / "이거 쪼개줘"
     if ((m = s.match(/^(.*?)\s*(작게\s*나눠|잘게\s*나눠|쪼개|세분화|단계로\s*나눠|나눠\s*줘|나눠줘)/))) {
-      var named = m[1].replace(/^(이거|이것|이|그거|저거|좀)\s*/, '').trim();
+      var quotedName = s.match(/['‘"“]([^'’"”]{2,})['’"”]/);   // "'견적서 보내기' 쪼개줘" — 따옴표 안이 이름
+      var named = quotedName ? quotedName[1].trim() : m[1].replace(/^(이거|이것|이|그거|저거|좀)\s*/, '').trim();
       var bt = (named && findTask(state, named)) || taskInText(state, m[1]);   // 이름 전체로 먼저, 안 되면 낱말로
       // 이름을 말했는데 못 찾으면 엉뚱한 일을 나누지 않고 되묻는다
       if (!bt && named.length >= 2) return { action: 'breakdown', missing: named };
@@ -135,13 +139,13 @@
   // ---------------------------------------------------------------- AI 가 준 명령 검증
   //   근거 문장이 원문에 있어야 하고, 대상 할 일은 열린 할 일이어야 한다 (없으면 작업 공간의 할 일)
   function resolve(state, note, list, focus) {
-    var body = nospace([note.title, note.body].join('\n'));
+    var body = bare([note.title, note.body].join('\n'));
     var out = [];
     (Array.isArray(list) ? list : []).forEach(function (c) {
       if (!c || ACTIONS.indexOf(c.action) === -1) return;
       var q = c.evidence && c.evidence.quote;
-      if (!q || body.indexOf(nospace(q)) === -1) return;
-      var cmd = { action: c.action };
+      if (!q || body.indexOf(bare(q)) === -1) return;
+      var cmd = { action: c.action, quote: String(q).slice(0, 200) };
       if (c.target || NEEDS_TASK[c.action] || c.action === 'breakdown') {
         var t = c.target ? findTask(state, String(c.target)) : null;
         if (!t && !c.target && focus) t = focus;

@@ -79,7 +79,7 @@
     var opts = DN.aiFlow.contextOpts(sent);
     // 작업 공간(채팅)에 올려 둔 할 일이 있으면 "마감 두 시간 후로 미뤄줘" 의 대상이 된다
     var focus = DN.assistant && DN.assistant.focusTask && DN.assistant.focusTask();
-    if (focus) opts.focusTask = focus.title;
+    if (focus) { opts.focusTask = focus.title; opts.focusInfo = DN.aiFlow.taskInfo(S.state, focus); }
     if (copts.moveToTask) opts.moveToTask = true;
     // 방금 정리한 것 — "아니 오후 8시야" 처럼 고치는 말의 대상
     opts.recent = P.recentLines(S.state, now()).filter(function (l) { return l; });
@@ -136,7 +136,10 @@
         cap = P.applyCapture(s, { note: sent, run: r, validated: v, output: res.output, commands: cmds }, t);
       }, { source: 'capture' });
       notify();
-      if (cmds.length && DN.assistant && DN.assistant.runCommand) S.withJoin(key, function () { cmds.forEach(function (c) { DN.assistant.runCommand(c); }); });
+      if (cmds.length && DN.assistant && DN.assistant.runCommand) S.withJoin(key, function () {
+        // 할 일 상태를 바꾸는 명령(완료·삭제 …)은 바로 하지 않고 대상과 바뀌는 내용을 보여 주고 묻는다
+        cmds.forEach(function (c) { if (DN.assistant.needsConfirm(c)) DN.assistant.askCommand(c); else DN.assistant.runCommand(c); });
+      });
       return { ok: true, capture: cap, commands: cmds };
     });
   }

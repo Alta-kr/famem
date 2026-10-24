@@ -57,7 +57,7 @@
   function noteOpt(note, n, q) {
     var k = note.kind === 'idea' || note.kind === 'link' ? note.kind : 'memo';
     var title = M.noteTitle(note);
-    var sub = ui.KIND_LABEL[k] + ' · ' + D.relDay(D.ymd(note.updatedAt || note.createdAt), n);
+    var sub = (note.captureRole === 'task_source' ? '할 일로 정리한 원문' : ui.KIND_LABEL[k]) + ' · ' + D.relDay(D.ymd(note.updatedAt || note.createdAt), n);
     var snippet = null;
     if (q && norm(title).indexOf(q) === -1) {
       var body = String(note.body || '').replace(/\s+/g, ' ');
@@ -100,7 +100,8 @@
     out = out.concat(rank(hitCmds, q).slice(0, PER_GROUP));
     var tasks = M.liveTasks(st).filter(function (t) { return norm(t.title + '\n' + (t.memo || '')).indexOf(q) !== -1; }).map(function (t) { return taskOpt(t, n); });
     out = out.concat(rank(tasks, q).slice(0, PER_GROUP));
-    var notes = M.liveNotes(st).filter(function (x) { return x.captureRole !== 'task_source' && norm(x.title + '\n' + x.body).indexOf(q) !== -1; }).map(function (x) { return noteOpt(x, n, q); });
+    // 찾을 때는 할 일로 정리하며 숨긴 원문(task_source)도 — 적은 글은 언제든 다시 찾을 수 있게
+    var notes = M.liveNotes(st).filter(function (x) { return norm(x.title + '\n' + x.body).indexOf(q) !== -1; }).map(function (x) { return noteOpt(x, n, q); });
     out = out.concat(rank(notes, q).slice(0, PER_GROUP));
     var events = st.blocks.filter(function (b) { return !b.taskId && norm(b.title).indexOf(q) !== -1; }).map(function (b) { return eventOpt(b, n); });
     out = out.concat(rank(events, q).slice(0, PER_GROUP));

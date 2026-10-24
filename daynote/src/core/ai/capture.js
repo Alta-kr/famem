@@ -20,7 +20,7 @@
   if (node) module.exports = api;
   if (typeof window !== 'undefined') { window.Daynote = window.Daynote || {}; window.Daynote.aiCapture = api; }
 })(function (O, CMD, D) {
-  var PROMPT_VERSION = 'capture.v14';   // v2~v13: 큰 일·메모 종류·시간 정한 할 일·완료·날짜 바꾸기·명령·묶음·목록·걸리는 시간·준비·고치는 말 · v14: 최종안(달력 줄·분류 먼저·짧은 답)
+  var PROMPT_VERSION = 'capture.v15';   // v2~v13: 큰 일·메모 종류·시간 정한 할 일·완료·날짜 바꾸기·명령·묶음·목록·걸리는 시간·준비·고치는 말 · v14: 최종안(달력 줄·분류 먼저·짧은 답) · v15: 마감·작업 시간 지우기
   var ENTRY_TYPES = ['memo', 'task', 'mixed', 'done', 'update', 'command'];
   var NOTE_KINDS = ['memo', 'idea', 'link'];
   var MAX_OUTPUT_TOKENS = 2048;
@@ -67,7 +67,7 @@
     "[기존 할 일 — 새로 만들지 않는다]",
     "대상은 적힌 기존 제목 우선, 대상 없이 \"이거/끝났어/미뤄줘\"면 작업 공간의 할 일. 제목은 목록 글자 그대로. 특정할 수 없으면 고르지 말고 open_questions.",
     "done_tasks: 기존 할 일을 끝냈다는 보고(\"보냈음/끝났어/다 했어\"). 진행 중·거의 다 함·목록 밖은 제외. \"완료 처리해줘\"는 commands.complete.",
-    "updated_tasks: 날짜가 정해진 변경만. 날짜만이면 due, 할 시각이면 do_at, 다른 쪽은 null. \"좀 나중에 할게/좀 미뤄\"처럼 새 날짜가 없으면 넣지 않고 entry_type도 update가 아니라 memo다. \"두 시간 후로/뒤로\"는 기준 시각부터 계산. \"두 시간 미뤄/하루 연장\"(후·뒤 없음)은 due.text에 원문만, date·time=null(앱이 계산).",
+    "updated_tasks: 날짜가 정해진 변경만. 날짜만이면 due, 할 시각이면 do_at, 다른 쪽은 null. \"좀 나중에 할게/좀 미뤄\"처럼 새 날짜가 없으면 넣지 않고 entry_type도 update가 아니라 memo다. \"두 시간 후로/뒤로\"는 기준 시각부터 계산. \"두 시간 미뤄/하루 연장\"(후·뒤 없음)은 due.text에 원문만, date·time=null(앱이 계산). \"마감 취소/기한 없애줘/날짜 미정으로\"처럼 지워 달라고 분명히 말하면 그 할 일을 넣고 due(작업 시간이면 do_at).text에 원문, date·time=null(앱이 지운다).",
     "bulk_updates: 여러 할 일을 묶어 말하면(\"밀린 거/마감 지난 것들/오늘 마감인 거 다/OO 프로젝트 남은 할 일 모두\") filter(overdue|due_today|no_due|in_progress|paused|all_open)+project_hint 하나만 넣고, updated_tasks에 하나씩 나열하지 않는다. 날짜는 위 규칙대로(예: \"두 시간 후로\" → 기준 시각 + 2시간).",
     "방금 정리한 것 정정(\"아니 오후 8시야\", \"아니 모레까지야\"): 같은 제목·원래 종류(tasks/events)로 고친 값을 다시 적고, 말하지 않은 날짜·시각은 방금 것 그대로. entry_type=update.",
     "",

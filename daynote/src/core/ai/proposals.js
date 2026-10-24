@@ -359,6 +359,7 @@
       note.capture = Object.assign({}, note.capture, { status: 'done', error: null, runId: args.run.id, doneAt: iso(now) });
       return note.capture;
     }
+    var userTitle = note.title;   // AI 가 붙인 제목은 기록이 아니다 (기록 지키기에서 사용자가 적은 제목만 본다)
     mergeOrganizeRun(state, { note: args.note, run: args.run, validated: args.validated }, now);
 
     // 프로젝트: 사용자가 입력할 때 고른 프로젝트가 있으면 그것이 우선(할 일마다의 AI 판단도 덮는다).
@@ -480,6 +481,17 @@
     if (!note.kindByUser) note.kind = NOTE_KIND[out.note_kind] ? out.note_kind : (note.kind || 'memo');
     // 고치는 말인데 이미 그대로였고 다른 결과가 없으면 — 메모로 남기지 않고 "이미 그 시각이에요" 만
     if (unchanged.length && !created.length && !reported && !skipped.length) entryType = 'unchanged';
+    // 기록 지키기 — AI 가 글 종류를 잘못 골라도, 만든 것·고친 것에 담기지 않은 문장이 있으면 원문 전체를 메모로 남긴다
+    //   ("오늘 집중이 잘 안 됐다. 분기 보고서는 다음 주 월요일로 미룸." → 할 일 날짜도 바꾸고 글도 메모로)
+    var rest = leftover(state, note, userTitle, created, completed, updated, validCmds, unchanged);
+    var hidden = note.captureRole === 'task_source' || entryType === 'command' || entryType === 'unchanged';
+    if (rest.length && hidden) {
+      note.capture = Object.assign({}, note.capture, { kept: rest.slice(0, 5) });   // 메모로 남긴 까닭 (담기지 않은 문장)
+      if (entryType === 'task' || entryType === 'done' || entryType === 'update') entryType = 'mixed';
+      else if (entryType === 'command' || entryType === 'unchanged') entryType = created.length || reported ? 'mixed' : 'memo';
+      note.captureRole = 'memo';
+      if (!note.title && out.note_title) note.title = String(out.note_title).trim().slice(0, 80);
+    }
     if (entryType === 'command' || entryType === 'unchanged') { note.captureRole = 'memo'; note.deletedAt = iso(now); }
     note.capture = Object.assign({}, note.capture, {
       status: 'done', entryType: entryType, runId: args.run.id, doneAt: iso(now),
@@ -488,9 +500,76 @@
     return note.capture;
   }
 
+  // ---------------------------------------------------------------- 기록 지키기
+  //   글의 문장마다, 뜻 있는 낱말의 절반 이상이 만든 할 일·일정(세부 할 일 포함)·완료·날짜 바꾼 할 일·명령 근거에 들어 있으면 '담긴' 문장.
+  //   담기지 않은 문장 = 사용자의 기록 → 돌려준다 (있으면 원문을 메모로 남긴다)
+  //   날짜·시각·흔한 말("오늘", "관련 메모", "확인 바람", "하기")은 세지 않는다.
+  var PARTICLE_RE = /(으로|에서|에게|한테|까지|부터|이랑|이나|처럼|보다|하고|은|는|이|가|을|를|에|로|와|과|랑|도|만|의|께|요)$/;
+  var TIME_RE = /^(\d|오늘|내일|모레|글피|어제|그제|그저께|이번|다음|다다음|지난|저번|담주|주말|평일|[월화수목금토일]요일|오전|오후|아침|점심|저녁|밤|새벽|낮|정오|자정|매일|매주|올해|내년|작년)/;
+  var COMMON = ('하기 하자 해야 해야지 해야함 할것 할거 할게 할래 했다 했음 했어 했고 함 됨 됐다 됐음 되었다 해줘 해주세요 해 줘 주세요 처리 완료 마무리 진행 세부 관련 메모 확인 바람 요망 참고 부탁 ' +
+    '아니 아냐 그리고 근데 그냥 이거 그거 저거 이건 그건 것 거 것들 좀 꼭 다시 먼저 바로 정도 쯤 필요 예정 일정 할일 남은 모두 전부 시간 하루 이틀 사흘 후로 뒤로 전으로 ' +
+    '마감 미뤄 미룸 미루 미뤘 연기 당겨 옮겨 바꿔 변경 취소 끝내 끝나 마치 보기 나한테 저한테 나에게 장소 ' +
+    '보여 열어 찾아 알려 나눠 작게 올려 추천 시작 멈춰 지워 띄워 정해 목록 리스트 체크리스트 투두 하나 두개 세개 한번 두번').split(' ');
+  var DONE_RE = /^(끝났|끝냈|끝남|끝냄|다\s*했|마쳤|마침|완료)/;
+  var STEM_RE = /(이에요|예요|이야|야|하기로|하기|하자|하고|해야|했다|했음|했어|하다|할게|할것|해줘|줘|주세요|줄래|라고|다고|자고|드립니다|합니다|입니다|기)$/;
+  function words(s) {
+    return String(s || '').replace(/https?:\/\/\S+/g, ' ').replace(/^\s*(?:[-*•·]|\d+[.)]|\[[ xXvV✓]?\])\s*/, '').split(/[\s,.!?~·…:;'"‘’“”()\[\]{}<>\/|]+/)
+      .map(function (w) {
+        var b = w.replace(PARTICLE_RE, '');
+        if (b.length >= 2) w = b;
+        b = w.replace(STEM_RE, '');
+        return b.length >= 2 ? b : w;
+      })
+      .filter(function (w) { return w.length >= 2 && !TIME_RE.test(w) && !/^(한|두|세|네|다섯|여섯|반)(시간|분|일|주|달)/.test(w) && !DONE_RE.test(w) && COMMON.indexOf(w) === -1 && !/^[\d:%.\-]+$/.test(w); });
+  }
+  var LABEL_LINE_RE = /^\s*(\[[^\]]{1,40}\]|#{1,6}\s*\S.{0,40}|[^.!?]{1,40}\s(관련\s*메모|관련|건|메모))\s*:?\s*$/;
+  var SIGNOFF_RE = /^(이상|끝|이상입니다|확인\s*바람|확인\s*부탁|참고\s*요망|참고\s*바람|공유\s*드림)\s*[.!]*$/;
+  // 남의 말을 옮긴 문장("민수가 '…완료 처리해 달라'고 말했다")은 명령 근거로 치지 않는다
+  var REPORTED_RE = /(['"‘’“”]|(라|다|자|냐)고\s*(했|말|하더|그러|전해|부탁)|말했|전했)/;
+  function leftover(state, note, title, created, completed, updated, cmds, same) {
+    var cover = (same || []).map(function (x) { return x.title || ''; });
+    created.forEach(function (c) {
+      var x = M.byId(c.kind === 'task' ? state.tasks : state.blocks, c.id);
+      if (!x) return;
+      cover.push(x.title || '', x.location || '', x.memo || '');
+      if (c.kind === 'task') ST.walk(x.steps || [], function (s) { cover.push(s.title); });
+      if (x.breakdown && x.breakdown.steps) x.breakdown.steps.forEach(function (s) { cover.push(typeof s === 'string' ? s : (s && s.title) || ''); });
+    });
+    (completed || []).concat(updated || []).forEach(function (u) {
+      var x = M.byId(u.kind === 'block' ? state.blocks : state.tasks, u.id);
+      if (x) cover.push(x.title || '');
+    });
+    (cmds || []).forEach(function (c) {
+      var t = c.taskId && M.byId(state.tasks, c.taskId);
+      if (t) cover.push(t.title);
+      if (c.query) cover.push(c.query);
+    });
+    var all = nospace(cover.join(' '));
+    function has(w) { w = nospace(w); return all.indexOf(w) !== -1 || (w.length >= 3 && all.indexOf(w.slice(0, -1)) !== -1); }
+    var out = [];
+    [title].concat(String(note.body || '').split(/\n/)).forEach(function (line) {
+      if (LABEL_LINE_RE.test(String(line || ''))) return;   // "[브랜딩 관련 메모]" · "## 조직문화 건" 같은 머리말은 기록이 아니다
+      String(line || '').split(/(?<=[.!?。])\s+/).forEach(function (sen) {
+        sen = sen.trim();
+        if (!sen || SIGNOFF_RE.test(sen)) return;   // "확인 바람." · "이상." 같은 맺음말
+        var ws = words(sen);
+        if (!ws.length) return;
+        var hit = ws.filter(has).length;
+        // 명령만 적은 문장("할 일 추천해줘") — 명령의 근거 문장이면 담긴 것 (남의 말을 옮긴 문장은 아님)
+        var k = nospace(sen);
+        var cmdHit = !REPORTED_RE.test(sen) && (cmds || []).some(function (c) { var q = nospace(c.quote); return q && (q.indexOf(k) !== -1 || k.indexOf(q) !== -1); });
+        if (hit * 2 >= ws.length || cmdHit) return;
+        out.push(sen.slice(0, 120));
+      });
+    });
+    return out;
+  }
+
   // AI 가 "끝냈다" 고 한 할 일을 실제 열린 할 일에서 찾아 완료한다.
   //   제목이 목록 그대로면 그것, 아니면 띄어쓰기를 무시하고 한쪽이 다른 쪽을 품는 것 하나만 (여럿이면 고르지 않는다)
   function nospace(s) { return String(s || '').replace(/\s+/g, '').toLowerCase(); }
+  // 근거 문장 맞추기 — 띄어쓰기·따옴표는 보지 않는다 (AI 가 근거를 옮겨 적으며 따옴표를 빼는 일이 많다)
+  function bare(s) { return nospace(s).replace(/['"‘’“”`]/g, ''); }
   function findOpenTask(state, title, exclude) {
     var open = M.liveTasks(state).filter(function (t) { return t.status !== 'done' && !exclude[t.id]; });
     var exact = open.filter(function (t) { return t.title === title; });
@@ -578,6 +657,26 @@
     if (tk && u.prev) M.updateTask(state, tk.id, Object.assign({ dueDate: u.prev.dueDate, dueTime: u.prev.dueTime }, 'planDate' in u.prev ? { planDate: u.prev.planDate } : {}), now);
     if (u.prevWork) M.updateBlock(state, u.prevWork.id, { start: u.prevWork.start, end: u.prevWork.end });
     if (u.newWorkId) M.deleteBlock(state, u.newWorkId);
+    if (u.removedWork && !M.byId(state.blocks, u.removedWork.id)) M.addBlock(state, u.removedWork);
+  }
+
+  // 마감·할 시각 지우기 — 마감 말이면 마감을, 일정·시간 말이면 앞으로의 작업 시간(없으면 할 날)을 비운다. 카드의 × 로 되돌린다
+  var CLEAR_RE = /(마감|기한|데드라인|날짜|일정|시간|시각)[^.,\n]{0,10}?(취소|없애|없에|지워|지우|삭제|빼|미정|해제|비워)/;
+  var CLEAR_DUE_RE = /(마감|기한|데드라인|날짜)[^.,\n]{0,10}?(취소|없애|없에|지워|지우|삭제|빼|미정|해제|비워)/;
+  function clearWhen(state, t, word, now) {
+    var work = M.blocksForTask(state, t.id).filter(function (b) { return b.kind === 'work' && new Date(b.end) > new Date(now); })[0] || null;
+    var rec = { kind: 'task', id: t.id, prev: { dueDate: t.dueDate, dueTime: t.dueTime, planDate: t.planDate || null }, prevWork: null, newWorkId: null, cleared: true };
+    if (/(마감|기한|데드라인|날짜)/.test(word)) {
+      if (!t.dueDate && !t.dueTime) return null;
+      M.updateTask(state, t.id, { dueDate: null, dueTime: null }, now);
+      rec.to = { dueDate: null, dueTime: null, at: null, cleared: 'due' };
+      return rec;
+    }
+    if (work) { rec.removedWork = Object.assign({}, work); M.deleteBlock(state, work.id); }
+    else if (t.planDate) M.updateTask(state, t.id, { planDate: null }, now);
+    else return null;
+    rec.to = { dueDate: t.dueDate, dueTime: t.dueTime, at: null, cleared: 'at' };
+    return rec;
   }
 
   // 날짜 바꾸기: due(마감) 또는 do_at(할 시각). 바꾸기 전 값을 함께 둬서 카드의 × 로 되돌린다
@@ -597,8 +696,26 @@
       at = null;
     }
     if (at && !at.time) { due = due || at; at = null; }   // 시각 없는 '할 날' 은 마감으로
+    // 따옴표로 적은 할 일 이름은 빼고 본다 ("'PRD 마감' 일정을 12시로" 의 '마감'·"'방문 일정 확인' 기한 없애줘" 의 '일정' 은 이름이다)
+    var qq = String(q || '').replace(/'[^']*'|"[^"]*"|‘[^’]*’|“[^”]*”/g, ' ');
+    // "일정을 오후 4시로 바꿔줘" · "시간만 7시로" 처럼 시각만 말하면 날짜는 원래 일정 그대로 (작업 시간 → 마감일)
+    if (!shift && !SG.parseDueHint(qq, new Date(now)) && !V.relativeAt(qq, new Date(now))) {
+      var w0 = M.blocksForTask(state, t.id).filter(function (b) { return b.kind === 'work' && new Date(b.end) > new Date(now); })[0];
+      var keepDay = w0 ? D.ymd(w0.start) : (t.dueDate && t.dueDate >= D.ymd(now) ? t.dueDate : null);
+      if (keepDay && at && at.time) at = { date: keepDay, time: at.time };
+      if (keepDay && due && due.time && !at) due = { date: w0 ? (t.dueDate || keepDay) : keepDay, time: due.time };
+    }
     // "마감 … 미뤄줘" 처럼 마감·미루기 말이면 마감을 바꾸는 것 — AI 가 할 시각(do_at) 칸에 넣어도 마감으로 (실측: 가끔 그렇게 줌)
-    if (at && !due && /(마감|기한|미뤄|미루|늦춰|늦추|연장|까지)/.test(q)) { due = at; at = null; }
+    if (at && !due && /(마감|기한|미뤄|미루|늦춰|늦추|연장|까지)/.test(qq)) { due = at; at = null; }
+    // "마감 기한 취소해줘" · "작업 시간 빼줘" — 지우라는 말이 근거에 분명히 있을 때만 비운다 (AI 가 빈 값을 줬다는 것만으로는 지우지 않는다). 마감 말이 먼저
+    if (!due && !at && !shift) {
+      //   근거가 할 일 이름뿐이면 AI 가 옮긴 날짜 칸 글("마감 기한 취소")도 본다 — 원문에 있는 말일 때만
+      var body0 = bare([note.title, note.body].join('\n'));
+      var said = [dueRaw && dueRaw.text, atRaw && atRaw.text].filter(function (x) { return x && body0.indexOf(bare(x)) !== -1; }).join(' ');
+      var src = qq + ' ' + said;
+      var cm = src.match(CLEAR_DUE_RE) || src.match(CLEAR_RE);
+      return cm ? clearWhen(state, t, cm[1], now) : null;
+    }
     if (!due && !at) return null;
     // "내일로 미뤄" 처럼 날만 바꾸면 원래 마감 시각은 그대로 둔다 (17:00 마감 → 내일 17:00)
     if (due && !due.time && t.dueTime && !shift) due = { date: due.date, time: t.dueTime };
@@ -618,96 +735,16 @@
     return rec;
   }
 
-  // ---------------------------------------------------------------- 고치는 말 ("아니 오후 8시야")
-  //   방금(30분 안) 채팅으로 정리해 만든 일정·할 일과 같은 것을 AI 가 다시 적었으면 — 새로 만들지 않고 그 날짜·시각을 고친다.
-  //   같은 날 같은 이름(중복)이면 고치는 말이 없어도 방금 만든 것일 때만, 날짜까지 바뀌면 고치는 말이 있을 때만.
-  var CORRECT_RE = /(아니|아냐|정정|수정|고쳐|잘못|틀렸|말고|바꿔|바꿀게|변경)/;
-  function recentCreated(state, now, exceptNoteId) {
-    var since = new Date(now).getTime() - 30 * 60000, out = [];
-    state.notes.forEach(function (n) {
-      if (n.id === exceptNoteId || !n.capture || !n.capture.at || new Date(n.capture.at).getTime() < since) return;
-      M.liveCreated(state, n).forEach(function (c) {
-        var item = M.byId(c.kind === 'task' ? state.tasks : state.blocks, c.id);
-        if (item) out.push({ kind: c.kind === 'task' ? 'task' : 'block', item: item });
-      });
-      ((n.capture && n.capture.updated) || []).forEach(function (u) {
-        var item = M.byId(u.kind === 'block' ? state.blocks : state.tasks, u.id);
-        if (item && !out.some(function (o) { return o.item === item; })) out.push({ kind: u.kind === 'block' ? 'block' : 'task', item: item });
-      });
-    });
-    return out;
-  }
-  // AI 에게 알려 줄 '방금 정리한 것' — "기도회 (일정, 2026-10-25 08:00)"
-  function recentLines(state, now) {
-    return recentCreated(state, now).map(function (r) {
-      var x = r.item;
-      if (r.kind === 'block') return (x.title || '일정') + ' (일정, ' + D.ymd(x.start) + ' ' + D.hm(x.start) + ')';
-      var w = M.nextBlockForTask(state, x.id, now);
-      return x.title + ' (할 일' + (x.dueDate ? ', 마감 ' + x.dueDate + (x.dueTime ? ' ' + x.dueTime : '') : '') + (w ? ', ' + D.ymd(w.start) + ' ' + D.hm(w.start) + '에 하기' : '') + ')';
-    }).slice(0, 8);
-  }
-  function correctExisting(state, p, note, says, now) {
-    var ev = effective(p);
-    var nt = nospace(ev.title || '');
-    var recent = recentCreated(state, now, note.id);
-    function same(x) { var t = nospace(x.title || ''); return !!(t && nt && (t === nt || (Math.min(t.length, nt.length) >= 2 && (t.indexOf(nt) !== -1 || nt.indexOf(t) !== -1)))); }
-    function isRecent(item) { return recent.some(function (r) { return r.item === item; }); }
-    var dup = p.payload.duplicateOf;
-    if (p.kind === 'event' && ev.saveAs !== 'task') {
-      if (!ev.date && !ev.time) return null;
-      var b = dup && dup.kind === 'block' ? M.byId(state.blocks, dup.id) : null;
-      if (!b && says) { var rb = recent.filter(function (r) { return r.kind === 'block' && !r.item.taskId && same(r.item); })[0]; b = rb && rb.item; }
-      if (!b || !(says || isRecent(b))) return null;
-      // 말하지 않은 쪽(날짜나 시각)은 원래 일정 그대로 — "아니 모레야" · "아니 오후 8시야"
-      if (!ev.date || !ev.time) { if (!says) return null; ev.date = ev.date || D.ymd(b.start); ev.time = ev.time || D.hm(b.start); }
-      var s = D.parseYmd(ev.date, ev.time);
-      if (new Date(b.start).getTime() === s.getTime() && !(ev.durationMinutes > 0)) return says ? { same: { title: b.title || ev.title, at: ev.date + ' ' + ev.time } } : null;
-      var len = ev.durationMinutes > 0 ? ev.durationMinutes * 60000 : new Date(b.end) - new Date(b.start);
-      var rec = { kind: 'block', id: b.id, prev: { start: b.start, end: b.end }, to: { at: ev.date + ' ' + ev.time } };
-      M.updateBlock(state, b.id, { start: s.toISOString(), end: new Date(s.getTime() + len).toISOString() });
-      return rec;
-    }
-    var t = dup && dup.kind === 'task' ? M.byId(state.tasks, dup.id) : null;
-    if (!t && says) { var rt = recent.filter(function (r) { return r.kind === 'task' && same(r.item); })[0]; t = rt && rt.item; }
-    if (!t || t.deletedAt || t.status === 'done' || !(says || isRecent(t))) return null;
-    var at = ev.atDate && ev.atTime ? { date: ev.atDate, time: ev.atTime } : p.kind === 'event' && ev.date && ev.time ? { date: ev.date, time: ev.time } : null;
-    var due = ev.dueDate ? { date: ev.dueDate, time: ev.dueTime || null } : null;
-    // 옮길 작업 시간: 앞으로 잡힌 것, 없으면 마지막 것 (방금 넣은 시각이 이미 지난 시각일 수도 있다 — "3시" 를 새벽으로 받은 경우)
-    var works = M.blocksForTask(state, t.id).filter(function (x) { return x.kind === 'work'; });
-    var work = works.filter(function (x) { return new Date(x.end) > new Date(now); })[0] || works[works.length - 1] || null;
-    var atSame = !at || !!(work && new Date(work.start).getTime() === D.parseYmd(at.date, at.time).getTime());
-    var dueSame = !due || (due.date === t.dueDate && (due.time || null) === (t.dueTime || null));
-    if (atSame && dueSame) return says && (at || due) ? { same: { title: t.title, at: at ? at.date + ' ' + at.time : due.date + (due.time ? ' ' + due.time : '') } } : null;
-    var rec2 = { kind: 'task', id: t.id, prev: { dueDate: t.dueDate, dueTime: t.dueTime, planDate: t.planDate || null }, prevWork: work ? { id: work.id, start: work.start, end: work.end } : null, newWorkId: null };
-    if (!dueSame) M.updateTask(state, t.id, { dueDate: due.date, dueTime: due.time }, now);
-    if (!atSame) {
-      var st = D.parseYmd(at.date, at.time);
-      var wl = work ? new Date(work.end) - new Date(work.start) : 30 * 60000;
-      if (work) M.updateBlock(state, work.id, { start: st.toISOString(), end: new Date(st.getTime() + wl).toISOString() });
-      else rec2.newWorkId = M.addBlock(state, { taskId: t.id, title: t.title, start: st.toISOString(), end: new Date(st.getTime() + wl).toISOString(), origin: 'user', durationGuessed: true }).id;
-    }
-    rec2.to = { dueDate: dueSame ? t.dueDate : due.date, dueTime: dueSame ? t.dueTime : due.time, at: atSame ? null : at.date + ' ' + at.time };
-    return rec2;
-  }
-  // 날짜 바꾸기 기록 되돌리기 (할 일·일정 모두)
-  function undoUpdate(state, u, now) {
-    if (u.kind === 'block') { if (M.byId(state.blocks, u.id) && u.prev) M.updateBlock(state, u.id, { start: u.prev.start, end: u.prev.end }); return; }
-    var tk = M.byId(state.tasks, u.id);
-    if (tk && u.prev) M.updateTask(state, tk.id, Object.assign({ dueDate: u.prev.dueDate, dueTime: u.prev.dueTime }, 'planDate' in u.prev ? { planDate: u.prev.planDate } : {}), now);
-    if (u.prevWork) M.updateBlock(state, u.prevWork.id, { start: u.prevWork.start, end: u.prevWork.end });
-    if (u.newWorkId) M.deleteBlock(state, u.newWorkId);
-  }
-
   // 날짜 바꾸기: due(마감) 또는 do_at(할 시각). 바꾸기 전 값을 함께 둬서 카드의 × 로 되돌린다
   function updateReported(state, note, list, created, completed, now) {
     var exclude = {};
     (created || []).concat(completed || []).forEach(function (c) { exclude[c.id] = true; });
-    var body = nospace([note.title, note.body].join('\n'));
+    var body = bare([note.title, note.body].join('\n'));
     var out = [];
     (Array.isArray(list) ? list : []).forEach(function (d) {
       if (!d || !d.title) return;
       var q = d.evidence && d.evidence.quote;
-      if (!q || body.indexOf(nospace(q)) === -1) return;
+      if (!q || body.indexOf(bare(q)) === -1) return;
       var t = findOpenTask(state, String(d.title), exclude);
       if (!t) return;
       var rec = changeDue(state, t, d.due, d.do_at, q, note, now);
@@ -721,6 +758,7 @@
   // 목록으로 적은 글 — AI 가 아래 항목을 따로 할 일로 만들었어도 위 줄의 할 일 하나로 모으고, 아래 항목은 세부 할 일로.
   //   위 줄이 할 일이 아니었으면 처음 만든 아래 항목 할 일을 위 줄 제목으로 바꿔 쓴다
   var MARK_STRIP = /^[ \t\u3000]*((?:\d{1,3}|[a-zA-Z]|[가나다라마바사아자차카타파하])[.)]|\(\d{1,3}\)|[-*+•·▪◦‣–]|\[[ xX]\])?\s*/;
+  var LIST_LABEL_RE = /(할\s*일|할일|투두|to\s*-?\s*do|목록|리스트|체크\s*리스트)\s*[:：]?\s*$/i;
   function groupOutline(state, note, created, info) {
     var body = String((note && note.body) || '');
     var groups = ST.outlineGroups(body);
@@ -750,6 +788,10 @@
       if (!members.length) return;
       var head = members.filter(function (x) { return x.line === g.line; })[0];
       if (!head && !pureList) return;
+      // "이번 주 할 일 목록" · "오늘 할 일" 같은 목록 이름은 할 일이 아니다 — 아래 항목을 따로 둔다
+      if (!head && LIST_LABEL_RE.test(g.title)) return;
+      // 위 줄이 문장 기록("[회의/현황 기록] … 가능.")이면 할 일 이름으로 쓰지 않는다
+      if (!head && (g.title.length > 40 || /[.。!?]$/.test(g.title.trim()) || /^\s*\[/.test(g.title))) return;
       var keep = head || members[0];
       if (keep.line !== g.line) keep.t.title = g.title;
       if (!(keep.t.steps || []).length) keep.t.steps = g.steps;
@@ -813,12 +855,12 @@
   function bulkReported(state, note, list, created, done, now) {
     var exclude = {};
     (created || []).concat(done || []).forEach(function (c) { exclude[c.id] = true; });
-    var body = nospace([note.title, note.body].join('\n'));
+    var body = bare([note.title, note.body].join('\n'));
     var out = [];
     (Array.isArray(list) ? list : []).forEach(function (bk) {
       if (!bk || BULK_FILTERS.indexOf(bk.filter) === -1) return;
       var q = bk.evidence && bk.evidence.quote;
-      if (!q || body.indexOf(nospace(q)) === -1) return;
+      if (!q || body.indexOf(bare(q)) === -1) return;
       bulkTargets(state, bk.filter, bk.project_hint, note.updatedAt || now, exclude).forEach(function (t) {
         var rec = changeDue(state, t, bk.due, bk.do_at, q, note, now);
         if (!rec) return;
@@ -833,12 +875,12 @@
   function completeReported(state, note, list, created, now) {
     var exclude = {};
     (created || []).forEach(function (c) { exclude[c.id] = true; });   // 방금 만든 할 일을 바로 완료하지는 않는다
-    var body = nospace([note.title, note.body].join('\n'));
+    var body = bare([note.title, note.body].join('\n'));
     var out = [];
     (Array.isArray(list) ? list : []).forEach(function (d) {
       if (!d || !d.title) return;
       var q = d.evidence && d.evidence.quote;
-      if (!q || body.indexOf(nospace(q)) === -1) return;
+      if (!q || body.indexOf(bare(q)) === -1) return;
       var t = findOpenTask(state, String(d.title), exclude);
       if (!t) return;
       var r = M.completeTask(state, t.id, now);

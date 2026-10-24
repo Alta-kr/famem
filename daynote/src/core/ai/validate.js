@@ -160,12 +160,16 @@
   }
 
   // 날짜 검증. required 이면(일정) 비어 있을 때도 확인 필요로 둔다.
-  function checkDate(w, ctx, required) {
+  var DATE_WORD_RE = /(\d+\s*월|\d+\s*일|\d+\/\d+|요일|욜|오늘|금일|내일|명일|익일|모레|글피|어제|그제|주|달|년|말일|중순|하순)/;
+  function checkDate(w, ctx, required, quote) {
     var text = w.text && w.text.trim() ? w.text.trim() : null;
     var ai = w.date && DATE_RE.test(w.date) && D.ymd(D.parseYmd(w.date)) === w.date ? w.date : null;
     // 상대 시각이면 앱이 직접 계산한 날짜를 쓴다 (AI 가 기준 시각을 잘못 읽어도 바로잡힌다)
     var rel = text && inWords(ctx.fullNorm, text) ? relativeAt(text, ctx.ref) : null;
     if (rel) return field(rel.date, 'ok');
+    // AI 가 날짜 칸 글에 날짜 말을 빼고 옮겼어도("1시 반까지") 근거 문장의 날짜 말("글피 점심 먹고 1시 반까지")이 같은 날을 가리키면 받는다
+    var fromQuote = ai && quote && (!text || !DATE_WORD_RE.test(text)) ? SG.parseDueHint(quote, ctx.ref) : null;
+    if (fromQuote && fromQuote.dueDate === ai && ai >= D.ymd(ctx.ref)) return field(ai, 'ok');
     if (!text) {
       if (ai) return field(null, 'confirm', '메모에 날짜 표현이 없는데 AI가 날짜를 제안했습니다.', [opt('AI 제안', ai)]);
       return required ? field(null, 'confirm', '메모에 날짜가 없습니다. 날짜를 정해 주세요.') : field(null, 'ok');
@@ -180,6 +184,10 @@
     // 둘이 다르면 앱 계산을 쓴다 — 달력 셈은 앱이 더 정확하다 ("다음주 월요일" 을 AI 가 화요일로 세는 일이 있었다)
     else if (app && ai) res = field(app, 'ok');
     else if (app) res = field(null, 'confirm', '‘' + text + '’을(를) 앱이 날짜로 계산했습니다. 확인해 주세요.', [opt('앱 계산', app)]);
+    // 시각만 있는 말("16:30까지")에 AI 가 오늘 날짜를 붙였으면 그대로 (날짜 말이 없으니 오늘이다).
+    //   그 시각이 이미 지났으면 내일로 읽은 것도 받는다 (밤 9시에 "15:00까지")
+    else if (ai && !DATE_WORD_RE.test(text) && (ai === D.ymd(ctx.ref) ||
+      (ai === D.ymd(D.addDays(ctx.ref, 1)) && w.time && TIME_RE.test(w.time) && w.time <= D.hm(ctx.ref)))) res = field(ai, 'ok');
     else if (ai) res = field(null, 'confirm', '‘' + text + '’은(는) 앱이 검증하지 못한 표현입니다. AI 해석을 확인해 주세요.', [opt('AI 해석', ai)]);
     else res = field(null, 'confirm', '‘' + text + '’을(를) 날짜로 정하지 못했습니다.');
     if (res.status === 'ok' && res.value < D.ymd(ctx.ref)) {
@@ -343,6 +351,14 @@
     var o = Object.assign({ summary: '', sections: [], open_questions: [], tasks: [], events: [] }, out);
     if (typeof o.summary !== 'string') o.summary = '';
     ['sections', 'open_questions', 'tasks', 'events'].forEach(function (k) { if (!Array.isArray(o[k])) o[k] = []; });
+    // 근거에 줄 번호("1| …")를 같이 옮겨 적거나 시각을 "12:00:00" 으로 주는 일이 있다 (실측) — 고쳐서 받는다
+    ['tasks', 'events', 'done_tasks', 'updated_tasks', 'bulk_updates', 'commands'].forEach(function (k) {
+      (Array.isArray(o[k]) ? o[k] : []).forEach(function (x) {
+        if (!x || typeof x !== 'object') return;
+        if (x.evidence && typeof x.evidence.quote === 'string') x.evidence.quote = x.evidence.quote.replace(/^\s*\d+\s*\|\s?/, '');
+        ['due', 'do_at', 'start'].forEach(function (s) { if (x[s] && typeof x[s].time === 'string' && /^\d{2}:\d{2}:\d{2}$/.test(x[s].time)) x[s].time = x[s].time.slice(0, 5); });
+      });
+    });
     var none = { text: null, date: null, time: null };
     var events = o.events.slice();
     var tasks = [];
@@ -361,7 +377,28 @@
     return o;
   }
 
+  // 날짜 바꾸기라고 했는데 그런 할 일이 목록에 없으면 새 할 일로 받는다 (실측: "오늘 오후 2시까지 X 완료해서 넘기기" 를 update 로 줌)
+  //   이름이 조금이라도 겹치는 열린 할 일이 있으면 그대로 둔다 (그건 바꾸기다)
+  function updatesToNew(out, state) {
+    if (!out || !Array.isArray(out.updated_tasks) || !out.updated_tasks.length || !state) return;
+    var open = M.liveTasks(state).filter(function (t) { return t.status !== 'done'; }).map(function (t) { return nsp(t.title); });
+    var keep = [];
+    out.updated_tasks.forEach(function (d) {
+      var k = d && nsp(d.title);
+      var has = function (s) { return !!(s && (s.date || s.time)); };
+      var known = !k || k.length < 2 || open.some(function (n) { return n && (n === k || n.indexOf(k) !== -1 || k.indexOf(n) !== -1); });
+      if (known || !(has(d.due) || has(d.do_at))) { keep.push(d); return; }
+      if (!Array.isArray(out.tasks)) out.tasks = [];
+      out.tasks.push({ title: d.title, evidence: d.evidence, due: d.due || { text: null, date: null, time: null }, do_at: d.do_at || { text: null, date: null, time: null }, size: 'small', basis: 'explicit' });
+    });
+    if (keep.length === out.updated_tasks.length) return;
+    out.updated_tasks = keep;
+    if (out.entry_type === 'update' && !keep.length) out.entry_type = 'task';
+  }
+  function nsp(s) { return String(s || '').replace(/\s+/g, '').toLowerCase(); }
+
   function validateOrganizeNote(out0, ctx) {
+    updatesToNew(out0, ctx && ctx.state);
     var out = withDefaults(out0);
     var errs = shapeErrors(out);
     if (errs.length) return { ok: false, errors: errs, items: [], dropped: [], digest: null };
@@ -396,7 +433,7 @@
     out.tasks.forEach(function (raw) {
       var b = base('task', raw);
       if (!b) return;
-      var due = checkDate(raw.due, c, false);
+      var due = checkDate(raw.due, c, false, b.quote);
       var time = raw.due.time || raw.due.text ? checkTime(raw.due, null, c, false) : field(null, 'ok');
       var dup = findDupTask(state, b.title, b.quote);
       var steps = raw.size === 'large' ? sanitizeSteps(raw.breakdown) : [];
@@ -404,13 +441,15 @@
       // 시간 정한 할 일 (do_at: "30분 후 샤워하기") — 검증된 날짜·시각이 둘 다 있을 때만 작업 시간을 만든다
       var at = raw.do_at;
       if (at && (at.text || at.time)) {
-        fields.atDate = checkDate(at, c, false);
+        fields.atDate = checkDate(at, c, false, b.quote);
         fields.atTime = checkTime(at, b.quote, c, false);
         // "3시에 쓰기" 처럼 날짜 표현이 없으면 오늘(메모 기준)
         if (fields.atDate.value == null && fields.atTime.value && (!at.text || !SG.parseDueHint(at.text, c.ref))) {
           var rel = relativeAt([at.text || '', b.quote || ''].join(' '), c.ref);
           fields.atDate = field(rel ? rel.date : D.ymd(c.ref), 'ok');
         }
+        // 마감이 확실하면 확인 못 한 할 시각("점심 먹고 1시 반까지" 에 AI 가 붙인 12:00)은 버린다 — 할 일을 막지 않게
+        if (due.status === 'ok' && due.value && (fields.atDate.status !== 'ok' || fields.atTime.status !== 'ok')) { delete fields.atDate; delete fields.atTime; }
       }
       items.push(Object.assign(b, {
         fields: fields,
@@ -423,7 +462,7 @@
     out.events.forEach(function (raw) {
       var b = base('event', raw);
       if (!b) return;
-      var date = checkDate(raw.start, c, true);
+      var date = checkDate(raw.start, c, true, b.quote);
       var time = checkTime(raw.start, b.quote, c, true);
       var dur = checkDuration(raw.duration_minutes, raw.start, b.quote, time.value || (time.options[0] && time.options[0].value));
       var loc = raw.location && inText(c.fullNorm, raw.location) ? field(raw.location.trim(), 'ok')
@@ -459,14 +498,14 @@
   function shiftMinutes(text) {
     var s = String(text || '');
     // 날 단위 — 지금 마감에서 그만큼 (뒤로·후로 가 붙어도 마감 기준: "마감 하루 뒤로 미뤄줘")
-    var d = s.match(/(하루|이틀|사흘|나흘|닷새|일주일|(\d+)\s*일|(\d+|한|두|세)\s*주(?:일)?)\s*(?:더\s*|만\s*|정도\s*|씩\s*)?(?:(?:뒤|후)로?\s*)?(?:미뤄|미루|늦춰|늦추|연장)/);
+    var d = s.match(/(하루|이틀|사흘|나흘|닷새|일주일|(\d+)\s*일|(\d+|한|두|세)\s*주(?:일)?)\s*(?:더\s*|만\s*|정도\s*|씩\s*)?(?:(?:뒤|후)로?\s*)?(?:미뤄|미루|늦춰|늦추|연장|연기|빼|밀어|옮겨|넘겨)/);
     if (d) {
       var days = DAYNUM[d[1]] || (d[2] ? +d[2] : 0) || (d[3] ? (KNUM[d[3]] || +d[3]) * 7 : 0);
       if (days > 0 && days <= 366) return days * 1440;
     }
     // 시간 표현 바로 뒤에 후·뒤가 붙을 때만 "지금부터" — 제목 속 '후보'·'오후'·'뒤풀이' 에는 반응하지 않는다
     if (/(\d+|한|두|세|네|다섯|여섯|반)\s*(?:시간(?:\s*반)?(?:\s*\d+\s*분)?|분)\s*(?:후|뒤|있다가|이따)/.test(s)) return null;
-    var m = s.match(/(\d+|한|두|세|네|다섯|여섯|반)\s*시간\s*(반)?\s*(?:(\d+)\s*분)?\s*(?:더\s*|만\s*|정도\s*)?(?:미뤄|미루|늦춰|늦추|연장)/);
+    var m = s.match(/(\d+|한|두|세|네|다섯|여섯|반)\s*시간\s*(반)?\s*(?:(\d+)\s*분)?\s*(?:더\s*|만\s*|정도\s*)?(?:(?:뒤|후)로\s*)?(?:미뤄|미루|늦춰|늦추|연장|연기|빼|밀어|옮겨|넘겨)/);
     if (m) {
       var h = m[1] === '반' ? 0.5 : (KNUM[m[1]] || +m[1]);
       return Math.round(h * 60) + (m[2] ? 30 : 0) + (m[3] ? +m[3] : 0);
@@ -480,7 +519,7 @@
   function verifyWhen(w, quote, note, now) {
     if (!w || !(w.text || w.date || w.time)) return null;
     var c = { ref: new Date(note.updatedAt || now || Date.now()), fullNorm: norm(noteLines(note).join('\n')) };
-    var d = checkDate(w, c, false);
+    var d = checkDate(w, c, false, quote);
     var t = (w.time || w.text) ? checkTime(w, quote, c, false) : field(null, 'ok');
     var date = d.status === 'ok' ? d.value : null;
     var time = t.status === 'ok' ? t.value : null;

@@ -185,6 +185,7 @@
     if (m.kind === 'weekstart') return weekStartCard(m, st, now);
     if (m.kind === 'elaborate') return withUsage(elaborateCard(m, st, now), m.usage, m.model, m.exchangeId);
     if (m.kind === 'rest') return restCard(m, st, now);
+    if (m.kind === 'confirm') return confirmCard(m, st);
     return null;
   }
 
@@ -253,6 +254,7 @@
   // 날짜를 바꾼 내용 — "마감 → 내일(토)" · "오늘 19:00에 하기"
   function movedText(ch, now) {
     var to = ch.to || {};
+    if (to.cleared) return to.cleared === 'due' ? '마감 없음' : '작업 시간 뺌';
     if (to.at) { var p = to.at.split(' '); return dayLabel(p[0], now) + ' ' + p[1] + '에 하기'; }
     if (to.planDate) return dayLabel(to.planDate, now) + '에 하기';
     return '마감 ' + dayLabel(to.dueDate, now) + (to.dueTime ? ' ' + to.dueTime : '');
@@ -271,6 +273,7 @@
       if (moved.length) {
         var m0 = moved[0], mt = m0.item.title, to = m0.change.to || {};
         parts.push(moved.length > 1 ? moved.length + '개의 날짜·시각을 고쳤어요'
+          : to.cleared ? '‘' + mt + '’ ' + (to.cleared === 'due' ? '마감을 지웠어요' : '작업 시간을 뺐어요') + ' (×로 되돌리기)'
           : m0.change.kind === 'block' ? '‘' + mt + '’ 일정 시각을 고쳤어요 → ' + movedText(m0.change, now).replace(/에 하기$/, '')
           : to.at ? '‘' + mt + '’' + ui.josa(mt, '를/을').slice(mt.length) + ' ' + movedText(m0.change, now).replace(/에 하기$/, '에 하기로 했어요')
           : '‘' + mt + '’ 마감을 옮겼어요 → ' + dayLabel(to.dueDate, now) + (to.dueTime ? ' ' + to.dueTime : ''));
@@ -929,6 +932,24 @@
         : h('div.msg-actions',
           h('button.btn.btn-primary.btn-xs', { type: 'button', onclick: function () { AS.startTimer(m.id, 5); } }, '5분 타이머 시작'),
           h('button.btn.btn-xs.btn-ghost', { type: 'button', onclick: function () { AS.rest(); } }, '다른 스트레칭'))));
+  }
+
+  // AI 가 읽은 명령 확인 — "‘우유 사기’ → 완료로 표시할까요?" [실행] [아니요]
+  function confirmCard(m, st) {
+    var AS = DN.assistant;
+    var t = m.cmd && M.byId(st.tasks, m.cmd.taskId);
+    var what = (AS.CONFIRM_LABEL || {})[m.cmd && m.cmd.action] || '실행';
+    var gone = !t || t.deletedAt;
+    return bubble('assistant', h('div.confirm',
+      h('div.msg-text', '이 할 일을 바꿀까요?'),
+      h('div.msg-text', h('b', '‘' + ((t && t.title) || m.title || '할 일') + '’'), ' → ' + what),
+      m.quote ? h('div.meta', '글에서 읽은 말: “' + m.quote + '”') : null,
+      m.status === 'done' ? h('div.meta', '실행했어요.')
+        : m.status === 'cancelled' ? h('div.meta', '실행하지 않았어요.')
+        : gone ? h('div.meta', '그 할 일이 이제 없어요.')
+        : h('div.msg-actions',
+          h('button.btn.btn-primary.btn-xs', { type: 'button', onclick: function () { AS.confirmCommand(m.id, true); } }, what),
+          h('button.btn.btn-xs.btn-ghost', { type: 'button', onclick: function () { AS.confirmCommand(m.id, false); } }, '아니요'))));
   }
 
   DN.views.chat = { render: render };

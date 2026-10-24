@@ -48,7 +48,7 @@
     function renderList() {
       var q = mem.query.trim().toLowerCase();
       var list = sortNotes(M.liveNotes(S.state)).filter(function (n) {
-        if (n.captureRole === 'task_source' && n.id !== mem.noteId) return false;   // 할 일로만 쓰인 입력은 보관함 목록에서 숨김(원문 링크로는 열림)
+        if (n.captureRole === 'task_source' && n.id !== mem.noteId && !q) return false;   // 할 일로만 쓰인 입력은 보관함 목록에서 숨김(원문 링크·검색으로는 찾힌다)
         return !q || (n.title + '\n' + n.body).toLowerCase().indexOf(q) !== -1;
       });
       listBox.textContent = '';

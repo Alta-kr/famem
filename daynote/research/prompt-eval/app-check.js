@@ -12,6 +12,7 @@ const D = require(path.join(ROOT, 'src/core/dates'));
 const V = require(path.join(ROOT, 'src/core/ai/validate'));
 const P = require(path.join(ROOT, 'src/core/ai/proposals'));
 const C = require(path.join(ROOT, 'src/core/ai/capture'));
+const CMD = require(path.join(ROOT, 'src/core/ai/commands'));
 const cases = require('./csv')(fs.readFileSync(path.join(__dirname, process.env.CASES || 'cases.csv'), 'utf8'));
 const [variant, ids] = process.argv.slice(2);
 const results = JSON.parse(fs.readFileSync(path.join(__dirname, 'results', variant + '.json'), 'utf8')).results;
@@ -42,16 +43,17 @@ function run(c, out) {
   const v = V.validateOrganizeNote(o, { note, state: st, now });
   if (!v.ok) return { error: '검증 실패: ' + v.errors.join(', ') };
   const runRec = P.startRun(st, { noteId: note.id, kind: 'capture', promptVersion: 'final' }, now);
-  P.applyCapture(st, { note, run: runRec, validated: v, output: o }, now);
+  const cmds = CMD.resolve(st, note, o.commands, null);
+  P.applyCapture(st, { note, run: runRec, validated: v, output: o, commands: cmds }, now);
   const hm = (iso) => D.ymd(iso) + ' ' + D.hm(iso);
   return {
-    entryType: note.capture.entryType, memoKept: note.captureRole === 'memo' && !note.deletedAt,
+    entryType: note.capture.entryType, memoKept: note.captureRole === 'memo' && !note.deletedAt, kept: note.capture.kept || undefined,
     tasks: M.liveTasks(st).filter((t) => t.sources.some((s) => s.refId === note.id)).map((t) => t.title + (t.dueDate ? ' 마감 ' + t.dueDate + (t.dueTime ? ' ' + t.dueTime : '') : '') + (t.steps.length ? ' 세부 ' + t.steps.length : '') +
       M.blocksForTask(st, t.id).map((b) => ' @' + hm(b.start)).join('')),
     events: st.blocks.filter((b) => !b.taskId).map((b) => (b.title || '') + ' ' + hm(b.start)),
     completed: (note.capture.completed || []).map((x) => (M.byId(st.tasks, x.id) || {}).title),
     updated: (note.capture.updated || []).map((u) => { const t = M.byId(st.tasks, u.id); return t ? t.title + ' → ' + (t.dueDate || '') + (t.dueTime ? ' ' + t.dueTime : '') : u.id; }),
-    commands: (v.commands || []).length ? v.commands : undefined
+    commands: cmds.length ? cmds.map((c) => c.action + (c.taskId ? ':' + (M.byId(st.tasks, c.taskId) || {}).title : '')) : undefined
   };
 }
 

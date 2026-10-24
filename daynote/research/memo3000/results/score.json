@@ -1,0 +1,176 @@
+{
+ "prompt": "capture.v15",
+ "total": {
+  "n": 3000,
+  "ok": 2971
+ },
+ "rate": 99,
+ "per": {
+  "task_new_simple": {
+   "n": 143,
+   "ok": 143,
+   "notes": {}
+  },
+  "task_new_due_date_only": {
+   "n": 143,
+   "ok": 141,
+   "notes": {
+    "✓ 할 날로": 10,
+    "✗ 새 할 일 없음": 2
+   }
+  },
+  "task_new_due_with_time": {
+   "n": 143,
+   "ok": 142,
+   "notes": {
+    "✗ 새 할 일 없음": 1
+   }
+  },
+  "task_new_do_at_scheduled": {
+   "n": 143,
+   "ok": 141,
+   "notes": {
+    "✓ 마감 시각으로": 11,
+    "✓ 일정으로": 5,
+    "✗ 새 할 일 없음": 2
+   }
+  },
+  "task_explicit_duration": {
+   "n": 143,
+   "ok": 142,
+   "notes": {
+    "✓ 길이 기록": 69,
+    "✓ 길이 미기록": 1,
+    "✗ 할 시각 다름": 1
+   }
+  },
+  "task_ends_only_inferred": {
+   "n": 143,
+   "ok": 142,
+   "notes": {
+    "✓ 지난 시각 → 내일": 30,
+    "✗ 마감 다름": 1
+   }
+  },
+  "task_header_noise_single": {
+   "n": 143,
+   "ok": 143,
+   "notes": {}
+  },
+  "note_pure_log": {
+   "n": 143,
+   "ok": 136,
+   "notes": {
+    "✗ 기록인데 할 일·변경 생김 [{\"title\":\"변론기일\",\"at\":\"": 2,
+    "✗ 기록인데 할 일·변경 생김 [{\"title\":\"디카페인 원두 주간 기본 발주량 늘리기\",\"due\":null,\"dueTime\":null,\"plan\":null,\"at\":null,\"mins\":null,\"est\":10}]": 1,
+    "✗ 기록인데 할 일·변경 생김 [{\"title\":\"일일 4,000단어 이상 집필하기\",\"due\":null,\"dueTime\":null,\"plan\":null,\"at\":null,\"mins\":null,\"est\":null}]": 1,
+    "✗ 기록인데 할 일·변경 생김 [{\"title\":\"결제 PG사 점검 자동 우회 로직 켜기\",\"due\":\"": 1,
+    "✗ 기록인데 할 일·변경 생김 [{\"title\":\"전자현미경 사용\",\"due\":\"": 1,
+    "✗ 기록인데 할 일·변경 생김 [{\"title\":\"자동 우회 로직 켜기\",\"due\":\"": 1
+   }
+  },
+  "mixed_note_and_task": {
+   "n": 143,
+   "ok": 140,
+   "notes": {
+    "✗ 마감 다름": 3
+   }
+  },
+  "mixed_done_and_new_task": {
+   "n": 143,
+   "ok": 143,
+   "notes": {
+    "✓ 일정으로": 4,
+    "✓ 마감 시각으로": 2
+   }
+  },
+  "mixed_multi_actions": {
+   "n": 143,
+   "ok": 143,
+   "notes": {}
+  },
+  "update_slot_time_keep_date": {
+   "n": 143,
+   "ok": 142,
+   "notes": {
+    "✓ 마감 시각으로": 3,
+    "✗ 할 시각 다름": 1
+   }
+  },
+  "update_slot_deictic_date": {
+   "n": 143,
+   "ok": 143,
+   "notes": {
+    "✓ 할 날로": 1
+   }
+  },
+  "update_slot_delta_resolved": {
+   "n": 143,
+   "ok": 143,
+   "notes": {}
+  },
+  "update_slot_delta_pending": {
+   "n": 143,
+   "ok": 143,
+   "notes": {
+    "✓ 앱 계산(오늘 기준) ": 143
+   }
+  },
+  "update_slot_explicit_clear": {
+   "n": 143,
+   "ok": 143,
+   "notes": {}
+  },
+  "command_delete_implicit": {
+   "n": 143,
+   "ok": 143,
+   "notes": {}
+  },
+  "command_delete_explicit": {
+   "n": 143,
+   "ok": 143,
+   "notes": {}
+  },
+  "command_open_or_search": {
+   "n": 142,
+   "ok": 133,
+   "notes": {
+    "✗ 화면 다름 calendar": 9
+   }
+  },
+  "command_workflow_control": {
+   "n": 142,
+   "ok": 141,
+   "notes": {
+    "✗ 대상 다름": 1
+   }
+  },
+  "bulk_update_overdue_or_proj": {
+   "n": 142,
+   "ok": 141,
+   "notes": {
+    "✗ 날짜 다름 ": 1
+   }
+  }
+ },
+ "flags": {
+  "keptMemo": 178,
+  "confirmCmds": 326,
+  "localPath": 142
+ },
+ "models": {
+  "gemini-3.5-flash-lite": 3000
+ },
+ "latency": {
+  "p50": 1694,
+  "p90": 2158,
+  "p99": 2593,
+  "max": 10234
+ },
+ "tokens": {
+  "in": 8454464,
+  "out": 923689,
+  "n": 3000
+ },
+ "usdUpperBound": 4.85
+}
