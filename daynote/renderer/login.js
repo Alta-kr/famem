@@ -31,7 +31,7 @@
     function setMsg(text, kind) { msg.textContent = text || ''; msg.className = 'login-msg' + (kind ? ' is-' + kind : ''); }
     function go() {
       btn.disabled = true; cancelBtn.hidden = false;
-      setMsg('브라우저에서 로그인을 마쳐 주세요. 끝나면 자동으로 돌아와요.', 'wait');
+      setMsg(st.waitText || '브라우저에서 로그인을 마쳐 주세요. 끝나면 자동으로 돌아와요.', 'wait');
       auth.signIn().then(function (r) {
         btn.disabled = false; cancelBtn.hidden = true;
         if (r && r.ok) { setMsg(r.user.email + ' 계정으로 로그인했어요.', 'ok'); setTimeout(onDone, 300); return; }
@@ -57,11 +57,11 @@
     var card = h('div.login-card',
       h('div.login-brand', h('div.brand-mark', { 'aria-hidden': 'true' }, 'D'), h('span', 'Daynote')),
       h('h1.login-title', st.owner ? '다시 로그인해 주세요' : 'Google 계정으로 시작하기'),
-      h('p.login-sub', st.owner
+      h('p.login-sub', st.subText ? st.subText : st.owner
         ? '이 컴퓨터의 Daynote는 ' + st.owner + ' 계정으로 쓰고 있어요.'
         : '처음 로그인한 계정이 이 컴퓨터 Daynote의 주인이 돼요. 메모·할 일은 지금처럼 이 컴퓨터에만 저장돼요.'),
       btn, h('div.login-row', msg, cancelBtn), setupBox,
-      h('p.login-fine', 'Daynote는 이름과 이메일 주소만 받아요. 메일·드라이브 같은 다른 정보에는 접근하지 않아요.'));
+      h('p.login-fine', st.fineText || 'Daynote는 이름과 이메일 주소만 받아요. 메일·드라이브 같은 다른 정보에는 접근하지 않아요.'));
     root.appendChild(h('div.login-screen', card));
     if (!st.configured) { setMsg('구글 로그인 설정(클라이언트 ID)이 아직 없어요.', 'err'); renderSetup(); btn.disabled = true; }
     else setTimeout(function () { btn.focus(); }, 0);

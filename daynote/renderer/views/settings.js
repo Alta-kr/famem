@@ -69,7 +69,9 @@
   // ---------------------------------------------------------------- AI 연결
   // Google AI Studio 키를 붙여 넣으면 메인 프로세스가 Windows 보안 저장소(DPAPI)로 암호화해 둔다.
   // 화면은 키를 다시 받지 않는다 — 상태에는 '끝 4자리' 만 온다.
-  var KEY_SOURCE = { env: '환경변수', dotenv: '앱 폴더의 .env 파일', saved: '이 앱에 저장한 키' };
+  var KEY_SOURCE = { env: '환경변수', dotenv: '앱 폴더의 .env 파일', saved: '이 앱에 저장한 키', server: '서버에 둔 키' };
+  // 웹 버전 같은 다른 실행 환경은 host.texts 로 안내 문구를 바꾼다
+  function hostText(k, fallback) { return (S.host.texts && S.host.texts[k]) || fallback; }
 
   // 마크다운 파일 — 메모·할 일·주간 보고를 프로젝트별 폴더의 .md 로 (데스크톱 앱)
   function mdCard() {
@@ -113,9 +115,9 @@
       var u = st.user;
       line.appendChild(h('span.acc-avatar', { 'aria-hidden': 'true' }, (u.name || u.email).trim().charAt(0).toUpperCase()));
       line.appendChild(h('span', h('b', u.name || u.email), ' · ' + u.email));
-      box.appendChild(h('p.help', '이 컴퓨터의 Daynote는 이 Google 계정으로만 열려요. 메모·할 일은 지금처럼 이 컴퓨터에만 저장돼요.'));
+      box.appendChild(h('p.help', hostText('account', '이 컴퓨터의 Daynote는 이 Google 계정으로만 열려요. 메모·할 일은 지금처럼 이 컴퓨터에만 저장돼요.')));
       box.appendChild(h('div.sug-actions', h('button.btn.btn-sm', { type: 'button', onclick: function () {
-        ui.confirm('로그아웃', '로그아웃하면 다시 로그인할 때까지 Daynote를 열 수 없어요. 데이터는 이 컴퓨터에 그대로 있어요.', '로그아웃').then(function (ok) {
+        ui.confirm('로그아웃', hostText('signOut', '로그아웃하면 다시 로그인할 때까지 Daynote를 열 수 없어요. 데이터는 이 컴퓨터에 그대로 있어요.'), '로그아웃').then(function (ok) {
           if (!ok) return;
           Promise.resolve(S.flush()).then(function () { return auth.signOut(); }).then(function () { A().reload(); });
         });
@@ -260,13 +262,14 @@
         aiSt.keySource ? h('span.meta', ' · ' + (KEY_SOURCE[aiSt.keySource] || aiSt.keySource) + (aiSt.savedKey && aiSt.keySource === 'saved' ? ' ' + aiSt.savedKey : '')) : null),
       models,
       usageBox(),
-      aiSt.provider === 'fake' ? null : h('div', { style: { display: 'flex', gap: '8px', flexWrap: 'wrap', alignItems: 'center', marginTop: '12px' } },
+      aiSt.provider === 'fake' || aiSt.managed ? null : h('div', { style: { display: 'flex', gap: '8px', flexWrap: 'wrap', alignItems: 'center', marginTop: '12px' } },
         h('label.sr-only', { for: 'set-ai-key' }, 'Google AI Studio API 키'),
         input,
         h('button.btn.btn-primary.btn-sm', { type: 'button', onclick: save }, aiSt.savedKey ? '키 바꾸기' : '키 저장'),
         aiSt.configured ? h('button.btn.btn-sm', { type: 'button', onclick: check }, '연결 확인') : null,
         aiSt.savedKey ? h('button.btn.btn-sm.btn-danger', { type: 'button', onclick: clearKey }, '저장한 키 지우기') : null),
-      h('p.help#set-ai-key-help', { style: { marginTop: '6px' } },
+      aiSt.managed ? (aiSt.configured ? h('div', { style: { marginTop: '10px' } }, h('button.btn.btn-sm', { type: 'button', onclick: check }, '연결 확인')) : null)
+        : h('p.help#set-ai-key-help', { style: { marginTop: '6px' } },
         'Google AI Studio(aistudio.google.com)에서 무료로 만들 수 있어요. 키는 이 컴퓨터의 Windows 보안 저장소로 암호화해 두고, 화면에는 끝 4자리만 보여요.'),
       result,
       aiSt.notice ? h('div.conflict-box', { style: { margin: '10px 0 6px' } }, aiSt.notice) : null,
@@ -337,10 +340,23 @@
     S.host.dataPath().then(function (p) { pathEl.textContent = p || '(알 수 없음)'; }, function () { pathEl.textContent = '(확인하지 못했습니다)'; });
     var data = h('section.card.settings-card', { 'aria-labelledby': 'set-data' },
       h('h3#set-data', '데이터'),
-      h('div.help', '모든 데이터는 이 컴퓨터에만 저장됩니다.'),
+      h('div.help', hostText('data', '모든 데이터는 이 컴퓨터에만 저장됩니다.')),
       h('div.status-line', h('span', '저장 위치: '), pathEl),
       h('div.sug-actions',
-        h('button.btn.btn-sm', { type: 'button', onclick: function () { S.host.revealData(); } }, '폴더 열기'),
+        S.host.revealData ? h('button.btn.btn-sm', { type: 'button', onclick: function () { S.host.revealData(); } }, '폴더 열기') : null,
+        // 다른 기기(데스크톱 앱)에서 내보낸 전체 백업으로 바꾸기 — 웹 버전으로 옮길 때
+        S.host.importBackup ? h('button.btn.btn-sm', { type: 'button', onclick: function () {
+          S.host.importBackup().then(function (r) {
+            if (!r || !r.ok) { if (r && r.error) ui.toast(r.error, { error: true }); return; }
+            var n = (r.data.tasks || []).length, m = (r.data.notes || []).length;
+            ui.confirm('백업 불러오기', '지금 데이터를 이 백업(할 일 ' + n + '개 · 메모 ' + m + '개)으로 바꿔요. 지금 있는 내용은 사라져요 — 필요하면 먼저 ‘전체 백업 내보내기’를 해 두세요.', '바꾸기').then(function (ok) {
+              if (!ok) return;
+              S.replaceAll(r.data);
+              ui.toast('백업을 불러왔어요. 로그인한 다른 기기에도 곧 맞춰져요.');
+              A().go('today');
+            });
+          });
+        } }, ui.icon('upload'), '백업 불러오기') : null,
         h('button.btn.btn-sm', {
           type: 'button', onclick: function () {
             S.flush();

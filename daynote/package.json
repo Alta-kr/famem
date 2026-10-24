@@ -1,6 +1,6 @@
 {
   "name": "daynote",
-  "version": "0.1.9",
+  "version": "0.1.10",
   "description": "Daynote — 생각을 기록하고, 일을 계획하고, 성과를 기억하는 데스크톱 메모·업무 관리 앱",
   "main": "main.js",
   "license": "MIT",
@@ -15,7 +15,8 @@
     "dist:mac": "electron-builder --mac dmg --arm64 --x64 --publish never"
   },
   "devDependencies": {
-    "electron": "32.3.3"
+    "electron": "32.3.3",
+    "electron-builder": "^25.1.8"
   },
   "dependencies": {
     "@anthropic-ai/sdk": "^0.131.0",

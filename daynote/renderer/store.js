@@ -213,7 +213,12 @@
 
     flush: flush,
     retrySave: function () { dirty = true; return flush(); },
-    replaceAll: function (next) { state = M.normalize(next); undoStack = []; redoStack = []; scheduleSave(); emit({ type: 'load' }); }
+    //   opts.remote: 다른 기기에서 바뀐 것을 받았다 — 다시 저장하지 않는다 (받은 그대로가 이미 저장돼 있다)
+    replaceAll: function (next, opts) {
+      state = M.normalize(next); undoStack = []; redoStack = [];
+      if (!(opts && opts.remote)) scheduleSave();
+      emit({ type: 'load', source: opts && opts.remote ? 'remote' : null });
+    }
   };
 
   function keepLive(cur, snap) {
