@@ -88,6 +88,15 @@ test('Gemini 오류: 한도 초과(429)는 한 번 더 시도하고, 키 오류(
     assert.strictEqual(r3.error.type, 'truncated');
     assert.strictEqual(r3.error.retryable, true);
 
+    // 유료 프로젝트의 월 지출 한도 — 다른 모델로 넘기지 않고 바로 알린다
+    let capCalls = 0;
+    ai._setClients({ gemini: { interactions: { create: async () => { capCalls++; throw Object.assign(new Error('{"error":{"code":429,"message":"Your project has exceeded its monthly spending cap. Please go to AI Studio at https://ai.studio/spend to manage your project spend cap.","status":"RESOURCE_EXHAUSTED"}}'), { status: 429 }); } } } });
+    const rc = await ai.organize(INPUT);
+    assert.strictEqual(rc.error.type, 'spend_cap');
+    assert.strictEqual(rc.error.retryable, false);
+    assert.ok(/ai\.studio\/spend/.test(rc.error.message));
+    assert.strictEqual(capCalls, 1);
+
     let n = 0;
     ai._setClients({ gemini: { interactions: { create: async () => { n++; return { status: 'completed', output_text: n === 1 ? 'not json' : JSON.stringify(OUTPUT) }; } } } });
     const r4 = await ai.organize(INPUT);

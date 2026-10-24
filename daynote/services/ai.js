@@ -178,7 +178,10 @@ function gemini() {
 function classifyGemini(e) {
   const status = e && typeof e.status === 'number' ? e.status : null;
   if (status === 401 || status === 403) return { type: 'auth', message: 'Gemini API 키가 올바르지 않거나 권한이 없습니다. GEMINI_API_KEY 를 확인해 주세요.', retryable: false };
-  if (status === 429) return Object.assign({ type: 'rate_limit', message: 'Gemini 사용 한도에 걸렸습니다(무료 등급은 분당·하루 요청 수가 정해져 있습니다). 조금 뒤 다시 시도해 주세요.', retryable: true }, limitInfo(e));
+  // 유료(결제 연결) 프로젝트의 '월 지출 한도' — 기다려도 안 풀린다 (다른 모델도 같은 프로젝트라 막힌다)
+  if (status === 429 && /spend(ing)?\s*cap/i.test(e.message || '')) return { type: 'spend_cap', retryable: false,
+    message: 'Google AI Studio에 정해 둔 이번 달 지출 한도를 넘어서 Gemini가 요청을 막았어요. ai.studio/spend 에서 한도를 올리면 바로 다시 돼요 (모든 PC 같은 키).' };
+  if (status === 429) return Object.assign({ type: 'rate_limit', message: 'Gemini 사용 한도(분당·하루 요청 수)에 걸렸습니다. 조금 뒤 다시 시도해 주세요.', retryable: true }, limitInfo(e));
   // 키가 틀리면 Gemini 는 400 + API_KEY_INVALID 를 준다
   if (status === 400 && /API[_ ]?key/i.test(e.message || '')) return { type: 'auth', message: 'Gemini API 키가 올바르지 않아요. 설정에서 키를 확인해 주세요.', retryable: false };
   if (status === 400) return { type: 'bad_request', message: 'Gemini가 요청을 처리하지 못했습니다: ' + redact(e.message || ''), retryable: false };
