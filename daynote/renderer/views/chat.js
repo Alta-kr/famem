@@ -177,15 +177,22 @@
     }
     if (m.kind === 'thinking') return bubble('assistant', h('div.msg-text', h('span.spinner', { 'aria-hidden': 'true' }), ' ', m.text));
     if (m.kind === 'capture') return captureCard(m, st, now);
-    if (m.kind === 'breakdown') return breakdownCard(m, st, now);
+    if (m.kind === 'breakdown') return withUsage(breakdownCard(m, st, now), m.usage, m.model);
     if (m.kind === 'next') return nextCard(m, st, now);
     if (m.kind === 'work') return workCard(m, st, now);
     if (m.kind === 'dayclose') return dayCloseCard(m, st, now);
     if (m.kind === 'overdue') return overdueCard(m, st, now);
     if (m.kind === 'weekstart') return weekStartCard(m, st, now);
-    if (m.kind === 'elaborate') return elaborateCard(m, st, now);
+    if (m.kind === 'elaborate') return withUsage(elaborateCard(m, st, now), m.usage, m.model);
     if (m.kind === 'rest') return restCard(m, st, now);
     return null;
+  }
+
+  // 설정에서 '쓴 토큰 보기' 를 켰으면 AI 답 아래에 토큰 한 줄
+  function withUsage(el, usage, model) {
+    var line = el && DN.aiFlow.usageLine(usage, model);
+    if (line) (el.querySelector('.msg-body') || el).appendChild(line);
+    return el;
   }
 
   // ------------------------------------------------------------------ 정리 결과 카드
@@ -226,7 +233,8 @@
       foot = null;
     }
     var rows = h('div.cap-rows', { role: 'list' }, items.map(function (it, i) { return capRow(n, it, i, items, st, now); }));
-    return bubble('assistant', h('div.cap', head, rows, foot), 'msg-cap');
+    var run = (st.aiRuns || []).filter(function (r) { return r.noteId === n.id && r.kind === 'capture' && r.usage; }).pop();
+    return bubble('assistant', h('div.cap', head, rows, foot, run ? DN.aiFlow.usageLine(run.usage, run.model) : null), 'msg-cap');
   }
 
   // "할 일로 정리했어요" · "메모와 할 일 2개로 나눴어요" · "아이디어로 남겼어요"

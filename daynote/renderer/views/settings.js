@@ -196,6 +196,19 @@
       h('div.sug-actions', h('button.btn.btn-sm', { type: 'button', onclick: function () { fileIn.click(); } }, ui.icon('upload'), 'ICS 파일에서 가져오기'), fileIn));
   }
 
+  // 쓴 토큰 — 켜면 AI 답마다 토큰 한 줄, 여기에는 오늘·이번 달 합계
+  function usageBox() {
+    var st = S.state, u = st.meta.aiUsage || {}, now = DN.app.now();
+    var day = DN.dates.ymd(now);
+    var today = u.day === day ? u.today : null, month = u.month === day.slice(0, 7) ? u.thisMonth : null;
+    var fmt = function (x) { return x ? Number(DN.aiFlow.totalTokens(x)).toLocaleString('ko-KR') + '토큰 (요청 ' + x.calls + '번)' : '0토큰'; };
+    var box = h('input', { type: 'checkbox', id: 'set-tokens', checked: !!st.prefs.showTokens,
+      onchange: function () { S.mutate(null, function (s) { s.prefs.showTokens = box.checked; }); } });
+    return h('div.token-box',
+      h('label.check-row', { for: 'set-tokens' }, box, h('span', 'AI 답마다 쓴 토큰 보기')),
+      h('p.help', '오늘 ' + fmt(today) + ' · 이번 달 ' + fmt(month) + ' — 이 기기에서 보낸 것만 세요.'));
+  }
+
   function aiCard(root) {
     var aiSt = DN.aiFlow.status();
     var rerender = function () { DN.aiFlow.loadStatus().then(function () { root.textContent = ''; render(root); }); };
@@ -246,6 +259,7 @@
       h('div.status-line', h('span.status-dot' + (aiSt.configured ? (aiSt.provider === 'fake' ? '.busy' : '.ok') : '')), label,
         aiSt.keySource ? h('span.meta', ' · ' + (KEY_SOURCE[aiSt.keySource] || aiSt.keySource) + (aiSt.savedKey && aiSt.keySource === 'saved' ? ' ' + aiSt.savedKey : '')) : null),
       models,
+      usageBox(),
       aiSt.provider === 'fake' ? null : h('div', { style: { display: 'flex', gap: '8px', flexWrap: 'wrap', alignItems: 'center', marginTop: '12px' } },
         h('label.sr-only', { for: 'set-ai-key' }, 'Google AI Studio API 키'),
         input,

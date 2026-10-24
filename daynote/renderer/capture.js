@@ -94,6 +94,7 @@
       return { ok: false, error: { type: 'ipc', message: e && e.message ? e.message : String(e), retryable: true } };
     }).then(function (res) {
       delete inflight[noteId];
+      DN.aiFlow.recordUsage(res);
       var t = now();
       var key = joinKey[noteId]; delete joinKey[noteId];
       // 기다리는 사이 Ctrl+Z 로 보낸 글을 되돌렸으면 늦게 온 결과는 버린다 (지운 글에 할 일이 생기지 않게)

@@ -1976,3 +1976,9 @@ html.is-resting .toast, html.is-resting .toasts { display: none !important; }   
 .next-intro { margin-bottom: 6px; }
 .next-for { display: flex; align-items: center; flex-wrap: wrap; gap: 6px; margin-top: 4px; font-size: 13px; }
 .next-for .link-btn { font-size: 13px; }
+
+/* 쓴 토큰 (설정에서 켰을 때) */
+.token-line { margin-top: 6px; font-size: 12px; color: var(--text-secondary); font-variant-numeric: tabular-nums; }
+.token-box { margin-top: 12px; }
+.token-box .help { margin: 4px 0 0 28px; }
+.cap .token-line { margin: 0; padding: 0 14px 10px; }

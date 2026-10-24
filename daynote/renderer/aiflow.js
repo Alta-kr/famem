@@ -87,6 +87,7 @@
       return { ok: false, error: { type: 'ipc', message: e && e.message ? e.message : String(e), retryable: true } };
     }).then(function (res) {
       delete inflight[noteId];
+      recordUsage(res);
       var done = DN.app.now();
       if (!res.ok) {
         S.mutate(null, function (s) { P.finishRun(s, run.id, { status: 'failed', error: res.error, rawOutput: res.raw || null, attempts: res.attempts || 1 }, done); }, { source: 'ai' });
@@ -111,7 +112,38 @@
     });
   }
 
+  // ------------------------------------------------------------------ 쓴 토큰
+  // AI 답이 올 때마다 오늘·이번 달 합계에 더한다 (meta.aiUsage — 되돌리기 대상 아님).
+  //   설정에서 '쓴 토큰 보기' 를 켜면 답마다 "토큰 1,234 (입력 1,000 · 출력 234)" 가 보인다
+  function addUsage(sum, u) {
+    sum = sum || { input: 0, output: 0, thought: 0, calls: 0 };
+    return { input: sum.input + (u.input_tokens || 0), output: sum.output + (u.output_tokens || 0), thought: sum.thought + (u.thought_tokens || 0), calls: sum.calls + 1 };
+  }
+  function recordUsage(res) {
+    if (!res || !res.usage || res.provider === 'fake') return;
+    var now = DN.app.now(), day = D.ymd(now), month = day.slice(0, 7);
+    S.mutate(null, function (s) {
+      var u = s.meta.aiUsage || {};
+      s.meta.aiUsage = {
+        day: day, month: month,
+        today: addUsage(u.day === day ? u.today : null, res.usage),
+        thisMonth: addUsage(u.month === month ? u.thisMonth : null, res.usage)
+      };
+    }, { source: 'ai', silent: true });
+  }
+  function totalTokens(u) { return u ? (u.input_tokens || u.input || 0) + (u.output_tokens || u.output || 0) + (u.thought_tokens || u.thought || 0) : 0; }
+  function num(n) { return Number(n || 0).toLocaleString('ko-KR'); }
+  // 답 하나의 토큰 한 줄 — 설정에서 껐거나 기록이 없으면 null
+  function usageLine(usage, model) {
+    if (!S.state.prefs.showTokens || !usage) return null;
+    var parts = ['입력 ' + num(usage.input_tokens), '출력 ' + num(usage.output_tokens)];
+    if (usage.thought_tokens) parts.push('생각 ' + num(usage.thought_tokens));
+    return DN.ui.h('div.token-line', { title: '이 답을 만드는 데 쓴 토큰' + (model ? ' · ' + model : '') },
+      '토큰 ' + num(totalTokens(usage)) + ' (' + parts.join(' · ') + ')' + (model ? ' · ' + model : ''));
+  }
+
   DN.aiFlow = {
+    recordUsage: recordUsage, usageLine: usageLine, totalTokens: totalTokens,
     loadStatus: loadStatus, organize: organize, contextOpts: contextOpts,
     status: function () { return status; },
     isRunning: function (noteId) { return !!inflight[noteId]; },
