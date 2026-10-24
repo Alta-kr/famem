@@ -103,4 +103,20 @@ const V5_SCHEMA = clone(V4_SCHEMA);
 })(V5_SCHEMA);
 function v5(c) { return { system: V5_SYSTEM, user: v2User(c), schema: V5_SCHEMA }; }
 
-module.exports = { v0, v1, v2, v3, v4, v5, calendarLine, V2_SCHEMA, V3_SCHEMA, V4_SCHEMA, V5_SCHEMA };
+// ---------------------------------------------------------------- v41 — Codex v4.1 (규칙 보강, 달력은 날마다 연도까지) + V4 답 형식
+const V41_SYSTEM = fs.readFileSync(path.join(__dirname, 'variants/v41-system.txt'), 'utf8');
+function calendarLine41(ref) {
+  const f = (d) => ymd(d) + '(' + WD[d.getDay()] + ')';
+  const day = (n) => f(D.addDays(D.startOfDay(ref), n));
+  const mon = D.startOfWeek(ref);
+  const wk = (off) => Array.from({ length: 7 }, (_, i) => f(D.addDays(mon, off + i))).join(' ');
+  return '달력(앱 계산): 오늘 ' + day(0) + ' · 내일 ' + day(1) + ' · 모레 ' + day(2) + ' · 글피 ' + day(3) + ' / 이번 주 ' + wk(0) + ' / 다음 주 ' + wk(7) + ' / 다다음 주 ' + wk(14) +
+    ' / 다음 달 1일 ' + f(new Date(ref.getFullYear(), ref.getMonth() + 1, 1));
+}
+function v41(c) { return { system: V41_SYSTEM, user: c.user_prompt.replace(/(시간대: [^\n]*\n)/, '$1' + calendarLine41(refDate(c)) + '\n'), schema: V4_SCHEMA }; }
+
+// ---------------------------------------------------------------- v42 — v4 + v4.1 에서 효과 있던 규칙만 (지난 기록+일정=mixed · "좀 나중에" · 부정·인용 명령 · 요약 반복 금지)
+const V42_SYSTEM = fs.readFileSync(path.join(__dirname, 'variants/v42-system.txt'), 'utf8');
+function v42(c) { return { system: V42_SYSTEM, user: v2User(c), schema: V4_SCHEMA }; }
+
+module.exports = { v42, v0, v1, v2, v3, v4, v5, v41, calendarLine, calendarLine41, V2_SCHEMA, V3_SCHEMA, V4_SCHEMA, V5_SCHEMA };

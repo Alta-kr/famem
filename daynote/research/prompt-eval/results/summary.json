@@ -265,400 +265,6 @@
       "avg": 4412
     }
   },
-  "v1": {
-    "model": "gemini-3.5-flash-lite",
-    "cases": 100,
-    "pass": 68,
-    "passRate": 68,
-    "corePass": 68,
-    "corePassRate": 68,
-    "groups": {
-      "분류": {
-        "pass": 173,
-        "total": 200,
-        "rate": 86.5
-      },
-      "항목 수": {
-        "pass": 199,
-        "total": 200,
-        "rate": 99.5
-      },
-      "날짜·시각": {
-        "pass": 102,
-        "total": 109,
-        "rate": 93.6
-      },
-      "준비·크기": {
-        "pass": 8,
-        "total": 10,
-        "rate": 80
-      },
-      "기존 할 일": {
-        "pass": 15,
-        "total": 18,
-        "rate": 83.3
-      }
-    },
-    "checks": {
-      "entry_type": {
-        "pass": 73,
-        "total": 100,
-        "rate": 73
-      },
-      "note_kind": {
-        "pass": 100,
-        "total": 100,
-        "rate": 100
-      },
-      "할 일 수": {
-        "pass": 99,
-        "total": 100,
-        "rate": 99
-      },
-      "일정 수": {
-        "pass": 100,
-        "total": 100,
-        "rate": 100
-      },
-      "할 일 마감": {
-        "pass": 39,
-        "total": 41,
-        "rate": 95.1
-      },
-      "할 일 할 시각": {
-        "pass": 41,
-        "total": 41,
-        "rate": 100
-      },
-      "큰 일": {
-        "pass": 6,
-        "total": 8,
-        "rate": 75
-      },
-      "준비 단계": {
-        "pass": 2,
-        "total": 2,
-        "rate": 100
-      },
-      "완료 보고": {
-        "pass": 3,
-        "total": 4,
-        "rate": 75
-      },
-      "일정 시작": {
-        "pass": 18,
-        "total": 23,
-        "rate": 78.3
-      },
-      "일정 길이": {
-        "pass": 4,
-        "total": 4,
-        "rate": 100
-      },
-      "날짜 변경": {
-        "pass": 5,
-        "total": 6,
-        "rate": 83.3
-      },
-      "묶음 변경": {
-        "pass": 1,
-        "total": 2,
-        "rate": 50
-      },
-      "앱 명령": {
-        "pass": 6,
-        "total": 6,
-        "rate": 100
-      }
-    },
-    "tokens": {
-      "input": 222965,
-      "cached": 77525,
-      "output": 32722,
-      "thought": 0,
-      "perCase": {
-        "input": 2230,
-        "cached": 775,
-        "output": 327
-      }
-    },
-    "costUSD": {
-      "total": 0.12776,
-      "perCase": 0.0012776,
-      "per1000": 1.28
-    },
-    "latencyMs": {
-      "p50": 1757,
-      "p90": 2152,
-      "avg": 1781
-    }
-  },
-  "v2": {
-    "model": "gemini-3.5-flash-lite",
-    "cases": 100,
-    "pass": 77,
-    "passRate": 77,
-    "corePass": 77,
-    "corePassRate": 77,
-    "groups": {
-      "분류": {
-        "pass": 187,
-        "total": 200,
-        "rate": 93.5
-      },
-      "항목 수": {
-        "pass": 190,
-        "total": 206,
-        "rate": 92.2
-      },
-      "날짜·시각": {
-        "pass": 102,
-        "total": 103,
-        "rate": 99
-      },
-      "준비·크기": {
-        "pass": 10,
-        "total": 10,
-        "rate": 100
-      },
-      "기존 할 일": {
-        "pass": 13,
-        "total": 24,
-        "rate": 54.2
-      }
-    },
-    "checks": {
-      "entry_type": {
-        "pass": 88,
-        "total": 100,
-        "rate": 88
-      },
-      "note_kind": {
-        "pass": 99,
-        "total": 100,
-        "rate": 99
-      },
-      "할 일 수": {
-        "pass": 96,
-        "total": 100,
-        "rate": 96
-      },
-      "일정 수": {
-        "pass": 94,
-        "total": 100,
-        "rate": 94
-      },
-      "할 일 마감": {
-        "pass": 40,
-        "total": 41,
-        "rate": 97.6
-      },
-      "할 일 할 시각": {
-        "pass": 41,
-        "total": 41,
-        "rate": 100
-      },
-      "큰 일": {
-        "pass": 8,
-        "total": 8,
-        "rate": 100
-      },
-      "준비 단계": {
-        "pass": 2,
-        "total": 2,
-        "rate": 100
-      },
-      "일정 시작": {
-        "pass": 17,
-        "total": 17,
-        "rate": 100
-      },
-      "일정 찾기": {
-        "pass": 0,
-        "total": 6,
-        "rate": 0
-      },
-      "날짜 변경": {
-        "pass": 5,
-        "total": 13,
-        "rate": 38.5
-      },
-      "일정 길이": {
-        "pass": 4,
-        "total": 4,
-        "rate": 100
-      },
-      "완료 보고": {
-        "pass": 3,
-        "total": 3,
-        "rate": 100
-      },
-      "묶음 변경": {
-        "pass": 0,
-        "total": 2,
-        "rate": 0
-      },
-      "앱 명령": {
-        "pass": 5,
-        "total": 6,
-        "rate": 83.3
-      }
-    },
-    "tokens": {
-      "input": 188835,
-      "cached": 69966,
-      "output": 17685,
-      "thought": 0,
-      "perCase": {
-        "input": 1888,
-        "cached": 700,
-        "output": 177
-      }
-    },
-    "costUSD": {
-      "total": 0.08197,
-      "perCase": 0.0008197,
-      "per1000": 0.82
-    },
-    "latencyMs": {
-      "p50": 1577,
-      "p90": 2100,
-      "avg": 1649
-    }
-  },
-  "v3": {
-    "model": "gemini-3.5-flash-lite",
-    "cases": 100,
-    "pass": 84,
-    "passRate": 84,
-    "corePass": 84,
-    "corePassRate": 84,
-    "groups": {
-      "분류": {
-        "pass": 192,
-        "total": 200,
-        "rate": 96
-      },
-      "항목 수": {
-        "pass": 185,
-        "total": 205,
-        "rate": 90.2
-      },
-      "날짜·시각": {
-        "pass": 103,
-        "total": 104,
-        "rate": 99
-      },
-      "준비·크기": {
-        "pass": 9,
-        "total": 10,
-        "rate": 90
-      },
-      "기존 할 일": {
-        "pass": 15,
-        "total": 17,
-        "rate": 88.2
-      }
-    },
-    "checks": {
-      "entry_type": {
-        "pass": 92,
-        "total": 100,
-        "rate": 92
-      },
-      "note_kind": {
-        "pass": 100,
-        "total": 100,
-        "rate": 100
-      },
-      "할 일 수": {
-        "pass": 90,
-        "total": 100,
-        "rate": 90
-      },
-      "일정 수": {
-        "pass": 95,
-        "total": 100,
-        "rate": 95
-      },
-      "할 일 마감": {
-        "pass": 40,
-        "total": 41,
-        "rate": 97.6
-      },
-      "할 일 할 시각": {
-        "pass": 41,
-        "total": 41,
-        "rate": 100
-      },
-      "큰 일": {
-        "pass": 7,
-        "total": 8,
-        "rate": 87.5
-      },
-      "준비 단계": {
-        "pass": 2,
-        "total": 2,
-        "rate": 100
-      },
-      "완료 보고": {
-        "pass": 3,
-        "total": 4,
-        "rate": 75
-      },
-      "일정 시작": {
-        "pass": 18,
-        "total": 18,
-        "rate": 100
-      },
-      "일정 길이": {
-        "pass": 4,
-        "total": 4,
-        "rate": 100
-      },
-      "일정 찾기": {
-        "pass": 0,
-        "total": 5,
-        "rate": 0
-      },
-      "날짜 변경": {
-        "pass": 5,
-        "total": 5,
-        "rate": 100
-      },
-      "묶음 변경": {
-        "pass": 1,
-        "total": 2,
-        "rate": 50
-      },
-      "앱 명령": {
-        "pass": 6,
-        "total": 6,
-        "rate": 100
-      }
-    },
-    "tokens": {
-      "input": 225235,
-      "cached": 73917,
-      "output": 27149,
-      "thought": 0,
-      "perCase": {
-        "input": 2252,
-        "cached": 739,
-        "output": 271
-      }
-    },
-    "costUSD": {
-      "total": 0.11549,
-      "perCase": 0.0011549,
-      "per1000": 1.15
-    },
-    "latencyMs": {
-      "p50": 1663,
-      "p90": 2149,
-      "avg": 3216
-    }
-  },
   "v4": {
     "model": "gemini-3.5-flash-lite",
     "cases": 100,
@@ -920,28 +526,437 @@
       "avg": 1785
     }
   },
-  "v5": {
+  "v41": {
     "model": "gemini-3.5-flash-lite",
     "cases": 100,
-    "pass": 93,
-    "passRate": 93,
-    "corePass": 93,
-    "corePassRate": 93,
+    "pass": 91,
+    "passRate": 91,
+    "corePass": 91,
+    "corePassRate": 91,
     "groups": {
       "분류": {
-        "pass": 198,
+        "pass": 196,
         "total": 200,
-        "rate": 99
+        "rate": 98
       },
       "항목 수": {
-        "pass": 199,
-        "total": 201,
-        "rate": 99
+        "pass": 197,
+        "total": 202,
+        "rate": 97.5
       },
       "날짜·시각": {
-        "pass": 105,
-        "total": 107,
-        "rate": 98.1
+        "pass": 104,
+        "total": 105,
+        "rate": 99
+      },
+      "준비·크기": {
+        "pass": 8,
+        "total": 10,
+        "rate": 80
+      },
+      "기존 할 일": {
+        "pass": 15,
+        "total": 17,
+        "rate": 88.2
+      }
+    },
+    "checks": {
+      "entry_type": {
+        "pass": 96,
+        "total": 100,
+        "rate": 96
+      },
+      "note_kind": {
+        "pass": 100,
+        "total": 100,
+        "rate": 100
+      },
+      "할 일 수": {
+        "pass": 98,
+        "total": 100,
+        "rate": 98
+      },
+      "일정 수": {
+        "pass": 99,
+        "total": 100,
+        "rate": 99
+      },
+      "할 일 마감": {
+        "pass": 40,
+        "total": 40,
+        "rate": 100
+      },
+      "할 일 할 시각": {
+        "pass": 40,
+        "total": 40,
+        "rate": 100
+      },
+      "큰 일": {
+        "pass": 6,
+        "total": 8,
+        "rate": 75
+      },
+      "준비 단계": {
+        "pass": 2,
+        "total": 2,
+        "rate": 100
+      },
+      "할 일 찾기": {
+        "pass": 0,
+        "total": 1,
+        "rate": 0
+      },
+      "완료 보고": {
+        "pass": 3,
+        "total": 4,
+        "rate": 75
+      },
+      "일정 시작": {
+        "pass": 21,
+        "total": 22,
+        "rate": 95.5
+      },
+      "일정 찾기": {
+        "pass": 0,
+        "total": 1,
+        "rate": 0
+      },
+      "일정 길이": {
+        "pass": 3,
+        "total": 3,
+        "rate": 100
+      },
+      "날짜 변경": {
+        "pass": 5,
+        "total": 5,
+        "rate": 100
+      },
+      "묶음 변경": {
+        "pass": 1,
+        "total": 2,
+        "rate": 50
+      },
+      "앱 명령": {
+        "pass": 6,
+        "total": 6,
+        "rate": 100
+      }
+    },
+    "tokens": {
+      "input": 332065,
+      "cached": 176585,
+      "output": 58286,
+      "thought": 0,
+      "perCase": {
+        "input": 3321,
+        "cached": 1766,
+        "output": 583
+      }
+    },
+    "costUSD": {
+      "total": 0.19766,
+      "perCase": 0.0019766,
+      "per1000": 1.98
+    },
+    "latencyMs": {
+      "p50": 1462,
+      "p90": 2034,
+      "avg": 2091
+    }
+  },
+  "v41r2": {
+    "model": "gemini-3.5-flash-lite",
+    "cases": 100,
+    "pass": 90,
+    "passRate": 90,
+    "corePass": 90,
+    "corePassRate": 90,
+    "groups": {
+      "분류": {
+        "pass": 196,
+        "total": 200,
+        "rate": 98
+      },
+      "항목 수": {
+        "pass": 198,
+        "total": 202,
+        "rate": 98
+      },
+      "날짜·시각": {
+        "pass": 104,
+        "total": 105,
+        "rate": 99
+      },
+      "준비·크기": {
+        "pass": 7,
+        "total": 9,
+        "rate": 77.8
+      },
+      "기존 할 일": {
+        "pass": 14,
+        "total": 17,
+        "rate": 82.4
+      }
+    },
+    "checks": {
+      "entry_type": {
+        "pass": 96,
+        "total": 100,
+        "rate": 96
+      },
+      "note_kind": {
+        "pass": 100,
+        "total": 100,
+        "rate": 100
+      },
+      "할 일 수": {
+        "pass": 98,
+        "total": 100,
+        "rate": 98
+      },
+      "일정 수": {
+        "pass": 100,
+        "total": 100,
+        "rate": 100
+      },
+      "할 일 마감": {
+        "pass": 39,
+        "total": 39,
+        "rate": 100
+      },
+      "할 일 할 시각": {
+        "pass": 39,
+        "total": 39,
+        "rate": 100
+      },
+      "큰 일": {
+        "pass": 6,
+        "total": 7,
+        "rate": 85.7
+      },
+      "할 일 찾기": {
+        "pass": 0,
+        "total": 2,
+        "rate": 0
+      },
+      "준비 단계": {
+        "pass": 1,
+        "total": 2,
+        "rate": 50
+      },
+      "완료 보고": {
+        "pass": 3,
+        "total": 4,
+        "rate": 75
+      },
+      "일정 시작": {
+        "pass": 22,
+        "total": 23,
+        "rate": 95.7
+      },
+      "일정 길이": {
+        "pass": 4,
+        "total": 4,
+        "rate": 100
+      },
+      "날짜 변경": {
+        "pass": 4,
+        "total": 5,
+        "rate": 80
+      },
+      "묶음 변경": {
+        "pass": 1,
+        "total": 2,
+        "rate": 50
+      },
+      "앱 명령": {
+        "pass": 6,
+        "total": 6,
+        "rate": 100
+      }
+    },
+    "tokens": {
+      "input": 332065,
+      "cached": 196176,
+      "output": 26443,
+      "thought": 0,
+      "perCase": {
+        "input": 3321,
+        "cached": 1962,
+        "output": 264
+      }
+    },
+    "costUSD": {
+      "total": 0.11276,
+      "perCase": 0.0011276,
+      "per1000": 1.13
+    },
+    "latencyMs": {
+      "p50": 1263,
+      "p90": 1767,
+      "avg": 1346
+    }
+  },
+  "v42": {
+    "model": "gemini-3.5-flash-lite",
+    "cases": 100,
+    "pass": 91,
+    "passRate": 91,
+    "corePass": 91,
+    "corePassRate": 91,
+    "groups": {
+      "분류": {
+        "pass": 196,
+        "total": 200,
+        "rate": 98
+      },
+      "항목 수": {
+        "pass": 196,
+        "total": 203,
+        "rate": 96.6
+      },
+      "날짜·시각": {
+        "pass": 102,
+        "total": 103,
+        "rate": 99
+      },
+      "준비·크기": {
+        "pass": 8,
+        "total": 8,
+        "rate": 100
+      },
+      "기존 할 일": {
+        "pass": 15,
+        "total": 17,
+        "rate": 88.2
+      }
+    },
+    "checks": {
+      "entry_type": {
+        "pass": 96,
+        "total": 100,
+        "rate": 96
+      },
+      "note_kind": {
+        "pass": 100,
+        "total": 100,
+        "rate": 100
+      },
+      "할 일 수": {
+        "pass": 97,
+        "total": 100,
+        "rate": 97
+      },
+      "일정 수": {
+        "pass": 99,
+        "total": 100,
+        "rate": 99
+      },
+      "할 일 마감": {
+        "pass": 39,
+        "total": 39,
+        "rate": 100
+      },
+      "할 일 할 시각": {
+        "pass": 39,
+        "total": 39,
+        "rate": 100
+      },
+      "큰 일": {
+        "pass": 6,
+        "total": 6,
+        "rate": 100
+      },
+      "할 일 찾기": {
+        "pass": 0,
+        "total": 2,
+        "rate": 0
+      },
+      "준비 단계": {
+        "pass": 2,
+        "total": 2,
+        "rate": 100
+      },
+      "일정 시작": {
+        "pass": 21,
+        "total": 22,
+        "rate": 95.5
+      },
+      "일정 찾기": {
+        "pass": 0,
+        "total": 1,
+        "rate": 0
+      },
+      "일정 길이": {
+        "pass": 3,
+        "total": 3,
+        "rate": 100
+      },
+      "완료 보고": {
+        "pass": 3,
+        "total": 4,
+        "rate": 75
+      },
+      "날짜 변경": {
+        "pass": 5,
+        "total": 5,
+        "rate": 100
+      },
+      "묶음 변경": {
+        "pass": 1,
+        "total": 2,
+        "rate": 50
+      },
+      "앱 명령": {
+        "pass": 6,
+        "total": 6,
+        "rate": 100
+      }
+    },
+    "tokens": {
+      "input": 266635,
+      "cached": 163529,
+      "output": 27366,
+      "thought": 0,
+      "perCase": {
+        "input": 2666,
+        "cached": 1635,
+        "output": 274
+      }
+    },
+    "costUSD": {
+      "total": 0.10425,
+      "perCase": 0.0010425,
+      "per1000": 1.04
+    },
+    "latencyMs": {
+      "p50": 1619,
+      "p90": 2044,
+      "avg": 1672
+    }
+  },
+  "v42r2": {
+    "model": "gemini-3.5-flash-lite",
+    "cases": 100,
+    "pass": 91,
+    "passRate": 91,
+    "corePass": 92,
+    "corePassRate": 92,
+    "groups": {
+      "분류": {
+        "pass": 194,
+        "total": 200,
+        "rate": 97
+      },
+      "항목 수": {
+        "pass": 197,
+        "total": 202,
+        "rate": 97.5
+      },
+      "날짜·시각": {
+        "pass": 104,
+        "total": 105,
+        "rate": 99
       },
       "준비·크기": {
         "pass": 9,
@@ -956,29 +971,29 @@
     },
     "checks": {
       "entry_type": {
+        "pass": 96,
+        "total": 100,
+        "rate": 96
+      },
+      "note_kind": {
         "pass": 98,
         "total": 100,
         "rate": 98
       },
-      "note_kind": {
-        "pass": 100,
-        "total": 100,
-        "rate": 100
-      },
       "할 일 수": {
+        "pass": 98,
+        "total": 100,
+        "rate": 98
+      },
+      "일정 수": {
         "pass": 99,
         "total": 100,
         "rate": 99
       },
-      "일정 수": {
-        "pass": 100,
-        "total": 100,
-        "rate": 100
-      },
       "할 일 마감": {
-        "pass": 39,
+        "pass": 40,
         "total": 40,
-        "rate": 97.5
+        "rate": 100
       },
       "할 일 할 시각": {
         "pass": 40,
@@ -1000,20 +1015,25 @@
         "total": 2,
         "rate": 100
       },
+      "일정 시작": {
+        "pass": 21,
+        "total": 22,
+        "rate": 95.5
+      },
+      "일정 찾기": {
+        "pass": 0,
+        "total": 1,
+        "rate": 0
+      },
+      "일정 길이": {
+        "pass": 3,
+        "total": 3,
+        "rate": 100
+      },
       "완료 보고": {
         "pass": 3,
         "total": 4,
         "rate": 75
-      },
-      "일정 시작": {
-        "pass": 22,
-        "total": 23,
-        "rate": 95.7
-      },
-      "일정 길이": {
-        "pass": 4,
-        "total": 4,
-        "rate": 100
       },
       "날짜 변경": {
         "pass": 5,
@@ -1032,25 +1052,25 @@
       }
     },
     "tokens": {
-      "input": 253935,
-      "cached": 81035,
-      "output": 25497,
+      "input": 266635,
+      "cached": 173929,
+      "output": 26782,
       "thought": 0,
       "perCase": {
-        "input": 2539,
-        "cached": 810,
-        "output": 255
+        "input": 2666,
+        "cached": 1739,
+        "output": 268
       }
     },
     "costUSD": {
-      "total": 0.11804,
-      "perCase": 0.0011804,
-      "per1000": 1.18
+      "total": 0.09998,
+      "perCase": 0.0009998,
+      "per1000": 1
     },
     "latencyMs": {
-      "p50": 1791,
-      "p90": 2202,
-      "avg": 1842
+      "p50": 1589,
+      "p90": 1906,
+      "avg": 1607
     }
   }
 }

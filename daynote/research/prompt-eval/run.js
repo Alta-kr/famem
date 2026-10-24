@@ -13,7 +13,7 @@ require(path.join(ROOT, 'services/keystore')).loadDotEnv(ROOT);
 const KEY = process.env.GEMINI_API_KEY;
 const { GoogleGenAI } = require(path.join(ROOT, 'node_modules/@google/genai'));
 const V = require('./variants');
-const cases = require('./csv')(fs.readFileSync(path.join(__dirname, 'cases.csv'), 'utf8'));
+const cases = require('./csv')(fs.readFileSync(path.join(__dirname, process.env.CASES || 'cases.csv'), 'utf8'));
 
 const args = process.argv.slice(2);
 const opt = (k, d) => { const i = args.indexOf(k); return i === -1 ? d : args[i + 1]; };

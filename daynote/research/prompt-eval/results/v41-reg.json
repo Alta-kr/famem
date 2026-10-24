@@ -1,0 +1,1135 @@
+{
+ "variant": "v41",
+ "model": "gemini-3.5-flash-lite",
+ "at": "2026-10-24T05:33:57.805Z",
+ "seconds": 6,
+ "results": [
+  {
+   "id": "R01",
+   "ok": true,
+   "status": "completed",
+   "output": {
+    "entry_type": "memo",
+    "note_kind": "memo",
+    "note_title": "오늘 먹은 김밥에 대한 감상",
+    "note_project_hint": null,
+    "tasks": [],
+    "events": [],
+    "done_tasks": [],
+    "updated_tasks": [],
+    "bulk_updates": [],
+    "commands": [],
+    "open_questions": [],
+    "sections": [
+     {
+      "heading": "김밥 맛집 방문",
+      "bullets": [
+       {
+        "text": "오늘 점심에 먹은 김밥이 맛있었음.",
+        "line": 0
+       },
+       {
+        "text": "다음에도 방문하고 싶다는 생각을 함.",
+        "line": 0
+       }
+      ]
+     }
+    ],
+    "summary": "오늘 점심에 먹은 김밥이 맛있었으며, 나중에 다시 방문하고 싶다는 생각을 기록했습니다."
+   },
+   "raw": "{\n  \"entry_type\": \"memo\",\n  \"note_kind\": \"memo\",\n  \"note_title\": \"오늘 먹은 김밥에 대한 감상\",\n  \"note_project_hint\": null,\n  \"tasks\": [],\n  \"events\": [],\n  \"done_tasks\": [],\n  \"updated_tasks\": [],\n  \"bulk_updates\": [],\n  \"commands\": [],\n  \"open_questions\": [],\n  \"sections\": [\n    {\n      \"heading\": \"김밥 맛집 방문\",\n      \"bullets\": [\n        {\n          \"text\": \"오늘 점심에 먹은 김밥이 맛있었음.\",\n          \"line\": 0\n        },\n        {\n          \"text\": \"다음에도 방문하고 싶다는 생각을 함.\",\n          \"line\": 0\n        }\n      ]\n    }\n  ],\n  \"summary\": \"오늘 점심에 먹은 김밥이 맛있었으며, 나중에 다시 방문하고 싶다는 생각을 기록했습니다.\"\n}",
+   "ms": 1323,
+   "attempts": 1,
+   "usage": {
+    "input": 3317,
+    "cached": 1961,
+    "output": 228,
+    "thought": 0
+   }
+  },
+  {
+   "id": "R02",
+   "ok": true,
+   "status": "completed",
+   "output": {
+    "entry_type": "mixed",
+    "note_kind": "memo",
+    "note_title": "치과 진료 및 재진 예약",
+    "note_project_hint": null,
+    "tasks": [],
+    "events": [
+     {
+      "title": "치과 재진 예약",
+      "evidence": {
+       "quote": "치과에서 경과가 좋다고 했다. 다음 주 화요일 오후 3시 재진 예약.",
+       "line": 0
+      },
+      "start": {
+       "text": "다음 주 화요일 오후 3시",
+       "date": "2026-10-27",
+       "time": "15:00"
+      },
+      "basis": "explicit",
+      "duration_minutes": null,
+      "location": "치과",
+      "typical_minutes": 30
+     }
+    ],
+    "done_tasks": [],
+    "updated_tasks": [],
+    "bulk_updates": [],
+    "commands": [],
+    "open_questions": [],
+    "sections": [
+     {
+      "heading": "진료 결과 및 일정",
+      "bullets": [
+       {
+        "text": "치과에서 경과가 좋다고 진단함",
+        "line": 0
+       },
+       {
+        "text": "다음 주 화요일 오후 3시에 재진 예약 완료",
+        "line": 0
+       }
+      ]
+     }
+    ],
+    "summary": "치과에서 경과가 좋다는 진단을 받았으며, 다음 주 화요일 오후 3시에 재진 예약을 잡았다."
+   },
+   "raw": "{\n  \"entry_type\": \"mixed\",\n  \"note_kind\": \"memo\",\n  \"note_title\": \"치과 진료 및 재진 예약\",\n  \"note_project_hint\": null,\n  \"tasks\": [],\n  \"events\": [\n    {\n      \"title\": \"치과 재진 예약\",\n      \"evidence\": {\n        \"quote\": \"치과에서 경과가 좋다고 했다. 다음 주 화요일 오후 3시 재진 예약.\",\n        \"line\": 0\n      },\n      \"start\": {\n        \"text\": \"다음 주 화요일 오후 3시\",\n        \"date\": \"2026-10-27\",\n        \"time\": \"15:00\"\n      },\n      \"basis\": \"explicit\",\n      \"duration_minutes\": null,\n      \"location\": \"치과\",\n      \"typical_minutes\": 30\n    }\n  ],\n  \"done_tasks\": [],\n  \"updated_tasks\": [],\n  \"bulk_updates\": [],\n  \"commands\": [],\n  \"open_questions\": [],\n  \"sections\": [\n    {\n      \"heading\": \"진료 결과 및 일정\",\n      \"bullets\": [\n        {\n          \"text\": \"치과에서 경과가 좋다고 진단함\",\n          \"line\": 0\n        },\n        {\n          \"text\": \"다음 주 화요일 오후 3시에 재진 예약 완료\",\n          \"line\": 0\n        }\n      ]\n    }\n  ],\n  \"summary\": \"치과에서 경과가 좋다는 진단을 받았으며, 다음 주 화요일 오후 3시에 재진 예약을 잡았다.\"\n}",
+   "ms": 1463,
+   "attempts": 1,
+   "usage": {
+    "input": 3320,
+    "cached": 1962,
+    "output": 388,
+    "thought": 0
+   }
+  },
+  {
+   "id": "R03",
+   "ok": true,
+   "status": "completed",
+   "output": {
+    "entry_type": "done",
+    "note_kind": "memo",
+    "note_title": "은행 앱 비밀번호 변경 완료",
+    "note_project_hint": null,
+    "tasks": [],
+    "events": [],
+    "done_tasks": [
+     {
+      "title": "은행 앱 비밀번호 변경",
+      "evidence": {
+       "quote": "[x] 은행 앱 비밀번호 변경",
+       "line": 0
+      }
+     }
+    ],
+    "updated_tasks": [],
+    "bulk_updates": [],
+    "commands": [],
+    "open_questions": [],
+    "sections": [],
+    "summary": "은행 앱 비밀번호 변경 완료 항목을 처리했습니다."
+   },
+   "raw": "{\n  \"entry_type\": \"done\",\n  \"note_kind\": \"memo\",\n  \"note_title\": \"은행 앱 비밀번호 변경 완료\",\n  \"note_project_hint\": null,\n  \"tasks\": [],\n  \"events\": [],\n  \"done_tasks\": [\n    {\n      \"title\": \"은행 앱 비밀번호 변경\",\n      \"evidence\": {\n        \"quote\": \"[x] 은행 앱 비밀번호 변경\",\n        \"line\": 0\n      }\n    }\n  ],\n  \"updated_tasks\": [],\n  \"bulk_updates\": [],\n  \"commands\": [],\n  \"open_questions\": [],\n  \"sections\": [],\n  \"summary\": \"은행 앱 비밀번호 변경 완료 항목을 처리했습니다.\"\n}",
+   "ms": 1243,
+   "attempts": 1,
+   "usage": {
+    "input": 3317,
+    "cached": 1961,
+    "output": 173,
+    "thought": 0
+   }
+  },
+  {
+   "id": "R04",
+   "ok": true,
+   "status": "completed",
+   "output": {
+    "entry_type": "mixed",
+    "note_kind": "memo",
+    "note_title": "견적서 완료 및 영수증 정리",
+    "note_project_hint": null,
+    "tasks": [
+     {
+      "title": "영수증 정리하기",
+      "evidence": {
+       "quote": "견적서 보내기 끝냈어. 내일까지 영수증 정리하기.",
+       "line": 0
+      },
+      "due": {
+       "text": "내일까지",
+       "date": "2026-10-25",
+       "time": null
+      },
+      "do_at": {
+       "text": null,
+       "date": null,
+       "time": null
+      },
+      "size": "small",
+      "basis": "explicit",
+      "breakdown": [],
+      "prep_steps": [],
+      "project_hint": null,
+      "typical_minutes": null
+     }
+    ],
+    "events": [],
+    "done_tasks": [
+     {
+      "title": "견적서 보내기",
+      "evidence": {
+       "quote": "견적서 보내기 끝냈어. 내일까지 영수증 정리하기.",
+       "line": 0
+      }
+     }
+    ],
+    "updated_tasks": [],
+    "bulk_updates": [],
+    "commands": [],
+    "open_questions": [],
+    "sections": [
+     {
+      "heading": "완료 및 할 일",
+      "bullets": [
+       {
+        "text": "견적서 보내기 작업을 완료했습니다.",
+        "line": 0
+       },
+       {
+        "text": "내일까지 영수증 정리를 해야 합니다.",
+        "line": 0
+       }
+      ]
+     }
+    ],
+    "summary": "견적서 보내기 할 일을 완료하고, 내일까지 영수증 정리를 수행해야 합니다."
+   },
+   "raw": "{\n  \"entry_type\": \"mixed\",\n  \"note_kind\": \"memo\",\n  \"note_title\": \"견적서 완료 및 영수증 정리\",\n  \"note_project_hint\": null,\n  \"tasks\": [\n    {\n      \"title\": \"영수증 정리하기\",\n      \"evidence\": {\n        \"quote\": \"견적서 보내기 끝냈어. 내일까지 영수증 정리하기.\",\n        \"line\": 0\n      },\n      \"due\": {\n        \"text\": \"내일까지\",\n        \"date\": \"2026-10-25\",\n        \"time\": null\n      },\n      \"do_at\": {\n        \"text\": null,\n        \"date\": null,\n        \"time\": null\n      },\n      \"size\": \"small\",\n      \"basis\": \"explicit\",\n      \"breakdown\": [],\n      \"prep_steps\": [],\n      \"project_hint\": null,\n      \"typical_minutes\": null\n    }\n  ],\n  \"events\": [],\n  \"done_tasks\": [\n    {\n      \"title\": \"견적서 보내기\",\n      \"evidence\": {\n        \"quote\": \"견적서 보내기 끝냈어. 내일까지 영수증 정리하기.\",\n        \"line\": 0\n      }\n    }\n  ],\n  \"updated_tasks\": [],\n  \"bulk_updates\": [],\n  \"commands\": [],\n  \"open_questions\": [],\n  \"sections\": [\n    {\n      \"heading\": \"완료 및 할 일\",\n      \"bullets\": [\n        {\n          \"text\": \"견적서 보내기 작업을 완료했습니다.\",\n          \"line\": 0\n        },\n        {\n          \"text\": \"내일까지 영수증 정리를 해야 합니다.\",\n          \"line\": 0\n        }\n      ]\n    }\n  ],\n  \"summary\": \"견적서 보내기 할 일을 완료하고, 내일까지 영수증 정리를 수행해야 합니다.\"\n}",
+   "ms": 1804,
+   "attempts": 1,
+   "usage": {
+    "input": 3328,
+    "cached": 1964,
+    "output": 462,
+    "thought": 0
+   }
+  },
+  {
+   "id": "R05",
+   "ok": true,
+   "status": "completed",
+   "output": {
+    "entry_type": "task",
+    "note_kind": "memo",
+    "note_title": "지수와 신규 고객 명단 정리",
+    "note_project_hint": null,
+    "tasks": [
+     {
+      "title": "신규 고객 명단 정리",
+      "evidence": {
+       "quote": "내일 오후 2시에 지수와 공동으로 신규 고객 명단 정리하기.",
+       "line": 0
+      },
+      "due": {
+       "text": null,
+       "date": null,
+       "time": null
+      },
+      "do_at": {
+       "text": "내일 오후 2시에",
+       "date": "2026-10-25",
+       "time": "14:00"
+      },
+      "size": "small",
+      "basis": "explicit",
+      "breakdown": [],
+      "prep_steps": [],
+      "project_hint": null,
+      "typical_minutes": null
+     }
+    ],
+    "events": [],
+    "done_tasks": [],
+    "updated_tasks": [],
+    "bulk_updates": [],
+    "commands": [],
+    "open_questions": [],
+    "sections": [],
+    "summary": ""
+   },
+   "raw": "{\n  \"entry_type\": \"task\",\n  \"note_kind\": \"memo\",\n  \"note_title\": \"지수와 신규 고객 명단 정리\",\n  \"note_project_hint\": null,\n  \"tasks\": [\n    {\n      \"title\": \"신규 고객 명단 정리\",\n      \"evidence\": {\n        \"quote\": \"내일 오후 2시에 지수와 공동으로 신규 고객 명단 정리하기.\",\n        \"line\": 0\n      },\n      \"due\": {\n        \"text\": null,\n        \"date\": null,\n        \"time\": null\n      },\n      \"do_at\": {\n        \"text\": \"내일 오후 2시에\",\n        \"date\": \"2026-10-25\",\n        \"time\": \"14:00\"\n      },\n      \"size\": \"small\",\n      \"basis\": \"explicit\",\n      \"breakdown\": [],\n      \"prep_steps\": [],\n      \"project_hint\": null,\n      \"typical_minutes\": null\n    }\n  ],\n  \"events\": [],\n  \"done_tasks\": [],\n  \"updated_tasks\": [],\n  \"bulk_updates\": [],\n  \"commands\": [],\n  \"open_questions\": [],\n  \"sections\": [],\n  \"summary\": \"\"\n}",
+   "ms": 1400,
+   "attempts": 1,
+   "usage": {
+    "input": 3317,
+    "cached": 1961,
+    "output": 307,
+    "thought": 0
+   }
+  },
+  {
+   "id": "R06",
+   "ok": true,
+   "status": "completed",
+   "output": {
+    "entry_type": "task",
+    "note_kind": "memo",
+    "note_title": "다음주 월요일 강남 점심식사 약속",
+    "note_project_hint": null,
+    "tasks": [],
+    "events": [
+     {
+      "title": "서울 강남 점심식사",
+      "evidence": {
+       "quote": "다음주 월요일 서울 강남에서 12시에 점심식사",
+       "line": 0
+      },
+      "start": {
+       "text": "다음주 월요일 서울 강남에서 12시에",
+       "date": "2026-10-26",
+       "time": "12:00"
+      },
+      "basis": "explicit",
+      "duration_minutes": 60,
+      "location": "서울 강남",
+      "typical_minutes": null
+     }
+    ],
+    "done_tasks": [],
+    "updated_tasks": [],
+    "bulk_updates": [],
+    "commands": [],
+    "open_questions": [],
+    "sections": [],
+    "summary": ""
+   },
+   "raw": "{\n  \"entry_type\": \"task\",\n  \"note_kind\": \"memo\",\n  \"note_title\": \"다음주 월요일 강남 점심식사 약속\",\n  \"note_project_hint\": null,\n  \"tasks\": [],\n  \"events\": [\n    {\n      \"title\": \"서울 강남 점심식사\",\n      \"evidence\": {\n        \"quote\": \"다음주 월요일 서울 강남에서 12시에 점심식사\",\n        \"line\": 0\n      },\n      \"start\": {\n        \"text\": \"다음주 월요일 서울 강남에서 12시에\",\n        \"date\": \"2026-10-26\",\n        \"time\": \"12:00\"\n      },\n      \"basis\": \"explicit\",\n      \"duration_minutes\": 60,\n      \"location\": \"서울 강남\",\n      \"typical_minutes\": null\n    }\n  ],\n  \"done_tasks\": [],\n  \"updated_tasks\": [],\n  \"bulk_updates\": [],\n  \"commands\": [],\n  \"open_questions\": [],\n  \"sections\": [],\n  \"summary\": \"\"\n}",
+   "ms": 1467,
+   "attempts": 1,
+   "usage": {
+    "input": 3314,
+    "cached": 1960,
+    "output": 273,
+    "thought": 0
+   }
+  },
+  {
+   "id": "R07",
+   "ok": true,
+   "status": "completed",
+   "output": {
+    "entry_type": "task",
+    "note_kind": "memo",
+    "note_title": "해외 파트너 화상회의 일정",
+    "note_project_hint": null,
+    "tasks": [],
+    "events": [
+     {
+      "title": "해외 파트너 화상회의",
+      "evidence": {
+       "quote": "내일 새벽 1시 해외 파트너 화상회의.",
+       "line": 0
+      },
+      "start": {
+       "text": "내일 새벽 1시",
+       "date": "2026-10-25",
+       "time": "01:00"
+      },
+      "basis": "explicit",
+      "duration_minutes": null,
+      "location": null,
+      "typical_minutes": 60
+     }
+    ],
+    "done_tasks": [],
+    "updated_tasks": [],
+    "bulk_updates": [],
+    "commands": [],
+    "open_questions": [],
+    "sections": [],
+    "summary": "내일 새벽 1시에 해외 파트너와의 화상회의 일정이 있다."
+   },
+   "raw": "{\n  \"entry_type\": \"task\",\n  \"note_kind\": \"memo\",\n  \"note_title\": \"해외 파트너 화상회의 일정\",\n  \"note_project_hint\": null,\n  \"tasks\": [],\n  \"events\": [\n    {\n      \"title\": \"해외 파트너 화상회의\",\n      \"evidence\": {\n        \"quote\": \"내일 새벽 1시 해외 파트너 화상회의.\",\n        \"line\": 0\n      },\n      \"start\": {\n        \"text\": \"내일 새벽 1시\",\n        \"date\": \"2026-10-25\",\n        \"time\": \"01:00\"\n      },\n      \"basis\": \"explicit\",\n      \"duration_minutes\": null,\n      \"location\": null,\n      \"typical_minutes\": 60\n    }\n  ],\n  \"done_tasks\": [],\n  \"updated_tasks\": [],\n  \"bulk_updates\": [],\n  \"commands\": [],\n  \"open_questions\": [],\n  \"sections\": [],\n  \"summary\": \"내일 새벽 1시에 해외 파트너와의 화상회의 일정이 있다.\"\n}",
+   "ms": 1378,
+   "attempts": 1,
+   "usage": {
+    "input": 3312,
+    "cached": 1959,
+    "output": 277,
+    "thought": 0
+   }
+  },
+  {
+   "id": "R08",
+   "ok": true,
+   "status": "completed",
+   "output": {
+    "entry_type": "task",
+    "note_kind": "memo",
+    "note_title": "내일 식사 및 모임 일정",
+    "note_project_hint": null,
+    "tasks": [],
+    "events": [
+     {
+      "title": "고객과 식사",
+      "evidence": {
+       "quote": "내일 점심에 고객과 식사 약속.",
+       "line": 0
+      },
+      "start": {
+       "text": "내일 점심에",
+       "date": "2026-10-25",
+       "time": null
+      },
+      "basis": "explicit",
+      "duration_minutes": null,
+      "location": null,
+      "typical_minutes": 60
+     },
+     {
+      "title": "동창 모임",
+      "evidence": {
+       "quote": "내일 저녁에 동창 모임.",
+       "line": 1
+      },
+      "start": {
+       "text": "내일 저녁에",
+       "date": "2026-10-25",
+       "time": null
+      },
+      "basis": "explicit",
+      "duration_minutes": null,
+      "location": null,
+      "typical_minutes": 60
+     }
+    ],
+    "done_tasks": [],
+    "updated_tasks": [],
+    "bulk_updates": [],
+    "commands": []
+   },
+   "raw": "{\n  \"entry_type\": \"task\",\n  \"note_kind\": \"memo\",\n  \"note_title\": \"내일 식사 및 모임 일정\",\n  \"note_project_hint\": null,\n  \"tasks\": [],\n  \"events\": [\n    {\n      \"title\": \"고객과 식사\",\n      \"evidence\": {\n        \"quote\": \"내일 점심에 고객과 식사 약속.\",\n        \"line\": 0\n      },\n      \"start\": {\n        \"text\": \"내일 점심에\",\n        \"date\": \"2026-10-25\",\n        \"time\": null\n      },\n      \"basis\": \"explicit\",\n      \"duration_minutes\": null,\n      \"location\": null,\n      \"typical_minutes\": 60\n    },\n    {\n      \"title\": \"동창 모임\",\n      \"evidence\": {\n        \"quote\": \"내일 저녁에 동창 모임.\",\n        \"line\": 1\n      },\n      \"start\": {\n        \"text\": \"내일 저녁에\",\n        \"date\": \"2026-10-25\",\n        \"time\": null\n      },\n      \"basis\": \"explicit\",\n      \"duration_minutes\": null,\n      \"location\": null,\n      \"typical_minutes\": 60\n    }\n  ],\n  \"done_tasks\": [],\n  \"updated_tasks\": [],\n  \"bulk_updates\": [],\n  \"commands\": []\n}",
+   "ms": 1458,
+   "attempts": 1,
+   "usage": {
+    "input": 3323,
+    "cached": 1962,
+    "output": 353,
+    "thought": 0
+   }
+  },
+  {
+   "id": "R09",
+   "ok": true,
+   "status": "completed",
+   "output": {
+    "entry_type": "task",
+    "note_kind": "memo",
+    "note_title": "샤워하기",
+    "note_project_hint": null,
+    "tasks": [
+     {
+      "title": "샤워하기",
+      "evidence": {
+       "quote": "30분 후 샤워하기.",
+       "line": 0
+      },
+      "due": {
+       "text": null,
+       "date": null,
+       "time": null
+      },
+      "do_at": {
+       "text": "30분 후",
+       "date": "2026-10-25",
+       "time": "00:15"
+      },
+      "size": "small",
+      "basis": "explicit",
+      "breakdown": [],
+      "prep_steps": [],
+      "project_hint": null,
+      "typical_minutes": 20
+     }
+    ],
+    "events": [],
+    "done_tasks": [],
+    "updated_tasks": [],
+    "bulk_updates": [],
+    "commands": [],
+    "open_questions": [],
+    "summary": "30분 후 샤워하기 일정이 추가되었습니다."
+   },
+   "raw": "{\n  \"entry_type\": \"task\",\n  \"note_kind\": \"memo\",\n  \"note_title\": \"샤워하기\",\n  \"note_project_hint\": null,\n  \"tasks\": [\n    {\n      \"title\": \"샤워하기\",\n      \"evidence\": {\n        \"quote\": \"30분 후 샤워하기.\",\n        \"line\": 0\n      },\n      \"due\": {\n        \"text\": null,\n        \"date\": null,\n        \"time\": null\n      },\n      \"do_at\": {\n        \"text\": \"30분 후\",\n        \"date\": \"2026-10-25\",\n        \"time\": \"00:15\"\n      },\n      \"size\": \"small\",\n      \"basis\": \"explicit\",\n      \"breakdown\": [],\n      \"prep_steps\": [],\n      \"project_hint\": null,\n      \"typical_minutes\": 20\n    }\n  ],\n  \"events\": [],\n  \"done_tasks\": [],\n  \"updated_tasks\": [],\n  \"bulk_updates\": [],\n  \"commands\": [],\n  \"open_questions\": [],\n  \"summary\": \"30분 후 샤워하기 일정이 추가되었습니다.\"\n}",
+   "ms": 1450,
+   "attempts": 1,
+   "usage": {
+    "input": 3307,
+    "cached": 1958,
+    "output": 293,
+    "thought": 0
+   }
+  },
+  {
+   "id": "R10",
+   "ok": true,
+   "status": "completed",
+   "output": {
+    "entry_type": "task",
+    "note_kind": "memo",
+    "note_title": "영수증 사진 정리",
+    "note_project_hint": null,
+    "tasks": [
+     {
+      "title": "영수증 사진 정리",
+      "evidence": {
+       "quote": "30분 뒤에 영수증 사진 정리하기.",
+       "line": 0
+      },
+      "due": {
+       "text": null,
+       "date": null,
+       "time": null
+      },
+      "do_at": {
+       "text": "30분 뒤에",
+       "date": "2027-01-01",
+       "time": "00:15"
+      },
+      "size": "small",
+      "basis": "explicit",
+      "breakdown": [],
+      "prep_steps": [],
+      "project_hint": null,
+      "typical_minutes": 20
+     }
+    ],
+    "events": [],
+    "done_tasks": [],
+    "updated_tasks": [],
+    "bulk_updates": [],
+    "commands": [],
+    "open_questions": [],
+    "summary": "30분 뒤에 영수증 사진을 정리하는 할 일을 등록합니다."
+   },
+   "raw": "{\n  \"entry_type\": \"task\",\n  \"note_kind\": \"memo\",\n  \"note_title\": \"영수증 사진 정리\",\n  \"note_project_hint\": null,\n  \"tasks\": [\n    {\n      \"title\": \"영수증 사진 정리\",\n      \"evidence\": {\n        \"quote\": \"30분 뒤에 영수증 사진 정리하기.\",\n        \"line\": 0\n      },\n      \"due\": {\n        \"text\": null,\n        \"date\": null,\n        \"time\": null\n      },\n      \"do_at\": {\n        \"text\": \"30분 뒤에\",\n        \"date\": \"2027-01-01\",\n        \"time\": \"00:15\"\n      },\n      \"size\": \"small\",\n      \"basis\": \"explicit\",\n      \"breakdown\": [],\n      \"prep_steps\": [],\n      \"project_hint\": null,\n      \"typical_minutes\": 20\n    }\n  ],\n  \"events\": [],\n  \"done_tasks\": [],\n  \"updated_tasks\": [],\n  \"bulk_updates\": [],\n  \"commands\": [],\n  \"open_questions\": [],\n  \"summary\": \"30분 뒤에 영수증 사진을 정리하는 할 일을 등록합니다.\"\n}",
+   "ms": 1433,
+   "attempts": 1,
+   "usage": {
+    "input": 3311,
+    "cached": 1959,
+    "output": 307,
+    "thought": 0
+   }
+  },
+  {
+   "id": "R11",
+   "ok": true,
+   "status": "completed",
+   "output": {
+    "entry_type": "task",
+    "note_kind": "memo",
+    "note_title": "2027년 6월 정기 건강검진 예약",
+    "note_project_hint": null,
+    "tasks": [
+     {
+      "title": "정기 건강검진 예약",
+      "evidence": {
+       "quote": "2027년 6월 15일 오전 10시 정기 건강검진 예약.",
+       "line": 0
+      },
+      "due": {
+       "text": null,
+       "date": null,
+       "time": null
+      },
+      "do_at": {
+       "text": "2027년 6월 15일 오전 10시",
+       "date": "2027-06-15",
+       "time": "10:00"
+      },
+      "size": "small",
+      "basis": "explicit",
+      "breakdown": [],
+      "prep_steps": [],
+      "project_hint": null,
+      "typical_minutes": null
+     }
+    ],
+    "events": [],
+    "done_tasks": [],
+    "updated_tasks": [],
+    "bulk_updates": [],
+    "commands": [],
+    "open_questions": [],
+    "summary": "2027년 6월 15일 오전 10시에 정기 건강검진을 받기 위한 예약 일정을 등록합니다."
+   },
+   "raw": "{\n  \"entry_type\": \"task\",\n  \"note_kind\": \"memo\",\n  \"note_title\": \"2027년 6월 정기 건강검진 예약\",\n  \"note_project_hint\": null,\n  \"tasks\": [\n    {\n      \"title\": \"정기 건강검진 예약\",\n      \"evidence\": {\n        \"quote\": \"2027년 6월 15일 오전 10시 정기 건강검진 예약.\",\n        \"line\": 0\n      },\n      \"due\": {\n        \"text\": null,\n        \"date\": null,\n        \"time\": null\n      },\n      \"do_at\": {\n        \"text\": \"2027년 6월 15일 오전 10시\",\n        \"date\": \"2027-06-15\",\n        \"time\": \"10:00\"\n      },\n      \"size\": \"small\",\n      \"basis\": \"explicit\",\n      \"breakdown\": [],\n      \"prep_steps\": [],\n      \"project_hint\": null,\n      \"typical_minutes\": null\n    }\n  ],\n  \"events\": [],\n  \"done_tasks\": [],\n  \"updated_tasks\": [],\n  \"bulk_updates\": [],\n  \"commands\": [],\n  \"open_questions\": [],\n  \"summary\": \"2027년 6월 15일 오전 10시에 정기 건강검진을 받기 위한 예약 일정을 등록합니다.\"\n}",
+   "ms": 1455,
+   "attempts": 1,
+   "usage": {
+    "input": 3323,
+    "cached": 1962,
+    "output": 354,
+    "thought": 0
+   }
+  },
+  {
+   "id": "R12",
+   "ok": true,
+   "status": "completed",
+   "output": {
+    "entry_type": "task",
+    "note_kind": "memo",
+    "note_title": "제안서 이메일 발송",
+    "note_project_hint": null,
+    "tasks": [
+     {
+      "title": "완성한 제안서 이메일 발송",
+      "evidence": {
+       "quote": "완성한 제안서를 내일까지 이메일로 보내기.",
+       "line": 0
+      },
+      "due": {
+       "text": "내일까지",
+       "date": "2026-10-25",
+       "time": null
+      },
+      "do_at": {
+       "text": null,
+       "date": null,
+       "time": null
+      },
+      "size": "small",
+      "basis": "explicit",
+      "breakdown": [],
+      "prep_steps": [],
+      "project_hint": null,
+      "typical_minutes": null
+     }
+    ],
+    "events": [],
+    "done_tasks": [],
+    "updated_tasks": [],
+    "bulk_updates": [],
+    "commands": []
+   },
+   "raw": "{\n  \"entry_type\": \"task\",\n  \"note_kind\": \"memo\",\n  \"note_title\": \"제안서 이메일 발송\",\n  \"note_project_hint\": null,\n  \"tasks\": [\n    {\n      \"title\": \"완성한 제안서 이메일 발송\",\n      \"evidence\": {\n        \"quote\": \"완성한 제안서를 내일까지 이메일로 보내기.\",\n        \"line\": 0\n      },\n      \"due\": {\n        \"text\": \"내일까지\",\n        \"date\": \"2026-10-25\",\n        \"time\": null\n      },\n      \"do_at\": {\n        \"text\": null,\n        \"date\": null,\n        \"time\": null\n      },\n      \"size\": \"small\",\n      \"basis\": \"explicit\",\n      \"breakdown\": [],\n      \"prep_steps\": [],\n      \"project_hint\": null,\n      \"typical_minutes\": null\n    }\n  ],\n  \"events\": [],\n  \"done_tasks\": [],\n  \"updated_tasks\": [],\n  \"bulk_updates\": [],\n  \"commands\": []\n}",
+   "ms": 1207,
+   "attempts": 1,
+   "usage": {
+    "input": 3312,
+    "cached": 1959,
+    "output": 277,
+    "thought": 0
+   }
+  },
+  {
+   "id": "R13",
+   "ok": true,
+   "status": "completed",
+   "output": {
+    "entry_type": "task",
+    "note_kind": "memo",
+    "note_title": "신규 서비스 사업계획서 작성",
+    "note_project_hint": null,
+    "tasks": [
+     {
+      "title": "신규 서비스 시장 조사 및 경쟁사 분석 사업계획서 작성",
+      "evidence": {
+       "quote": "다음 주 금요일까지 신규 서비스 시장 조사와 경쟁사 분석을 담은 20쪽 사업계획서 작성하기.",
+       "line": 0
+      },
+      "due": {
+       "text": "다음 주 금요일까지",
+       "date": "2026-10-30",
+       "time": null
+      },
+      "do_at": {
+       "text": null,
+       "date": null,
+       "time": null
+      },
+      "size": "large",
+      "basis": "explicit",
+      "breakdown": [
+       {
+        "title": "개요 및 목차 구성",
+        "minutes": 15
+       },
+       {
+        "title": "신규 서비스 시장 조사",
+        "minutes": 120
+       },
+       {
+        "title": "경쟁사 분석",
+        "minutes": 120
+       },
+       {
+        "title": "사업계획서 본문 20쪽 작성 및 보완",
+        "minutes": null
+       }
+      ],
+      "prep_steps": [],
+      "project_hint": null,
+      "typical_minutes": null
+     }
+    ],
+    "events": [],
+    "done_tasks": [],
+    "updated_tasks": [],
+    "bulk_updates": [],
+    "commands": [],
+    "open_questions": [],
+    "sections": [],
+    "summary": ""
+   },
+   "raw": "{\n  \"entry_type\": \"task\",\n  \"note_kind\": \"memo\",\n  \"note_title\": \"신규 서비스 사업계획서 작성\",\n  \"note_project_hint\": null,\n  \"tasks\": [\n    {\n      \"title\": \"신규 서비스 시장 조사 및 경쟁사 분석 사업계획서 작성\",\n      \"evidence\": {\n        \"quote\": \"다음 주 금요일까지 신규 서비스 시장 조사와 경쟁사 분석을 담은 20쪽 사업계획서 작성하기.\",\n        \"line\": 0\n      },\n      \"due\": {\n        \"text\": \"다음 주 금요일까지\",\n        \"date\": \"2026-10-30\",\n        \"time\": null\n      },\n      \"do_at\": {\n        \"text\": null,\n        \"date\": null,\n        \"time\": null\n      },\n      \"size\": \"large\",\n      \"basis\": \"explicit\",\n      \"breakdown\": [\n        {\n          \"title\": \"개요 및 목차 구성\",\n          \"minutes\": 15\n        },\n        {\n          \"title\": \"신규 서비스 시장 조사\",\n          \"minutes\": 120\n        },\n        {\n          \"title\": \"경쟁사 분석\",\n          \"minutes\": 120\n        },\n        {\n          \"title\": \"사업계획서 본문 20쪽 작성 및 보완\",\n          \"minutes\": null\n        }\n      ],\n      \"prep_steps\": [],\n      \"project_hint\": null,\n      \"typical_minutes\": null\n    }\n  ],\n  \"events\": [],\n  \"done_tasks\": [],\n  \"updated_tasks\": [],\n  \"bulk_updates\": [],\n  \"commands\": [],\n  \"open_questions\": [],\n  \"sections\": [],\n  \"summary\": \"\"\n}",
+   "ms": 1856,
+   "attempts": 1,
+   "usage": {
+    "input": 3326,
+    "cached": 1963,
+    "output": 432,
+    "thought": 0
+   }
+  },
+  {
+   "id": "R14",
+   "ok": true,
+   "status": "completed",
+   "output": {
+    "entry_type": "task",
+    "note_kind": "memo",
+    "note_title": "책상 정리하기",
+    "note_project_hint": null,
+    "tasks": [
+     {
+      "title": "책상 정리하기",
+      "evidence": {
+       "quote": "내일 오후 2시부터 3시까지 책상 정리하기.",
+       "line": 0
+      },
+      "due": {
+       "text": null,
+       "date": null,
+       "time": null
+      },
+      "do_at": {
+       "text": "내일 오후 2시부터",
+       "date": "2026-10-25",
+       "time": "14:00"
+      },
+      "size": "small",
+      "basis": "explicit",
+      "breakdown": [],
+      "prep_steps": [],
+      "project_hint": null,
+      "typical_minutes": null
+     }
+    ],
+    "events": [],
+    "done_tasks": [],
+    "updated_tasks": [],
+    "bulk_updates": [],
+    "commands": [],
+    "open_questions": [],
+    "summary": "내일 오후 2시부터 3시까지 책상 정리하기 일정을 등록했습니다."
+   },
+   "raw": "{\n  \"entry_type\": \"task\",\n  \"note_kind\": \"memo\",\n  \"note_title\": \"책상 정리하기\",\n  \"note_project_hint\": null,\n  \"tasks\": [\n    {\n      \"title\": \"책상 정리하기\",\n      \"evidence\": {\n        \"quote\": \"내일 오후 2시부터 3시까지 책상 정리하기.\",\n        \"line\": 0\n      },\n      \"due\": {\n        \"text\": null,\n        \"date\": null,\n        \"time\": null\n      },\n      \"do_at\": {\n        \"text\": \"내일 오후 2시부터\",\n        \"date\": \"2026-10-25\",\n        \"time\": \"14:00\"\n      },\n      \"size\": \"small\",\n      \"basis\": \"explicit\",\n      \"breakdown\": [],\n      \"prep_steps\": [],\n      \"project_hint\": null,\n      \"typical_minutes\": null\n    }\n  ],\n  \"events\": [],\n  \"done_tasks\": [],\n  \"updated_tasks\": [],\n  \"bulk_updates\": [],\n  \"commands\": [],\n  \"open_questions\": [],\n  \"summary\": \"내일 오후 2시부터 3시까지 책상 정리하기 일정을 등록했습니다.\"\n}",
+   "ms": 1481,
+   "attempts": 1,
+   "usage": {
+    "input": 3314,
+    "cached": 1960,
+    "output": 312,
+    "thought": 0
+   }
+  },
+  {
+   "id": "R15",
+   "ok": true,
+   "status": "completed",
+   "output": {
+    "entry_type": "task",
+    "note_kind": "memo",
+    "note_title": "환불 신청",
+    "note_project_hint": null,
+    "tasks": [
+     {
+      "title": "환불 신청",
+      "evidence": {
+       "quote": "내일 오후 6시까지 환불 신청하기.",
+       "line": 0
+      },
+      "due": {
+       "text": "내일 오후 6시까지",
+       "date": "2026-10-25",
+       "time": "18:00"
+      },
+      "do_at": {
+       "text": null,
+       "date": null,
+       "time": null
+      },
+      "size": "small",
+      "basis": "explicit",
+      "breakdown": [],
+      "prep_steps": [],
+      "project_hint": null,
+      "typical_minutes": null
+     }
+    ],
+    "events": [],
+    "done_tasks": [],
+    "updated_tasks": [],
+    "bulk_updates": [],
+    "commands": [],
+    "open_questions": [],
+    "sections": [],
+    "summary": "내일 오후 6시까지 환불 신청하기."
+   },
+   "raw": "{\n  \"entry_type\": \"task\",\n  \"note_kind\": \"memo\",\n  \"note_title\": \"환불 신청\",\n  \"note_project_hint\": null,\n  \"tasks\": [\n    {\n      \"title\": \"환불 신청\",\n      \"evidence\": {\n        \"quote\": \"내일 오후 6시까지 환불 신청하기.\",\n        \"line\": 0\n      },\n      \"due\": {\n        \"text\": \"내일 오후 6시까지\",\n        \"date\": \"2026-10-25\",\n        \"time\": \"18:00\"\n      },\n      \"do_at\": {\n        \"text\": null,\n        \"date\": null,\n        \"time\": null\n      },\n      \"size\": \"small\",\n      \"basis\": \"explicit\",\n      \"breakdown\": [],\n      \"prep_steps\": [],\n      \"project_hint\": null,\n      \"typical_minutes\": null\n    }\n  ],\n  \"events\": [],\n  \"done_tasks\": [],\n  \"updated_tasks\": [],\n  \"bulk_updates\": [],\n  \"commands\": [],\n  \"open_questions\": [],\n  \"sections\": [],\n  \"summary\": \"내일 오후 6시까지 환불 신청하기.\"\n}",
+   "ms": 1406,
+   "attempts": 1,
+   "usage": {
+    "input": 3310,
+    "cached": 1958,
+    "output": 304,
+    "thought": 0
+   }
+  },
+  {
+   "id": "R16",
+   "ok": true,
+   "status": "completed",
+   "output": {
+    "entry_type": "command",
+    "note_kind": "memo",
+    "note_title": "우유 사기 완료 요청 및 보존",
+    "note_project_hint": null,
+    "tasks": [],
+    "events": [],
+    "done_tasks": [],
+    "updated_tasks": [],
+    "bulk_updates": [],
+    "commands": [
+     {
+      "action": "complete",
+      "target": "우유 사기",
+      "view": null,
+      "query": null,
+      "evidence": {
+       "quote": "민수가 '우유 사기를 완료 처리해 달라'고 말했다.",
+       "line": 0
+      }
+     }
+    ],
+    "open_questions": [],
+    "sections": [],
+    "summary": "민수가 요청한 우유 사기 완료 처리를 수행하도록 명령을 추출함."
+   },
+   "raw": "{\n  \"entry_type\": \"command\",\n  \"note_kind\": \"memo\",\n  \"note_title\": \"우유 사기 완료 요청 및 보존\",\n  \"note_project_hint\": null,\n  \"tasks\": [],\n  \"events\": [],\n  \"done_tasks\": [],\n  \"updated_tasks\": [],\n  \"bulk_updates\": [],\n  \"commands\": [\n    {\n      \"action\": \"complete\",\n      \"target\": \"우유 사기\",\n      \"view\": null,\n      \"query\": null,\n      \"evidence\": {\n        \"quote\": \"민수가 '우유 사기를 완료 처리해 달라'고 말했다.\",\n        \"line\": 0\n      }\n    }\n  ],\n  \"open_questions\": [],\n  \"sections\": [],\n  \"summary\": \"민수가 요청한 우유 사기 완료 처리를 수행하도록 명령을 추출함.\"\n}",
+   "ms": 1277,
+   "attempts": 1,
+   "usage": {
+    "input": 3366,
+    "cached": 1976,
+    "output": 211,
+    "thought": 0
+   }
+  },
+  {
+   "id": "R17",
+   "ok": true,
+   "status": "completed",
+   "output": {
+    "entry_type": "command",
+    "note_kind": "memo",
+    "note_title": "명령",
+    "note_project_hint": null,
+    "tasks": [],
+    "events": [],
+    "done_tasks": [],
+    "updated_tasks": [],
+    "bulk_updates": [],
+    "commands": [
+     {
+      "action": "breakdown",
+      "target": "사업계획서 작성",
+      "view": null,
+      "query": null,
+      "evidence": {
+       "quote": "사업계획서 작성을 작게 나눠서 작업 공간에 올려줘. 캘린더도 열어줘.",
+       "line": 0
+      }
+     },
+     {
+      "action": "work",
+      "target": "사업계획서 작성",
+      "view": null,
+      "query": null,
+      "evidence": {
+       "quote": "사업계획서 작성을 작게 나눠서 작업 공간에 올려줘. 캘린더도 열어줘.",
+       "line": 0
+      }
+     },
+     {
+      "action": "open",
+      "target": null,
+      "view": "calendar",
+      "query": null,
+      "evidence": {
+       "quote": "사업계획서 작성을 작게 나눠서 작업 공간에 올려줘. 캘린더도 열어줘.",
+       "line": 0
+      }
+     }
+    ],
+    "open_questions": [],
+    "sections": [],
+    "summary": "사업계획서 작성 항목을 작게 나누어 작업 공간에 올리고 캘린더를 열어달라는 요청."
+   },
+   "raw": "{\n  \"entry_type\": \"command\",\n  \"note_kind\": \"memo\",\n  \"note_title\": \"명령\",\n  \"note_project_hint\": null,\n  \"tasks\": [],\n  \"events\": [],\n  \"done_tasks\": [],\n  \"updated_tasks\": [],\n  \"bulk_updates\": [],\n  \"commands\": [\n    {\n      \"action\": \"breakdown\",\n      \"target\": \"사업계획서 작성\",\n      \"view\": null,\n      \"query\": null,\n      \"evidence\": {\n        \"quote\": \"사업계획서 작성을 작게 나눠서 작업 공간에 올려줘. 캘린더도 열어줘.\",\n        \"line\": 0\n      }\n    },\n    {\n      \"action\": \"work\",\n      \"target\": \"사업계획서 작성\",\n      \"view\": null,\n      \"query\": null,\n      \"evidence\": {\n        \"quote\": \"사업계획서 작성을 작게 나눠서 작업 공간에 올려줘. 캘린더도 열어줘.\",\n        \"line\": 0\n      }\n    },\n    {\n      \"action\": \"open\",\n      \"target\": null,\n      \"view\": \"calendar\",\n      \"query\": null,\n      \"evidence\": {\n        \"quote\": \"사업계획서 작성을 작게 나눠서 작업 공간에 올려줘. 캘린더도 열어줘.\",\n        \"line\": 0\n      }\n    }\n  ],\n  \"open_questions\": [],\n  \"sections\": [],\n  \"summary\": \"사업계획서 작성 항목을 작게 나누어 작업 공간에 올리고 캘린더를 열어달라는 요청.\"\n}",
+   "ms": 1409,
+   "attempts": 1,
+   "usage": {
+    "input": 3336,
+    "cached": 1966,
+    "output": 395,
+    "thought": 0
+   }
+  },
+  {
+   "id": "R18",
+   "ok": true,
+   "status": "completed",
+   "output": {
+    "entry_type": "memo",
+    "note_kind": "memo",
+    "note_title": "견적서 일정 보류",
+    "note_project_hint": null,
+    "tasks": [],
+    "events": [],
+    "done_tasks": [],
+    "updated_tasks": [],
+    "bulk_updates": [],
+    "commands": [],
+    "open_questions": [],
+    "sections": [
+     {
+      "heading": "견적서 보류",
+      "bullets": [
+       {
+        "text": "견적서는 추후에 진행하기로 함",
+        "line": 0
+       }
+      ]
+     }
+    ],
+    "summary": "견적서 작성을 나중에 하겠다고 기록함."
+   },
+   "raw": "{\n  \"entry_type\": \"memo\",\n  \"note_kind\": \"memo\",\n  \"note_title\": \"견적서 일정 보류\",\n  \"note_project_hint\": null,\n  \"tasks\": [],\n  \"events\": [],\n  \"done_tasks\": [],\n  \"updated_tasks\": [],\n  \"bulk_updates\": [],\n  \"commands\": [],\n  \"open_questions\": [],\n  \"sections\": [\n    {\n      \"heading\": \"견적서 보류\",\n      \"bullets\": [\n        {\n          \"text\": \"견적서는 추후에 진행하기로 함\",\n          \"line\": 0\n        }\n      ]\n    }\n  ],\n  \"summary\": \"견적서 작성을 나중에 하겠다고 기록함.\"\n}",
+   "ms": 1228,
+   "attempts": 1,
+   "usage": {
+    "input": 3391,
+    "cached": 1983,
+    "output": 184,
+    "thought": 0
+   }
+  },
+  {
+   "id": "R19",
+   "ok": true,
+   "status": "completed",
+   "output": {
+    "entry_type": "update",
+    "note_kind": "memo",
+    "note_title": "분기 보고서 작성 마감 연장",
+    "note_project_hint": null,
+    "tasks": [],
+    "events": [],
+    "done_tasks": [],
+    "updated_tasks": [
+     {
+      "title": "분기 보고서 작성",
+      "evidence": {
+       "quote": "분기 보고서 작성 마감 하루 연장해줘.",
+       "line": 0
+      },
+      "due": {
+       "text": "하루 연장",
+       "date": null,
+       "time": null
+      },
+      "do_at": {
+       "text": null,
+       "date": null,
+       "time": null
+      }
+     }
+    ],
+    "bulk_updates": [],
+    "commands": [],
+    "open_questions": [],
+    "summary": "분기 보고서 작성 마감일을 하루 연장하도록 변경을 요청했습니다."
+   },
+   "raw": "{\n  \"entry_type\": \"update\",\n  \"note_kind\": \"memo\",\n  \"note_title\": \"분기 보고서 작성 마감 연장\",\n  \"note_project_hint\": null,\n  \"tasks\": [],\n  \"events\": [],\n  \"done_tasks\": [],\n  \"updated_tasks\": [\n    {\n      \"title\": \"분기 보고서 작성\",\n      \"evidence\": {\n        \"quote\": \"분기 보고서 작성 마감 하루 연장해줘.\",\n        \"line\": 0\n      },\n      \"due\": {\n        \"text\": \"하루 연장\",\n        \"date\": null,\n        \"time\": null\n      },\n      \"do_at\": {\n        \"text\": null,\n        \"date\": null,\n        \"time\": null\n      }\n    }\n  ],\n  \"bulk_updates\": [],\n  \"commands\": [],\n  \"open_questions\": [],\n  \"summary\": \"분기 보고서 작성 마감일을 하루 연장하도록 변경을 요청했습니다.\"\n}",
+   "ms": 1335,
+   "attempts": 1,
+   "usage": {
+    "input": 3362,
+    "cached": 1974,
+    "output": 244,
+    "thought": 0
+   }
+  },
+  {
+   "id": "R20",
+   "ok": true,
+   "status": "completed",
+   "output": {
+    "entry_type": "mixed",
+    "note_kind": "memo",
+    "note_title": "다음 주 금요일 고객 워크숍 일정 및 준비",
+    "note_project_hint": null,
+    "tasks": [
+     {
+      "title": "질문 목록 정리하기",
+      "evidence": {
+       "quote": "다음 주 금요일 오후 2시 고객 워크숍. 미리 질문 목록 정리하기.",
+       "line": 0
+      },
+      "due": {
+       "text": null,
+       "date": null,
+       "time": null
+      },
+      "do_at": {
+       "text": null,
+       "date": null,
+       "time": null
+      },
+      "size": "small",
+      "basis": "explicit",
+      "breakdown": [],
+      "prep_steps": [],
+      "project_hint": null,
+      "typical_minutes": null
+     }
+    ],
+    "events": [
+     {
+      "title": "고객 워크숍",
+      "evidence": {
+       "quote": "다음 주 금요일 오후 2시 고객 워크숍. 미리 질문 목록 정리하기.",
+       "line": 0
+      },
+      "start": {
+       "text": "다음 주 금요일 오후 2시",
+       "date": "2026-10-30",
+       "time": "14:00"
+      },
+      "basis": "explicit",
+      "duration_minutes": null,
+      "location": null,
+      "typical_minutes": 60
+     }
+    ],
+    "done_tasks": [],
+    "updated_tasks": [],
+    "bulk_updates": [],
+    "commands": [],
+    "open_questions": [],
+    "sections": [
+     {
+      "heading": "고객 워크숍 일정",
+      "bullets": [
+       {
+        "text": "다음 주 금요일 오후 2시에 고객 워크숍이 예정되어 있습니다.",
+        "line": 0
+       }
+      ]
+     },
+     {
+      "heading": "사전 준비",
+      "bullets": [
+       {
+        "text": "워크숍에 앞서 질문 목록을 정리해야 합니다.",
+        "line": 0
+       }
+      ]
+     }
+    ],
+    "summary": "다음 주 금요일 오후 2시에 열리는 고객 워크숍 일정을 확인하고, 사전에 질문 목록을 정리하는 작업을 계획했습니다."
+   },
+   "raw": "{\n  \"entry_type\": \"mixed\",\n  \"note_kind\": \"memo\",\n  \"note_title\": \"다음 주 금요일 고객 워크숍 일정 및 준비\",\n  \"note_project_hint\": null,\n  \"tasks\": [\n    {\n      \"title\": \"질문 목록 정리하기\",\n      \"evidence\": {\n        \"quote\": \"다음 주 금요일 오후 2시 고객 워크숍. 미리 질문 목록 정리하기.\",\n        \"line\": 0\n      },\n      \"due\": {\n        \"text\": null,\n        \"date\": null,\n        \"time\": null\n      },\n      \"do_at\": {\n        \"text\": null,\n        \"date\": null,\n        \"time\": null\n      },\n      \"size\": \"small\",\n      \"basis\": \"explicit\",\n      \"breakdown\": [],\n      \"prep_steps\": [],\n      \"project_hint\": null,\n      \"typical_minutes\": null\n    }\n  ],\n  \"events\": [\n    {\n      \"title\": \"고객 워크숍\",\n      \"evidence\": {\n        \"quote\": \"다음 주 금요일 오후 2시 고객 워크숍. 미리 질문 목록 정리하기.\",\n        \"line\": 0\n      },\n      \"start\": {\n        \"text\": \"다음 주 금요일 오후 2시\",\n        \"date\": \"2026-10-30\",\n        \"time\": \"14:00\"\n      },\n      \"basis\": \"explicit\",\n      \"duration_minutes\": null,\n      \"location\": null,\n      \"typical_minutes\": 60\n    }\n  ],\n  \"done_tasks\": [],\n  \"updated_tasks\": [],\n  \"bulk_updates\": [],\n  \"commands\": [],\n  \"open_questions\": [],\n  \"sections\": [\n    {\n      \"heading\": \"고객 워크숍 일정\",\n      \"bullets\": [\n        {\n          \"text\": \"다음 주 금요일 오후 2시에 고객 워크숍이 예정되어 있습니다.\",\n          \"line\": 0\n        }\n      ]\n    },\n    {\n      \"heading\": \"사전 준비\",\n      \"bullets\": [\n        {\n          \"text\": \"워크숍에 앞서 질문 목록을 정리해야 합니다.\",\n          \"line\": 0\n        }\n      ]\n    }\n  ],\n  \"summary\": \"다음 주 금요일 오후 2시에 열리는 고객 워크숍 일정을 확인하고, 사전에 질문 목록을 정리하는 작업을 계획했습니다.\"\n}",
+   "ms": 1944,
+   "attempts": 1,
+   "usage": {
+    "input": 3317,
+    "cached": 1961,
+    "output": 588,
+    "thought": 0
+   }
+  },
+  {
+   "id": "R21",
+   "ok": true,
+   "status": "completed",
+   "output": {
+    "entry_type": "task",
+    "note_kind": "memo",
+    "note_title": "보고서 제출",
+    "note_project_hint": null,
+    "tasks": [
+     {
+      "title": "보고서 보내기",
+      "evidence": {
+       "quote": "팀장이 나한테 내일까지 보고서 보내라고 했다.",
+       "line": 0
+      },
+      "due": {
+       "text": "내일까지",
+       "date": "2026-10-25",
+       "time": null
+      },
+      "do_at": {
+       "text": null,
+       "date": null,
+       "time": null
+      },
+      "size": "small",
+      "basis": "explicit",
+      "breakdown": [],
+      "prep_steps": [],
+      "project_hint": null,
+      "typical_minutes": null
+     }
+    ],
+    "events": [],
+    "done_tasks": [],
+    "updated_tasks": [],
+    "bulk_updates": [],
+    "commands": [],
+    "open_questions": [],
+    "sections": [],
+    "summary": ""
+   },
+   "raw": "{\n  \"entry_type\": \"task\",\n  \"note_kind\": \"memo\",\n  \"note_title\": \"보고서 제출\",\n  \"note_project_hint\": null,\n  \"tasks\": [\n    {\n      \"title\": \"보고서 보내기\",\n      \"evidence\": {\n        \"quote\": \"팀장이 나한테 내일까지 보고서 보내라고 했다.\",\n        \"line\": 0\n      },\n      \"due\": {\n        \"text\": \"내일까지\",\n        \"date\": \"2026-10-25\",\n        \"time\": null\n      },\n      \"do_at\": {\n        \"text\": null,\n        \"date\": null,\n        \"time\": null\n      },\n      \"size\": \"small\",\n      \"basis\": \"explicit\",\n      \"breakdown\": [],\n      \"prep_steps\": [],\n      \"project_hint\": null,\n      \"typical_minutes\": null\n    }\n  ],\n  \"events\": [],\n  \"done_tasks\": [],\n  \"updated_tasks\": [],\n  \"bulk_updates\": [],\n  \"commands\": [],\n  \"open_questions\": [],\n  \"sections\": [],\n  \"summary\": \"\"\n}",
+   "ms": 1321,
+   "attempts": 1,
+   "usage": {
+    "input": 3310,
+    "cached": 1958,
+    "output": 282,
+    "thought": 0
+   }
+  }
+ ]
+}

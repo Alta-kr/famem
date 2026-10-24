@@ -13,7 +13,7 @@
 
 const fs = require('fs');
 const path = require('path');
-const cases = require('./csv')(fs.readFileSync(path.join(__dirname, 'cases.csv'), 'utf8'));
+const cases = require('./csv')(fs.readFileSync(path.join(__dirname, process.env.CASES || 'cases.csv'), 'utf8'));
 const byId = Object.fromEntries(cases.map((c) => [c.id, c]));
 const PRICE = { input: 0.30, cached: 0.03, output: 2.50 };   // gemini-3.5-flash-lite, 100만 토큰당 USD
 
