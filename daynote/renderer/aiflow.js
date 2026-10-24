@@ -134,13 +134,13 @@
   }
   function totalTokens(u) { return u ? (u.input_tokens || u.input || 0) + (u.output_tokens || u.output || 0) + (u.thought_tokens || u.thought || 0) : 0; }
   function num(n) { return Number(n || 0).toLocaleString('ko-KR'); }
-  // 답 하나의 토큰 한 줄 — 설정에서 껐거나 기록이 없으면 null
-  function usageLine(usage, model) {
+  // 답 하나의 토큰 한 줄 — 설정에서 껐거나 기록이 없으면 null. x: 이 답의 주고받은 기록 (있으면 '프롬프트 보기' 단추)
+  function usageLine(usage, model, x) {
     if (!S.state.prefs.showTokens || !usage) return null;
     var parts = ['입력 ' + num(usage.input_tokens), '출력 ' + num(usage.output_tokens)];
     if (usage.thought_tokens) parts.push('생각 ' + num(usage.thought_tokens));
     return DN.ui.h('div.token-line', { title: '이 답을 만드는 데 쓴 토큰' + (model ? ' · ' + model : '') },
-      '토큰 ' + num(totalTokens(usage)) + ' (' + parts.join(' · ') + ')' + (model ? ' · ' + model : ''));
+      '토큰 ' + num(totalTokens(usage)) + ' (' + parts.join(' · ') + ')' + (model ? ' · ' + model : ''), x ? ' · ' : null, promptButton(x));
   }
 
   // ------------------------------------------------------------------ AI 와 주고받은 내용 (설정에서 켜면)
@@ -163,8 +163,10 @@
     }
   }
   var logListeners = [];
+  // 토큰 보기나 프롬프트 보기를 켰으면 남긴다 (토큰 줄 옆 '프롬프트 보기' 단추가 이것을 연다)
+  function logging() { return !!(S.state.prefs.showPrompts || S.state.prefs.showTokens); }
   function recordExchange(input, res) {
-    if (!S.state.prefs.showPrompts || !input) return;
+    if (!logging() || !input) return null;
     var def = requestDef(input), sys = '', user = '';
     try { sys = def.SYSTEM; user = def.userText(input); } catch (e) { user = JSON.stringify(input, null, 2); }
     var out = res && (res.raw || (res.output ? JSON.stringify(res.output) : null));
@@ -176,6 +178,13 @@
     });
     writeLog(list.slice(-LOG_MAX));
     logListeners.forEach(function (fn) { try { fn(); } catch (e) {} });
+    return list[list.length - 1].id;
+  }
+  function exchangeById(id) { return id ? readLog().filter(function (x) { return x.id === id; })[0] || null : null; }
+  // 토큰 줄 옆의 '프롬프트 보기' 단추 — 이 기기에 기록이 있을 때만
+  function promptButton(x) {
+    if (!x || !logging()) return null;
+    return DN.ui.h('button.link-btn.prompt-btn', { type: 'button', title: 'AI에 보낸 프롬프트와 받은 답', onclick: function () { openExchange(x); } }, '프롬프트 보기');
   }
   function exchanges() { return readLog().slice().reverse(); }
   function clearExchanges() { try { localStorage.removeItem(LOG_KEY); } catch (e) {} logListeners.forEach(function (fn) { try { fn(); } catch (e) {} }); }
@@ -203,7 +212,7 @@
   function exchangeForNote(noteId) { return readLog().filter(function (x) { return x.noteId === noteId; }).pop() || null; }
 
   DN.aiFlow = {
-    recordExchange: recordExchange, exchanges: exchanges, clearExchanges: clearExchanges, exchangeView: exchangeView, openExchange: openExchange, exchangeForNote: exchangeForNote,
+    recordExchange: recordExchange, exchangeById: exchangeById, promptButton: promptButton, exchanges: exchanges, clearExchanges: clearExchanges, exchangeView: exchangeView, openExchange: openExchange, exchangeForNote: exchangeForNote,
     onExchange: function (fn) { logListeners.push(fn); return function () { logListeners = logListeners.filter(function (f) { return f !== fn; }); }; },
     recordUsage: recordUsage, usageLine: usageLine, totalTokens: totalTokens,
     loadStatus: loadStatus, organize: organize, contextOpts: contextOpts,

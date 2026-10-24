@@ -62,6 +62,12 @@
     return -1;
   }
 
+  // 낱말마다 원문에 있으면 된다 — AI 가 떨어진 낱말을 이어 적을 때가 있다 ("다음주 월요일 서울 강남에서 점심" → "다음주 월요일 점심")
+  function inWords(fullNorm, phrase) {
+    if (inText(fullNorm, phrase)) return true;
+    var words = String(phrase || '').split(/\s+/).filter(Boolean);
+    return words.length > 1 && words.every(function (w) { return inText(fullNorm, w); });
+  }
   function inText(fullNorm, phrase) {
     var p = norm(phrase);
     return p.length > 0 && fullNorm.indexOf(p) !== -1;
@@ -158,20 +164,21 @@
     var text = w.text && w.text.trim() ? w.text.trim() : null;
     var ai = w.date && DATE_RE.test(w.date) && D.ymd(D.parseYmd(w.date)) === w.date ? w.date : null;
     // 상대 시각이면 앱이 직접 계산한 날짜를 쓴다 (AI 가 기준 시각을 잘못 읽어도 바로잡힌다)
-    var rel = text && inText(ctx.fullNorm, text) ? relativeAt(text, ctx.ref) : null;
+    var rel = text && inWords(ctx.fullNorm, text) ? relativeAt(text, ctx.ref) : null;
     if (rel) return field(rel.date, 'ok');
     if (!text) {
       if (ai) return field(null, 'confirm', '메모에 날짜 표현이 없는데 AI가 날짜를 제안했습니다.', [opt('AI 제안', ai)]);
       return required ? field(null, 'confirm', '메모에 날짜가 없습니다. 날짜를 정해 주세요.') : field(null, 'ok');
     }
-    if (!inText(ctx.fullNorm, text)) {
+    if (!inWords(ctx.fullNorm, text)) {
       return field(null, 'confirm', '날짜 표현 ‘' + text + '’을(를) 원문에서 찾지 못했습니다.', ai ? [opt('AI 제안', ai)] : []);
     }
     var parsed = SG.parseDueHint(text, ctx.ref);
     var app = parsed ? parsed.dueDate : null;
     var res;
     if (app && ai && app === ai) res = field(ai, 'ok');
-    else if (app && ai) res = field(null, 'confirm', '‘' + text + '’ 해석이 다릅니다. 맞는 날짜를 골라 주세요.', [opt('AI 해석', ai), opt('앱 계산', app)]);
+    // 둘이 다르면 앱 계산을 쓴다 — 달력 셈은 앱이 더 정확하다 ("다음주 월요일" 을 AI 가 화요일로 세는 일이 있었다)
+    else if (app && ai) res = field(app, 'ok');
     else if (app) res = field(null, 'confirm', '‘' + text + '’을(를) 앱이 날짜로 계산했습니다. 확인해 주세요.', [opt('앱 계산', app)]);
     else if (ai) res = field(null, 'confirm', '‘' + text + '’은(는) 앱이 검증하지 못한 표현입니다. AI 해석을 확인해 주세요.', [opt('AI 해석', ai)]);
     else res = field(null, 'confirm', '‘' + text + '’을(를) 날짜로 정하지 못했습니다.');
@@ -195,14 +202,29 @@
     if (hh >= 7 && hh <= 11 && EVE_RE.test(src) && !EARLY_RE.test(src)) return pm;
     return ai;
   }
+  // 하루 중 때를 말하는 낱말 → 그 때의 범위와 보통 시각
+  var DAY_PARTS = [
+    [/(아침|조식|모닝)/, '06:00', '10:59', '08:00'],
+    [/(브런치)/, '10:00', '13:59', '11:00'],
+    [/(점심|오찬|런치|낮)/, '11:00', '14:59', '12:00'],
+    [/(저녁|석식|만찬|디너|회식)/, '17:00', '21:59', '19:00'],
+    [/(밤|야식)/, '19:00', '23:59', '21:00']
+  ];
+  function dayPart(src) {
+    for (var i = 0; i < DAY_PARTS.length; i++) if (DAY_PARTS[i][0].test(src)) return { from: DAY_PARTS[i][1], to: DAY_PARTS[i][2], at: DAY_PARTS[i][3] };
+    return null;
+  }
   function checkTime(w, quote, ctx, required) {
     var ai = w.time && TIME_RE.test(w.time) ? w.time : null;
     var src = [w.text || '', quote || ''].join(' ');
-    var srcOk = !w.text || inText(ctx.fullNorm, w.text);
+    var srcOk = !w.text || inWords(ctx.fullNorm, w.text);
     // "30분 후" 같은 상대 시각은 앱이 기준 시각으로 계산한 값이 정답이다
     var rel = srcOk ? relativeAt(src, ctx.ref) : null;
     if (rel) return field(rel.time, 'ok');
     var cands = timeCandidates(src);
+    // 시각은 없지만 언제인지는 말했다 — "점심식사", "저녁 약속", "아침 회의": 그 때에 맞는 AI 시각, 아니면 보통 시각
+    var part = !cands.length && srcOk ? dayPart(src) : null;
+    if (part) return field(ai && ai >= part.from && ai <= part.to ? ai : part.at, 'ok');
     if (!cands.length || !srcOk) {
       if (ai) return field(null, 'confirm', '메모에 시각이 없는데 AI가 시각을 제안했습니다.', [opt('AI 제안', ai)]);
       return required ? field(null, 'confirm', '메모에 시각이 없습니다. 시각을 정해 주세요.') : field(null, 'ok');

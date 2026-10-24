@@ -106,14 +106,14 @@ test('검증: 메모에 없는 날짜·시각·길이·장소는 채우지 않�
   assert.strictEqual(e.fields.location.status, 'confirm');
 });
 
-test('검증: AI 날짜 해석이 앱 계산과 다르면 둘 다 후보로만 보여준다', () => {
+test('검증: AI 날짜 해석이 앱 계산과 다르면 앱 계산을 쓴다 (달력 셈은 앱이 더 정확하다)', () => {
   const { st, note } = setup();
   const out = goodOutput();
   out.tasks[0].due.date = '2026-10-16';   // 금요일을 다음 주로 잘못 계산
   const v = V.validateOrganizeNote(out, { note, state: st, now: NOW });
   const d = v.items[0].fields.dueDate;
-  assert.strictEqual(d.value, null);
-  assert.deepStrictEqual(d.options.map((o) => o.value).sort(), ['2026-10-09', '2026-10-16']);
+  assert.strictEqual(d.value, '2026-10-09');
+  assert.strictEqual(d.status, 'ok');
 });
 
 test('검증: 오전/오후가 없는 시각은 확정하지 않는다', () => {

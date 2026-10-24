@@ -232,7 +232,7 @@
     var box = h('input', { type: 'checkbox', id: 'set-tokens', checked: !!st.prefs.showTokens,
       onchange: function () { S.mutate(null, function (s) { s.prefs.showTokens = box.checked; }); } });
     return h('div.token-box',
-      h('label.check-row', { for: 'set-tokens' }, box, h('span', 'AI 답마다 쓴 토큰 보기')),
+      h('label.check-row', { for: 'set-tokens' }, box, h('span', 'AI 답마다 쓴 토큰과 프롬프트 보기 단추')),
       h('p.help', '오늘 ' + fmt(today) + ' · 이번 달 ' + fmt(month) + ' — 이 기기에서 보낸 것만 세요.'));
   }
 

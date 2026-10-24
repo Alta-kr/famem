@@ -116,3 +116,12 @@ test('프롬프트: 고치는 말·오전/오후 규칙', () => {
   assert.strictEqual(C.PROMPT_VERSION, 'capture.v13');
   assert.ok(C.SYSTEM.indexOf('고치는 말') !== -1 && C.SYSTEM.indexOf('오전/오후') !== -1);
 });
+
+test('시각 없이 때만 말한 약속은 일정으로 — "점심식사" 12:00, "저녁 약속" 19:00 (AI 시각이 그 때 안이면 그대로)', () => {
+  const at = (text, ai) => { const st = M.emptyState(); send(st, text, { events: [ev('약속', text, '2026-10-26', ai)] }); return st.blocks[0] ? D.hm(st.blocks[0].start) : '할 일로 감'; };
+  assert.strictEqual(at('월요일 강남에서 점심식사', '12:00'), '12:00');
+  assert.strictEqual(at('월요일 점심 약속', '12:30'), '12:30');
+  assert.strictEqual(at('월요일 점심 약속', '19:00'), '12:00', '점심인데 저녁 시각이면 보통 시각으로');
+  assert.strictEqual(at('월요일 저녁 약속', null), '19:00');
+  assert.strictEqual(at('월요일 친구 만나기', '15:00'), '할 일로 감', '때를 말하지 않았으면 지금처럼 시각을 확정하지 않는다');
+});

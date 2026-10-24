@@ -44,7 +44,7 @@
   function call(input) {
     return S.host.ai.organizeNote(input).catch(function (e) {
       return { ok: false, error: { type: 'ipc', message: e && e.message ? e.message : String(e), retryable: true } };
-    }).then(function (res) { DN.aiFlow.recordUsage(res); DN.aiFlow.recordExchange(input, res); return res; });
+    }).then(function (res) { DN.aiFlow.recordUsage(res); res.exchangeId = DN.aiFlow.recordExchange(input, res); return res; });
   }
 
   function todayStr() { var n = now(); return D.ymd(n) + ' (' + D.WEEKDAYS[n.getDay()] + ')'; }
@@ -246,7 +246,7 @@
       if (!v.isLarge && (opts && opts.force && v.steps.length)) v.isLarge = true;
       if (!v.isLarge) { update(wait.id, { kind: 'text', text: '‘' + t.title + '’는 이미 충분히 작은 일 같아요. 바로 시작해 봐도 좋겠어요.' }); return; }
       S.mutate(null, function (s) { AS.storeBreakdown(s, t.id, v, 'button', now()); AS.markShown(s, t.id, now()); }, { source: 'chat' });
-      update(wait.id, { kind: 'breakdown', taskId: t.id, intro: intro || null, reason: v.reason, draft: v.steps, usage: res.usage || null, model: res.model || null });
+      update(wait.id, { kind: 'breakdown', taskId: t.id, intro: intro || null, reason: v.reason, draft: v.steps, usage: res.usage || null, model: res.model || null, exchangeId: res.exchangeId || null });
     });
   }
 
@@ -285,7 +285,7 @@
       delete pending.el;
       var v = res.ok ? AS.validateElaborate(res.output, cands.map(function (t) { return t.id; })) : null;
       var picks = v && v.ok && v.picks.length ? v.picks : [AS.localElaboratePick(cands[0])];
-      update(wait.id, { kind: 'elaborate', intro: intro || null, picks: picks, usage: res.ok ? res.usage || null : null, model: res.ok ? res.model || null : null });
+      update(wait.id, { kind: 'elaborate', intro: intro || null, picks: picks, usage: res.ok ? res.usage || null : null, model: res.ok ? res.model || null : null, exchangeId: res.exchangeId || null });
     });
   }
 

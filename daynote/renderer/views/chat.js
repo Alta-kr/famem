@@ -177,23 +177,26 @@
     }
     if (m.kind === 'thinking') return bubble('assistant', h('div.msg-text', h('span.spinner', { 'aria-hidden': 'true' }), ' ', m.text));
     if (m.kind === 'capture') return captureCard(m, st, now);
-    if (m.kind === 'breakdown') return withUsage(breakdownCard(m, st, now), m.usage, m.model);
+    if (m.kind === 'breakdown') return withUsage(breakdownCard(m, st, now), m.usage, m.model, m.exchangeId);
     if (m.kind === 'next') return nextCard(m, st, now);
     if (m.kind === 'work') return workCard(m, st, now);
     if (m.kind === 'dayclose') return dayCloseCard(m, st, now);
     if (m.kind === 'overdue') return overdueCard(m, st, now);
     if (m.kind === 'weekstart') return weekStartCard(m, st, now);
-    if (m.kind === 'elaborate') return withUsage(elaborateCard(m, st, now), m.usage, m.model);
+    if (m.kind === 'elaborate') return withUsage(elaborateCard(m, st, now), m.usage, m.model, m.exchangeId);
     if (m.kind === 'rest') return restCard(m, st, now);
     return null;
   }
 
   // 설정에서 '쓴 토큰 보기' 를 켰으면 AI 답 아래에 토큰 한 줄
-  function withUsage(el, usage, model) {
-    var line = el && DN.aiFlow.usageLine(usage, model);
+  function withUsage(el, usage, model, exchangeId) {
+    if (!el) return el;
+    var x = DN.aiFlow.exchangeById(exchangeId);
+    var line = DN.aiFlow.usageLine(usage, model, x) || (st0().prefs.showPrompts && x ? DN.ui.h('div.token-line', DN.aiFlow.promptButton(x)) : null);
     if (line) (el.querySelector('.msg-body') || el).appendChild(line);
     return el;
   }
+  function st0() { return S.state; }
 
   // ------------------------------------------------------------------ 정리 결과 카드
   // 머리말 한 문장 + 정리한 것 한 줄씩: [종류 칩] 제목 [날짜 칩] [프로젝트 칩] [×]
@@ -239,10 +242,11 @@
     }
     var rows = h('div.cap-rows', { role: 'list' }, items.map(function (it, i) { return capRow(n, it, i, items, st, now); }));
     var run = (st.aiRuns || []).filter(function (r) { return r.noteId === n.id && r.kind === 'capture' && r.usage; }).pop();
-    // 설정에서 '주고받은 내용 보기' 를 켰으면 이 글을 보낸 프롬프트·받은 답
-    var x = st.prefs.showPrompts && DN.aiFlow.exchangeForNote(n.id);
-    var xBtn = x ? h('button.link-btn.cap-x-link', { type: 'button', onclick: function () { DN.aiFlow.openExchange(x); } }, '보낸 프롬프트·받은 답 보기') : null;
-    return bubble('assistant', h('div.cap', head, rows, foot, run ? DN.aiFlow.usageLine(run.usage, run.model) : null, xBtn ? h('div.cap-x', xBtn) : null), 'msg-cap');
+    // 이 글을 보낸 프롬프트·받은 답 — 토큰 줄 옆 '프롬프트 보기' (토큰 보기를 껐으면 따로 한 줄)
+    var x = DN.aiFlow.exchangeForNote(n.id);
+    var tl = run ? DN.aiFlow.usageLine(run.usage, run.model, x) : null;
+    var xBtn = !tl && x && st.prefs.showPrompts ? DN.aiFlow.promptButton(x) : null;
+    return bubble('assistant', h('div.cap', head, rows, foot, tl, xBtn ? h('div.cap-x', xBtn) : null), 'msg-cap');
   }
 
   // "할 일로 정리했어요" · "메모와 할 일 2개로 나눴어요" · "아이디어로 남겼어요"
