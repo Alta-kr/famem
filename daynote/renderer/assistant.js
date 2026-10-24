@@ -16,6 +16,7 @@
   var M = DN.model, D = DN.dates, S = DN.store, R = DN.recommend;
   var AS = DN.aiAssist;
   var MAX_MESSAGES = 200;
+  var THINK_MS = 1000;   // AI 없이 답할 때도 이만큼 생각하는 척
   var IDLE_MIN = 3;
   var lastActivity = Date.now();
   var pending = {};   // 요청 중인 AI 작업
@@ -64,7 +65,15 @@
     }, { source: 'chat' });
     // 자주 쓰는 짧은 명령("할 일 추천해줘", "쉬고 싶어", "캘린더 보여줘")은 AI 없이 바로 — 메모로 남기지 않는다
     var local = DN.aiCommands.matchLocal(S.state, text, focusTask(), now());
-    if (local) { S.withJoin(key, function () { runCommand(local); }); return null; }
+    if (local) {
+      // AI 없이 알아들은 말도 1초쯤 생각하는 모습을 보인 뒤 답한다 (바로 튀어나오면 어색하다)
+      var wait = post({ kind: 'thinking', text: '생각하는 중…' });
+      setTimeout(function () {
+        S.mutate(null, function (s) { s.chat = (s.chat || []).filter(function (x) { return x.id !== wait.id; }); }, { source: 'chat' });
+        S.withJoin(key, function () { runCommand(local); });
+      }, THINK_MS);
+      return null;
+    }
     var note = DN.capture.submit(text, projectId, function (r, noteId) {
       if (!r || !r.ok || !r.capture) return;
       var large = (r.capture.largeTasks || []).map(function (id) { return M.byId(S.state.tasks, id); }).filter(Boolean);
